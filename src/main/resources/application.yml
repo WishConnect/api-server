@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: wishconnect
+  profiles:
+    # 민감정보는 application-local.yml / application-prod.yml 로 분리 (gitignore 대상)
+    active: local
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

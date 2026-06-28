@@ -1,0 +1,10 @@
+spring:
+  profiles:
+    active: test
+  # 초기 스캐폴딩 단계: 실제 DB 연결 없이 컨텍스트 로드를 검증하기 위해
+  # DataSource/JPA 자동 구성을 제외한다. (엔티티/리포지토리 추가 시 조정)
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
