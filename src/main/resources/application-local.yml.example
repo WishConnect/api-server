@@ -18,3 +18,12 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+
+jwt:
+  # HS256 비밀키 (최소 32바이트). 운영에서는 반드시 환경변수 JWT_SECRET 로 주입
+  secret: ${JWT_SECRET:<DEV_JWT_SECRET_MIN_32_BYTES>}
+
+kakao:
+  client-id: ${KAKAO_CLIENT_ID:<KAKAO_REST_API_KEY>}
+  client-secret: ${KAKAO_CLIENT_SECRET:}
+  redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/v1/auth/kakao/callback}

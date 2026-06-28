@@ -16,3 +16,13 @@ spring:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+# JWT 공통 정책 (만료시간). secret 은 민감정보라 application-local/prod.yml + 환경변수로 주입
+jwt:
+  access-token-validity: 1800000      # 30분 (ms)
+  refresh-token-validity: 1209600000  # 14일 (ms)
+
+# 카카오 OAuth 공통(비민감) 엔드포인트. client-id/secret/redirect-uri 는 환경별 yml 로 분리
+kakao:
+  token-uri: https://kauth.kakao.com/oauth/token
+  user-info-uri: https://kapi.kakao.com/v2/user/me
