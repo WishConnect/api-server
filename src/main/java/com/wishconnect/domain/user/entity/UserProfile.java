@@ -55,9 +55,9 @@ public class UserProfile extends BaseEntity {
 	@Column
 	private Integer birthYear;
 
-	/** 성별. 값 확정 필요 시 enum 으로 승격 */
+	@Enumerated(EnumType.STRING)
 	@Column
-	private String gender;
+	private Gender gender;
 
 	@Column
 	private String nationality;

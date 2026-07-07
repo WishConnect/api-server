@@ -1,6 +1,6 @@
 package com.wishconnect.domain.application.entity;
 
-import com.wishconnect.global.common.BaseCreatedEntity;
+import com.wishconnect.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -17,9 +17,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * AI 인터뷰(에세이 문항별 대화형 질의응답).
- * ⚠️ 타임스탬프: 컨벤션 노트가 ai_interview 를 createdAt-only 로 명시해 BaseCreatedEntity 를 상속.
- *    (상세 필드목록엔 updatedAt 도 있어 상충 → ERD 확인 필요)
+ * AI 인터뷰(에세이 문항별 대화형 질의응답). created_at/updated_at 모두 관리한다.
  */
 @Entity
 @Getter
@@ -27,7 +25,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
-public class AiInterview extends BaseCreatedEntity {
+public class AiInterview extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
