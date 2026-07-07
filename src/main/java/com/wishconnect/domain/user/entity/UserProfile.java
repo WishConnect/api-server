@@ -75,8 +75,10 @@ public class UserProfile extends BaseEntity {
 	@Column(precision = 3, scale = 2)
 	private BigDecimal cumulativeGpa;
 
+	/** 복수전공/부전공 구분. 해당 없으면 null */
+	@Enumerated(EnumType.STRING)
 	@Column
-	private boolean dualMajor;
+	private SecondMajorType secondMajorType;
 
 	@Column
 	private Integer incomeLevel;
