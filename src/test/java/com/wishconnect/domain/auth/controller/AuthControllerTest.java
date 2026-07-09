@@ -47,7 +47,10 @@ class AuthControllerTest {
 	class Signup {
 
 		private static final String VALID_BODY = """
-				{"email":"user@example.com","password":"Test1234!","name":"홍길동","phone":"010-1234-5678"}
+				{"email":"user@example.com","password":"Test1234!","name":"홍길동","phone":"010-1234-5678",
+				 "gender":"FEMALE","nationality":"DOMESTIC","birthYear":2002,"region":"서울",
+				 "agreements":[{"type":"TERMS","isAgreed":true},{"type":"PRIVACY","isAgreed":true},
+				 {"type":"THIRD_PARTY","isAgreed":true},{"type":"AGE_14","isAgreed":true}]}
 				""";
 
 		@Test

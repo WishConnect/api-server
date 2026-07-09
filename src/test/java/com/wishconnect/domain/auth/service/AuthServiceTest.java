@@ -19,9 +19,18 @@ import com.wishconnect.domain.auth.dto.response.KakaoLoginResponse;
 import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
+import com.wishconnect.domain.auth.dto.request.AgreementItem;
+import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.user.entity.AgreementType;
+import com.wishconnect.domain.user.entity.Gender;
 import com.wishconnect.domain.user.entity.LoginType;
+import com.wishconnect.domain.user.entity.Nationality;
 import com.wishconnect.domain.user.entity.User;
+import com.wishconnect.domain.user.repository.UserAgreementRepository;
+import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
+import java.util.List;
+import java.util.Optional;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.global.jwt.JwtProvider;
@@ -43,16 +52,30 @@ class AuthServiceTest {
 	@Mock
 	private UserRepository userRepository;
 	@Mock
+	private UserProfileRepository userProfileRepository;
+	@Mock
+	private UserAgreementRepository userAgreementRepository;
+	@Mock
+	private RegionRepository regionRepository;
+	@Mock
 	private PasswordEncoder passwordEncoder;
 	@Mock
 	private JwtProvider jwtProvider;
 	@Mock
 	private RefreshTokenService refreshTokenService;
 	@Mock
+	private EmailVerificationService emailVerificationService;
+	@Mock
 	private KakaoApiClient kakaoApiClient;
 
 	@InjectMocks
 	private AuthService authService;
+
+	private static final List<AgreementItem> ALL_AGREED = List.of(
+			new AgreementItem(AgreementType.TERMS, true),
+			new AgreementItem(AgreementType.PRIVACY, true),
+			new AgreementItem(AgreementType.THIRD_PARTY, true),
+			new AgreementItem(AgreementType.AGE_14, true));
 
 	private static User userWithId(User user) {
 		ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
@@ -68,14 +91,19 @@ class AuthServiceTest {
 	@DisplayName("회원가입")
 	class Signup {
 
-		private final SignupRequest request =
-				new SignupRequest("user@example.com", "Abcd1234!", "홍길동", "010-1234-5678");
+		private SignupRequest request(String password, List<AgreementItem> agreements) {
+			return new SignupRequest("user@example.com", password, "홍길동", "010-1234-5678",
+					2002, Gender.FEMALE, Nationality.DOMESTIC, "서울", agreements);
+		}
 
 		@Test
-		@DisplayName("성공 시 사용자를 저장하고 JWT 를 발급한다")
+		@DisplayName("성공 시 사용자·프로필·약관을 저장하고 JWT 를 발급한다")
 		void success() {
+			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(false);
 			given(passwordEncoder.encode(request.password())).willReturn("encoded");
+			given(regionRepository.findByName("서울")).willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
@@ -84,17 +112,31 @@ class AuthServiceTest {
 
 			assertThat(response.userId()).isNotNull();
 			assertThat(response.accessToken()).isEqualTo("access-token");
-			assertThat(response.refreshToken()).isEqualTo("refresh-token");
+			verify(userProfileRepository).save(any());
+			verify(userAgreementRepository).saveAll(any());
+			verify(emailVerificationService).clearVerified(request.email());
 			verify(refreshTokenService).save(any(UUID.class), eq("refresh-token"));
+		}
+
+		@Test
+		@DisplayName("이메일 미인증 시 EMAIL_NOT_VERIFIED")
+		void emailNotVerified() {
+			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(false);
+
+			assertThatThrownBy(() -> authService.signup(request))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED);
+			verify(userRepository, never()).save(any());
 		}
 
 		@Test
 		@DisplayName("비밀번호 정책 위반 시 INVALID_PASSWORD_FORMAT")
 		void invalidPassword() {
-			SignupRequest weak =
-					new SignupRequest("user@example.com", "abcdefgh", "홍길동", "010-1234-5678");
+			SignupRequest request = request("abcdefgh", ALL_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 
-			assertThatThrownBy(() -> authService.signup(weak))
+			assertThatThrownBy(() -> authService.signup(request))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_PASSWORD_FORMAT);
 			verify(userRepository, never()).save(any());
@@ -103,11 +145,31 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 중복 시 DUPLICATE_EMAIL")
 		void duplicateEmail() {
+			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(true);
 
 			assertThatThrownBy(() -> authService.signup(request))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+			verify(userRepository, never()).save(any());
+		}
+
+		@Test
+		@DisplayName("필수 약관 미동의 시 AGREEMENT_REQUIRED")
+		void agreementRequired() {
+			List<AgreementItem> missing = List.of(
+					new AgreementItem(AgreementType.TERMS, true),
+					new AgreementItem(AgreementType.PRIVACY, true),
+					new AgreementItem(AgreementType.THIRD_PARTY, true),
+					new AgreementItem(AgreementType.AGE_14, false));
+			SignupRequest request = request("Abcd1234!", missing);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
+			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(false);
+
+			assertThatThrownBy(() -> authService.signup(request))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.AGREEMENT_REQUIRED);
 			verify(userRepository, never()).save(any());
 		}
 	}
