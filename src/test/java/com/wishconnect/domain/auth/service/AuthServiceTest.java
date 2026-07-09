@@ -8,11 +8,18 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.wishconnect.domain.auth.client.GoogleApiClient;
 import com.wishconnect.domain.auth.client.KakaoApiClient;
+import com.wishconnect.domain.auth.client.NaverApiClient;
+import com.wishconnect.domain.auth.client.dto.GoogleTokenResponse;
+import com.wishconnect.domain.auth.client.dto.GoogleUserResponse;
 import com.wishconnect.domain.auth.client.dto.KakaoTokenResponse;
 import com.wishconnect.domain.auth.client.dto.KakaoUserResponse;
 import com.wishconnect.domain.auth.client.dto.KakaoUserResponse.KakaoAccount;
 import com.wishconnect.domain.auth.client.dto.KakaoUserResponse.KakaoAccount.Profile;
+import com.wishconnect.domain.auth.client.dto.NaverTokenResponse;
+import com.wishconnect.domain.auth.client.dto.NaverUserResponse;
+import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.request.LoginRequest;
 import com.wishconnect.domain.auth.dto.request.SignupRequest;
 import com.wishconnect.domain.auth.dto.response.KakaoLoginResponse;
@@ -67,6 +74,10 @@ class AuthServiceTest {
 	private EmailVerificationService emailVerificationService;
 	@Mock
 	private KakaoApiClient kakaoApiClient;
+	@Mock
+	private GoogleApiClient googleApiClient;
+	@Mock
+	private NaverApiClient naverApiClient;
 
 	@InjectMocks
 	private AuthService authService;
@@ -288,6 +299,126 @@ class AuthServiceTest {
 			assertThatThrownBy(() -> authService.kakaoLogin("  "))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_KAKAO_CODE);
+		}
+	}
+
+	@Nested
+	@DisplayName("구글 로그인")
+	class GoogleLogin {
+
+		private GoogleTokenResponse token() {
+			return new GoogleTokenResponse("g-access", "Bearer", "id-token", 3600, "openid email profile");
+		}
+
+		@Test
+		@DisplayName("기존 회원이면 로그인, isNewUser=false")
+		void existingUser() {
+			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getUserInfo("g-access"))
+					.willReturn(new GoogleUserResponse("sub-123", "g@google.com", "구글이름"));
+			User existing = userWithId(User.createSocial(LoginType.GOOGLE, "sub-123", "g@google.com", "구글이름"));
+			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-123"))
+					.willReturn(Optional.of(existing));
+			stubTokenIssue();
+
+			SocialLoginResponse response = authService.googleLogin("code");
+
+			assertThat(response.isNewUser()).isFalse();
+			assertThat(response.user().loginType()).isEqualTo(LoginType.GOOGLE);
+			verify(userRepository, never()).save(any());
+		}
+
+		@Test
+		@DisplayName("신규면 자동가입, isNewUser=true")
+		void newUser() {
+			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getUserInfo("g-access"))
+					.willReturn(new GoogleUserResponse("sub-999", "new@google.com", "신규구글"));
+			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-999"))
+					.willReturn(Optional.empty());
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			SocialLoginResponse response = authService.googleLogin("code");
+
+			assertThat(response.isNewUser()).isTrue();
+			assertThat(response.user().name()).isEqualTo("신규구글");
+		}
+
+		@Test
+		@DisplayName("이메일 미수신 시 대체 이메일로 가입")
+		void fallbackEmail() {
+			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getUserInfo("g-access"))
+					.willReturn(new GoogleUserResponse("sub-777", null, "구글"));
+			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-777"))
+					.willReturn(Optional.empty());
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			authService.googleLogin("code");
+
+			org.mockito.ArgumentCaptor<User> captor = org.mockito.ArgumentCaptor.forClass(User.class);
+			verify(userRepository).save(captor.capture());
+			assertThat(captor.getValue().getEmail()).isEqualTo("google_sub-777@wishconnect.kr");
+		}
+
+		@Test
+		@DisplayName("code 비어있으면 INVALID_GOOGLE_CODE")
+		void blankCode() {
+			assertThatThrownBy(() -> authService.googleLogin(" "))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_GOOGLE_CODE);
+		}
+	}
+
+	@Nested
+	@DisplayName("네이버 로그인")
+	class NaverLogin {
+
+		private NaverTokenResponse token() {
+			return new NaverTokenResponse("n-access", "bearer", "n-refresh", "3600", null, null);
+		}
+
+		private NaverUserResponse naverUser(String id, String email, String name) {
+			return new NaverUserResponse("00", "success",
+					new NaverUserResponse.Response(id, email, name, "닉네임"));
+		}
+
+		@Test
+		@DisplayName("신규면 자동가입, isNewUser=true, loginType=NAVER")
+		void newUser() {
+			given(naverApiClient.getToken("code", "state")).willReturn(token());
+			given(naverApiClient.getUserInfo("n-access")).willReturn(naverUser("nid-1", "n@naver.com", "네이버이름"));
+			given(userRepository.findByLoginTypeAndProviderId(LoginType.NAVER, "nid-1"))
+					.willReturn(Optional.empty());
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			SocialLoginResponse response = authService.naverLogin("code", "state");
+
+			assertThat(response.isNewUser()).isTrue();
+			assertThat(response.user().loginType()).isEqualTo(LoginType.NAVER);
+			assertThat(response.user().name()).isEqualTo("네이버이름");
+		}
+
+		@Test
+		@DisplayName("code 비어있으면 INVALID_NAVER_CODE")
+		void blankCode() {
+			assertThatThrownBy(() -> authService.naverLogin(" ", "state"))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_NAVER_CODE);
+		}
+
+		@Test
+		@DisplayName("state 비어있으면 INVALID_NAVER_STATE")
+		void blankState() {
+			assertThatThrownBy(() -> authService.naverLogin("code", " "))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_NAVER_STATE);
 		}
 	}
 

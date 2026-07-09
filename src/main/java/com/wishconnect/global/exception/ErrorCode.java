@@ -27,6 +27,17 @@ public enum ErrorCode {
 	KAKAO_TOKEN_FAILED(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 토큰입니다."),
 	KAKAO_USER_INFO_FAILED(HttpStatus.BAD_GATEWAY, "카카오 사용자 정보를 가져오지 못했습니다."),
 
+	// 구글 소셜로그인
+	INVALID_GOOGLE_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
+	GOOGLE_TOKEN_FAILED(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 토큰입니다."),
+	GOOGLE_USER_INFO_FAILED(HttpStatus.BAD_GATEWAY, "구글 사용자 정보를 가져오지 못했습니다."),
+
+	// 네이버 소셜로그인
+	INVALID_NAVER_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
+	INVALID_NAVER_STATE(HttpStatus.BAD_REQUEST, "잘못된 접근입니다. (state 검증 실패)"),
+	NAVER_TOKEN_FAILED(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 토큰입니다."),
+	NAVER_USER_INFO_FAILED(HttpStatus.BAD_GATEWAY, "네이버 사용자 정보를 가져오지 못했습니다."),
+
 	// 토큰
 	INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
 	TOKEN_NOT_FOUND(HttpStatus.UNAUTHORIZED, "만료되었거나 존재하지 않는 토큰입니다. 다시 로그인해주세요."),

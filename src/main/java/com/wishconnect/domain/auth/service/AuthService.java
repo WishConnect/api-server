@@ -1,14 +1,21 @@
 package com.wishconnect.domain.auth.service;
 
+import com.wishconnect.domain.auth.client.GoogleApiClient;
 import com.wishconnect.domain.auth.client.KakaoApiClient;
+import com.wishconnect.domain.auth.client.NaverApiClient;
+import com.wishconnect.domain.auth.client.dto.GoogleTokenResponse;
+import com.wishconnect.domain.auth.client.dto.GoogleUserResponse;
 import com.wishconnect.domain.auth.client.dto.KakaoTokenResponse;
 import com.wishconnect.domain.auth.client.dto.KakaoUserResponse;
+import com.wishconnect.domain.auth.client.dto.NaverTokenResponse;
+import com.wishconnect.domain.auth.client.dto.NaverUserResponse;
 import com.wishconnect.domain.auth.dto.request.AgreementItem;
 import com.wishconnect.domain.auth.dto.request.LoginRequest;
 import com.wishconnect.domain.auth.dto.request.SignupRequest;
 import com.wishconnect.domain.auth.dto.response.KakaoLoginResponse;
 import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
+import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.util.PasswordValidator;
 import com.wishconnect.domain.common.entity.Region;
@@ -42,6 +49,7 @@ import org.springframework.util.StringUtils;
 public class AuthService {
 
 	private static final String KAKAO_EMAIL_FORMAT = "kakao_%d@wishconnect.kr";
+	private static final String SOCIAL_EMAIL_FORMAT = "%s_%s@wishconnect.kr"; // prefix, providerId
 	private static final Set<AgreementType> REQUIRED_AGREEMENTS = EnumSet.of(
 			AgreementType.TERMS, AgreementType.PRIVACY, AgreementType.THIRD_PARTY, AgreementType.AGE_14);
 
@@ -54,6 +62,8 @@ public class AuthService {
 	private final RefreshTokenService refreshTokenService;
 	private final EmailVerificationService emailVerificationService;
 	private final KakaoApiClient kakaoApiClient;
+	private final GoogleApiClient googleApiClient;
+	private final NaverApiClient naverApiClient;
 
 	/** 기본 회원가입: 이메일 인증·약관·비밀번호 검증 후 사용자/프로필/약관 저장 → 자체 JWT 발급. */
 	@Transactional
@@ -113,6 +123,57 @@ public class AuthService {
 
 		TokenPair tokens = issueTokens(user.getId());
 		return KakaoLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
+	}
+
+	/** 구글 소셜로그인: code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
+	@Transactional
+	public SocialLoginResponse googleLogin(String code) {
+		if (!StringUtils.hasText(code)) {
+			throw new CustomException(ErrorCode.INVALID_GOOGLE_CODE);
+		}
+		GoogleTokenResponse token = googleApiClient.getToken(code);
+		GoogleUserResponse googleUser = googleApiClient.getUserInfo(token.accessToken());
+
+		return socialLogin(LoginType.GOOGLE, googleUser.sub(), googleUser.email(), googleUser.name(), "google");
+	}
+
+	/** 네이버 소셜로그인: state 검증 후 code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
+	@Transactional
+	public SocialLoginResponse naverLogin(String code, String state) {
+		if (!StringUtils.hasText(code)) {
+			throw new CustomException(ErrorCode.INVALID_NAVER_CODE);
+		}
+		// TODO: state 는 서버가 발급/저장한 값과 대조해야 하나, 현재 명세상 state 발급 흐름이 없어
+		//       존재 여부만 검증한다(프론트 주도). state 발급 엔드포인트 추가 시 Redis 대조로 강화.
+		if (!StringUtils.hasText(state)) {
+			throw new CustomException(ErrorCode.INVALID_NAVER_STATE);
+		}
+		NaverTokenResponse token = naverApiClient.getToken(code, state);
+		NaverUserResponse naverUser = naverApiClient.getUserInfo(token.accessToken());
+
+		return socialLogin(LoginType.NAVER, naverUser.id(), naverUser.email(), naverUser.displayName(), "naver");
+	}
+
+	private SocialLoginResponse socialLogin(LoginType loginType, String providerId,
+			String email, String name, String emailPrefix) {
+		User existing = userRepository.findByLoginTypeAndProviderId(loginType, providerId).orElse(null);
+		boolean isNewUser = (existing == null);
+		User user = isNewUser
+				? registerSocialUser(loginType, providerId, email, name, emailPrefix)
+				: existing;
+
+		TokenPair tokens = issueTokens(user.getId());
+		return SocialLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
+	}
+
+	private User registerSocialUser(LoginType loginType, String providerId,
+			String email, String name, String emailPrefix) {
+		String resolvedEmail = StringUtils.hasText(email)
+				? email
+				: String.format(SOCIAL_EMAIL_FORMAT, emailPrefix, providerId);
+		User user = userRepository.save(User.createSocial(loginType, providerId, resolvedEmail, name));
+		log.info("[Auth] {} 신규 회원 자동가입 (userId={}, providerId={})", loginType, user.getId(), providerId);
+		return user;
 	}
 
 	/** 토큰 갱신: Redis 저장값과 대조 후 새 토큰 쌍 발급. */
