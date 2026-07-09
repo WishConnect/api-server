@@ -74,7 +74,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("성공 시 사용자를 저장하고 JWT 를 발급한다")
 		void success() {
-			given(userRepository.existsByEmail(request.email())).willReturn(false);
+			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(false);
 			given(passwordEncoder.encode(request.password())).willReturn("encoded");
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
@@ -103,7 +103,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 중복 시 DUPLICATE_EMAIL")
 		void duplicateEmail() {
-			given(userRepository.existsByEmail(request.email())).willReturn(true);
+			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(true);
 
 			assertThatThrownBy(() -> authService.signup(request))
 					.isInstanceOf(CustomException.class)
@@ -122,7 +122,7 @@ class AuthServiceTest {
 		@DisplayName("성공 시 JWT 와 사용자 정보를 반환한다")
 		void success() {
 			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmail(request.email())).willReturn(Optional.of(user));
+			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(true);
 			stubTokenIssue();
 
@@ -136,7 +136,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("존재하지 않는 이메일이면 USER_NOT_FOUND")
 		void userNotFound() {
-			given(userRepository.findByEmail(request.email())).willReturn(Optional.empty());
+			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.empty());
 
 			assertThatThrownBy(() -> authService.login(request))
 					.isInstanceOf(CustomException.class)
@@ -147,7 +147,7 @@ class AuthServiceTest {
 		@DisplayName("비밀번호 불일치면 LOGIN_FAILED")
 		void wrongPassword() {
 			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmail(request.email())).willReturn(Optional.of(user));
+			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(false);
 
 			assertThatThrownBy(() -> authService.login(request))

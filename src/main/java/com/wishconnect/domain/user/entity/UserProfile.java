@@ -59,8 +59,9 @@ public class UserProfile extends BaseEntity {
 	@Column
 	private Gender gender;
 
+	@Enumerated(EnumType.STRING)
 	@Column
-	private String nationality;
+	private Nationality nationality;
 
 	@Enumerated(EnumType.STRING)
 	@Column

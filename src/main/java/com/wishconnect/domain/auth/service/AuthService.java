@@ -10,6 +10,7 @@ import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.util.PasswordValidator;
+import com.wishconnect.domain.user.entity.LoginType;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
@@ -42,7 +43,7 @@ public class AuthService {
 		if (!PasswordValidator.isValid(request.password(), request.email())) {
 			throw new CustomException(ErrorCode.INVALID_PASSWORD_FORMAT);
 		}
-		if (userRepository.existsByEmail(request.email())) {
+		if (userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
 
@@ -57,7 +58,7 @@ public class AuthService {
 	/** 기본 로그인. */
 	@Transactional(readOnly = true)
 	public LoginResponse login(LoginRequest request) {
-		User user = userRepository.findByEmail(request.email())
+		User user = userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
 		if (!StringUtils.hasText(user.getPassword())

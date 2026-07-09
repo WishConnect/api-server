@@ -15,6 +15,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 사용자. 계정은 {@code (loginType, providerId)} 조합으로 구분한다.
+ * 같은 이메일이 LOCAL/GOOGLE/NAVER 등에 공존 가능하므로 email 은 UNIQUE 가 아니다.
+ */
 @Entity
 @Getter
 @Table(name = "users")
@@ -26,10 +30,10 @@ public class User extends BaseEntity {
 	@Column(columnDefinition = "uuid")
 	private UUID id;
 
-	@Column(nullable = false, unique = true)
+	@Column(nullable = false)
 	private String email;
 
-	/** LOCAL 가입 시에만 존재 (BCrypt 해시). 카카오 가입은 null. */
+	/** LOCAL 가입 시에만 존재 (BCrypt 해시). 소셜 가입은 null. */
 	@Column
 	private String password;
 
@@ -43,22 +47,27 @@ public class User extends BaseEntity {
 	@Column(nullable = false)
 	private LoginType loginType;
 
-	/** KAKAO 가입 시에만 존재. */
+	/** KAKAO 가입 시에만 존재 (기존 유지). */
 	@Column(unique = true)
 	private Long kakaoId;
+
+	/** 소셜(GOOGLE/NAVER 등) 제공자 고유 식별자. loginType 과 함께 계정을 구분한다. */
+	@Column
+	private String providerId;
 
 	@Column(nullable = false)
 	private boolean onboardingCompleted;
 
 	@Builder
 	private User(String email, String password, String name, String phone,
-			LoginType loginType, Long kakaoId, boolean onboardingCompleted) {
+			LoginType loginType, Long kakaoId, String providerId, boolean onboardingCompleted) {
 		this.email = email;
 		this.password = password;
 		this.name = name;
 		this.phone = phone;
 		this.loginType = loginType;
 		this.kakaoId = kakaoId;
+		this.providerId = providerId;
 		this.onboardingCompleted = onboardingCompleted;
 	}
 
@@ -83,5 +92,21 @@ public class User extends BaseEntity {
 				.kakaoId(kakaoId)
 				.onboardingCompleted(false)
 				.build();
+	}
+
+	/** 소셜(GOOGLE/NAVER) 회원 생성. */
+	public static User createSocial(LoginType loginType, String providerId, String email, String name) {
+		return User.builder()
+				.email(email)
+				.name(name)
+				.loginType(loginType)
+				.providerId(providerId)
+				.onboardingCompleted(false)
+				.build();
+	}
+
+	/** 비밀번호 변경 (BCrypt 해시된 값을 전달). */
+	public void changePassword(String encodedPassword) {
+		this.password = encodedPassword;
 	}
 }
