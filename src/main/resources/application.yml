@@ -49,6 +49,9 @@ naver:
 
 # 애플리케이션 공통 설정
 app:
+  cors:
+    # 브라우저 요청을 허용할 출처 목록 (테스트 프론트 등). 환경변수 CORS_ALLOWED_ORIGINS(쉼표구분)로 override
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   mail:
     from: ${MAIL_FROM:no-reply@wishconnect.kr}
   email-verification:
