@@ -1,12 +1,15 @@
 package com.wishconnect.domain.auth.controller;
 
+import com.wishconnect.domain.auth.dto.request.GoogleLoginRequest;
 import com.wishconnect.domain.auth.dto.request.KakaoLoginRequest;
 import com.wishconnect.domain.auth.dto.request.LoginRequest;
+import com.wishconnect.domain.auth.dto.request.NaverLoginRequest;
 import com.wishconnect.domain.auth.dto.request.SignupRequest;
 import com.wishconnect.domain.auth.dto.request.TokenRefreshRequest;
 import com.wishconnect.domain.auth.dto.response.KakaoLoginResponse;
 import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
+import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.service.AuthService;
 import com.wishconnect.global.common.ApiResponse;
@@ -42,6 +45,16 @@ public class AuthController {
 	@PostMapping("/kakao/login")
 	public ApiResponse<KakaoLoginResponse> kakaoLogin(@RequestBody KakaoLoginRequest request) {
 		return ApiResponse.ok(authService.kakaoLogin(request.code()));
+	}
+
+	@PostMapping("/google/login")
+	public ApiResponse<SocialLoginResponse> googleLogin(@RequestBody GoogleLoginRequest request) {
+		return ApiResponse.ok(authService.googleLogin(request.code()));
+	}
+
+	@PostMapping("/naver/login")
+	public ApiResponse<SocialLoginResponse> naverLogin(@RequestBody NaverLoginRequest request) {
+		return ApiResponse.ok(authService.naverLogin(request.code(), request.state()));
 	}
 
 	@PostMapping("/refresh")

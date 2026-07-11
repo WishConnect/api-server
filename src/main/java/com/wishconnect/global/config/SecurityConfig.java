@@ -6,6 +6,7 @@ import com.wishconnect.global.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -22,6 +23,10 @@ public class SecurityConfig {
 			"/api/v1/auth/signup",
 			"/api/v1/auth/login",
 			"/api/v1/auth/kakao/**",
+			"/api/v1/auth/google/**",
+			"/api/v1/auth/naver/**",
+			"/api/v1/auth/email/**",
+			"/api/v1/auth/password/**",
 			"/api/v1/auth/refresh",
 			"/swagger-ui/**",
 			"/swagger-ui.html",
@@ -34,6 +39,7 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http
+				.cors(Customizer.withDefaults())
 				.csrf(AbstractHttpConfigurer::disable)
 				.formLogin(AbstractHttpConfigurer::disable)
 				.httpBasic(AbstractHttpConfigurer::disable)
