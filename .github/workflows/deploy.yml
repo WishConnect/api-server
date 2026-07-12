@@ -1,0 +1,126 @@
+name: Deploy to EC2 (prod)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# 동시에 여러 배포가 겹치지 않도록 직렬화
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 테스트 포함 빌드: 70개 단위/슬라이스 테스트는 DB/Redis 불필요 → 배포 전 안전망으로 실행
+      - name: Build with Gradle (with tests)
+        run: ./gradlew clean build
+
+      - name: Prepare deploy jar
+        run: cp "$(ls build/libs/*.jar | grep -v plain | head -n 1)" deploy.jar
+
+      - name: Copy jar to EC2 (SCP)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: deploy.jar
+          target: /home/ubuntu/app
+
+      - name: Deploy on EC2 (SSH) + health check + rollback
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
+          KAKAO_CLIENT_ID: ${{ secrets.KAKAO_CLIENT_ID }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          KAKAO_REDIRECT_URI: ${{ secrets.KAKAO_REDIRECT_URI }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          NAVER_REDIRECT_URI: ${{ secrets.NAVER_REDIRECT_URI }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DB_URL,DB_USERNAME,DB_PASSWORD,JWT_SECRET,MAIL_USERNAME,MAIL_PASSWORD,MAIL_FROM,FRONTEND_ORIGIN,KAKAO_CLIENT_ID,KAKAO_CLIENT_SECRET,KAKAO_REDIRECT_URI,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REDIRECT_URI,NAVER_CLIENT_ID,NAVER_CLIENT_SECRET,NAVER_REDIRECT_URI
+          script: |
+            set -e
+            APP_DIR=/home/ubuntu/app
+            ENV_DIR=/etc/wishconnect
+
+            # 1) 시크릿을 EnvironmentFile 로 기록 (root:600, 앱 실행 시 systemd 가 주입)
+            sudo mkdir -p "$ENV_DIR"
+            sudo tee "$ENV_DIR/wishconnect.env" > /dev/null <<EOF
+            SPRING_PROFILES_ACTIVE=prod
+            DB_URL=${DB_URL}
+            DB_USERNAME=${DB_USERNAME}
+            DB_PASSWORD=${DB_PASSWORD}
+            JWT_SECRET=${JWT_SECRET}
+            MAIL_USERNAME=${MAIL_USERNAME}
+            MAIL_PASSWORD=${MAIL_PASSWORD}
+            MAIL_FROM=${MAIL_FROM}
+            FRONTEND_ORIGIN=${FRONTEND_ORIGIN}
+            KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
+            KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+            KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+            GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+            NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
+            NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+            NAVER_REDIRECT_URI=${NAVER_REDIRECT_URI}
+            EOF
+            sudo chmod 600 "$ENV_DIR/wishconnect.env"
+
+            # 2) jar 교체 (현재 버전 백업 유지 → 롤백용)
+            mkdir -p "$APP_DIR/logs"
+            if [ -f "$APP_DIR/app.jar" ]; then cp "$APP_DIR/app.jar" "$APP_DIR/app.jar.bak"; fi
+            mv "$APP_DIR/deploy.jar" "$APP_DIR/app.jar"
+
+            # 3) 재시작
+            sudo systemctl restart wishconnect
+
+            # 4) 헬스체크 (최대 ~60초 대기)
+            echo "Health checking /actuator/health ..."
+            for i in $(seq 1 12); do
+              if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
+                echo "✅ Deploy healthy"
+                exit 0
+              fi
+              echo "  ...attempt $i not ready, retrying in 5s"
+              sleep 5
+            done
+
+            # 5) 헬스체크 실패 → 이전 jar 로 롤백
+            echo "❌ Health check failed — rolling back to previous jar"
+            if [ -f "$APP_DIR/app.jar.bak" ]; then
+              mv "$APP_DIR/app.jar.bak" "$APP_DIR/app.jar"
+              sudo systemctl restart wishconnect
+            fi
+            echo "----- recent logs -----"
+            sudo journalctl -u wishconnect -n 80 --no-pager || true
+            exit 1

@@ -1,0 +1,21 @@
+# WishConnect 운영 앱 systemd 유닛
+# EC2 설치 위치: /etc/systemd/system/wishconnect.service
+# 설치 후: sudo systemctl daemon-reload && sudo systemctl enable --now wishconnect
+[Unit]
+Description=WishConnect Spring Boot Application
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/app
+# 민감정보(DB 비번, JWT secret, 소셜 키 등)는 이 파일에서 주입 (root:600, git 미포함)
+EnvironmentFile=/etc/wishconnect/wishconnect.env
+ExecStart=/usr/bin/java -jar /home/ubuntu/app/app.jar --spring.profiles.active=prod
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/ubuntu/app/logs/app.log
+StandardError=append:/home/ubuntu/app/logs/app.log
+
+[Install]
+WantedBy=multi-user.target
