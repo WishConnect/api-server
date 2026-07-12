@@ -1,0 +1,47 @@
+-- 로컬 테스트용 시드 데이터 (예시)
+--
+-- 이 파일을 data-local.sql 로 복사해 로컬 DB에 자동 로드하세요.
+--   cp src/main/resources/data-local.sql.example src/main/resources/data-local.sql
+--
+-- application-local.yml 에서 아래 두 설정을 활성화하면 앱 기동 시 자동 실행됩니다.
+--   spring.jpa.hibernate.ddl-auto=create-drop
+--   spring.sql.init.mode=always
+--   spring.sql.init.data-locations=classpath:data-local.sql
+--
+-- (data-local.sql 파일 자체는 .gitignore 대상입니다.)
+--
+-- AI 자기소개서 파트 로컬 테스트 시나리오:
+--   1) 이 시드로 users, scholarship 1건씩 준비
+--   2) POST /api/v1/applications { scholarshipId: 1 } 로 essay + essay_question 생성
+--   3) STEP1 인터뷰 왕복 → STEP2 초안 생성 순서로 API 호출
+
+-- 테스트 사용자 1명 (UUID 고정)
+INSERT INTO users (id, email, name, login_type, onboarding_completed, created_at, updated_at)
+VALUES (
+	'00000000-0000-0000-0000-000000000001',
+	'test@wishconnect.local',
+	'테스트유저',
+	'LOCAL',
+	true,
+	NOW(),
+	NOW()
+) ON CONFLICT DO NOTHING;
+
+-- 테스트 장학금 1건
+INSERT INTO scholarship (
+	id, title, provider, summary,
+	scholarship_type, recruitment_status,
+	is_active, is_verified,
+	created_at, updated_at
+) VALUES (
+	1,
+	'테스트 장학금',
+	'위시커넥트',
+	'로컬 개발용 임시 장학금',
+	'EXTERNAL',
+	'UPCOMING',
+	true,
+	true,
+	NOW(),
+	NOW()
+) ON CONFLICT DO NOTHING;

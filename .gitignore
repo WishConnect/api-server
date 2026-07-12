@@ -3,6 +3,8 @@ application-local.yml
 application-prod.yml
 .env
 *.log
+# 로컬 개발용 시드 데이터 (data-local.sql.example 을 복사해 사용)
+data-local.sql
 
 ### Gradle ###
 .gradle/
