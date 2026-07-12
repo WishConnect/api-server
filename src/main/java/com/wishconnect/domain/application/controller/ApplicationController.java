@@ -1,18 +1,25 @@
 package com.wishconnect.domain.application.controller;
 
+import com.wishconnect.domain.application.dto.request.CreateApplicationRequest;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
+import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
 import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.service.EssayApplicationService;
 import com.wishconnect.global.common.ApiResponse;
+import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -38,5 +45,17 @@ public class ApplicationController {
 			@PageableDefault(sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
 		return ApiResponse.ok(
 				essayApplicationService.getApplications(UUID.fromString(userId), status, pageable));
+	}
+
+	/**
+	 * ② 지원서 작성 시작. essay + essay_question + 빈 essay_answer 를 생성한다.
+	 */
+	@PostMapping
+	@ResponseStatus(HttpStatus.CREATED)
+	public ApiResponse<CreateApplicationResponse> createApplication(
+			@AuthenticationPrincipal String userId,
+			@Valid @RequestBody CreateApplicationRequest request) {
+		return ApiResponse.ok(
+				essayApplicationService.createApplication(UUID.fromString(userId), request.scholarshipId()));
 	}
 }

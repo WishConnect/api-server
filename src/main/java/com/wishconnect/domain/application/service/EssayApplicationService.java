@@ -2,12 +2,21 @@ package com.wishconnect.domain.application.service;
 
 import com.wishconnect.domain.application.dto.response.ApplicationListItemResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
+import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
 import com.wishconnect.domain.application.dto.response.ProgressResponse;
 import com.wishconnect.domain.application.entity.Essay;
+import com.wishconnect.domain.application.entity.EssayAnswer;
+import com.wishconnect.domain.application.entity.EssayQuestion;
 import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.user.entity.User;
+import com.wishconnect.domain.user.repository.UserRepository;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +38,8 @@ public class EssayApplicationService {
 	private final EssayRepository essayRepository;
 	private final EssayQuestionRepository essayQuestionRepository;
 	private final EssayAnswerRepository essayAnswerRepository;
+	private final ScholarshipRepository scholarshipRepository;
+	private final UserRepository userRepository;
 
 	/**
 	 * ① 지원서 목록 조회. status 로 필터링 가능.
@@ -43,6 +54,67 @@ public class EssayApplicationService {
 				.toList();
 
 		return new ApplicationListResponse(items, page.getTotalElements());
+	}
+
+	/**
+	 * ② 지원서 작성 시작.
+	 * essay + essay_question + 빈 essay_answer 를 트랜잭션 내에서 일괄 생성.
+	 * (user, scholarship) 조합이 이미 존재하면 409.
+	 * <p>
+	 * TODO: 장학금별 문항 템플릿이 스키마에 정의되면 defaultEssayQuestions() 를 그 조회로 교체.
+	 */
+	@Transactional
+	public CreateApplicationResponse createApplication(UUID userId, Long scholarshipId) {
+		if (essayRepository.findByUser_IdAndScholarship_Id(userId, scholarshipId).isPresent()) {
+			throw new CustomException(ErrorCode.APPLICATION_ALREADY_EXISTS);
+		}
+
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		User user = userRepository.findById(userId)
+				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+		Essay essay = essayRepository.save(Essay.builder()
+				.scholarship(scholarship)
+				.user(user)
+				.status(EssayStatus.NOT_STARTED)
+				.build());
+
+		List<EssayQuestion> questions = defaultEssayQuestions(essay);
+		essayQuestionRepository.saveAll(questions);
+
+		for (EssayQuestion question : questions) {
+			essayAnswerRepository.save(EssayAnswer.builder()
+					.essayQuestion(question)
+					.charCount(0)
+					.isTemporary(true)
+					.isCompleted(false)
+					.build());
+		}
+
+		return new CreateApplicationResponse(essay.getId(), essay.getStatus(), questions.size());
+	}
+
+	/**
+	 * 임시 기본 문항 세트. 장학금별 문항 템플릿 스키마가 정의되기 전까지 사용한다.
+	 */
+	private List<EssayQuestion> defaultEssayQuestions(Essay essay) {
+		return List.of(
+				EssayQuestion.builder()
+						.essay(essay)
+						.questionOrder(1)
+						.questionTitle("지원 동기")
+						.questionDescription("이 장학금에 지원하게 된 계기와 이유를 서술해주세요.")
+						.charLimit(500)
+						.build(),
+				EssayQuestion.builder()
+						.essay(essay)
+						.questionOrder(2)
+						.questionTitle("성장 배경 및 자기소개")
+						.questionDescription("본인의 성장 배경과 이를 통해 형성된 가치관을 서술해주세요.")
+						.charLimit(800)
+						.build()
+		);
 	}
 
 	private ApplicationListItemResponse toListItem(Essay essay) {

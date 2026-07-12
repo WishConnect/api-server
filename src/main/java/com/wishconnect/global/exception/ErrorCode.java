@@ -42,6 +42,11 @@ public enum ErrorCode {
 	INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
 	TOKEN_NOT_FOUND(HttpStatus.UNAUTHORIZED, "만료되었거나 존재하지 않는 토큰입니다. 다시 로그인해주세요."),
 
+	// 자기소개서(지원서)
+	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),
+	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
+	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
+
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
 	EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),
