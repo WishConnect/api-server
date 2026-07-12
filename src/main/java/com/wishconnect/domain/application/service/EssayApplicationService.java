@@ -1,13 +1,20 @@
 package com.wishconnect.domain.application.service;
 
+import com.wishconnect.domain.application.dto.response.AnswerDetailResponse;
+import com.wishconnect.domain.application.dto.response.ApplicationDetailResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListItemResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
 import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
+import com.wishconnect.domain.application.dto.response.InterviewTurnResponse;
 import com.wishconnect.domain.application.dto.response.ProgressResponse;
+import com.wishconnect.domain.application.dto.response.QuestionDetailResponse;
+import com.wishconnect.domain.application.dto.response.QuestionStep;
+import com.wishconnect.domain.application.entity.AiInterview;
 import com.wishconnect.domain.application.entity.Essay;
 import com.wishconnect.domain.application.entity.EssayAnswer;
 import com.wishconnect.domain.application.entity.EssayQuestion;
 import com.wishconnect.domain.application.entity.EssayStatus;
+import com.wishconnect.domain.application.repository.AiInterviewRepository;
 import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
@@ -18,7 +25,10 @@ import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +48,7 @@ public class EssayApplicationService {
 	private final EssayRepository essayRepository;
 	private final EssayQuestionRepository essayQuestionRepository;
 	private final EssayAnswerRepository essayAnswerRepository;
+	private final AiInterviewRepository aiInterviewRepository;
 	private final ScholarshipRepository scholarshipRepository;
 	private final UserRepository userRepository;
 
@@ -54,6 +65,83 @@ public class EssayApplicationService {
 				.toList();
 
 		return new ApplicationListResponse(items, page.getTotalElements());
+	}
+
+	/**
+	 * ③ 지원서 통합 상세 조회. 화면 진입 시 필요한 모든 데이터를 1회 호출로 반환한다.
+	 * <p>
+	 * 문항 수만큼의 개별 쿼리 대신, essay 단위로 question/answer/interview 를 각각 조회 후
+	 * 메모리에서 매칭하여 문항별 응답을 구성한다 (N+1 방지).
+	 */
+	public ApplicationDetailResponse getApplicationDetail(UUID userId, Long applicationId) {
+		Essay essay = essayRepository.findByIdAndUser_Id(applicationId, userId)
+				.orElseThrow(() -> new CustomException(ErrorCode.APPLICATION_NOT_FOUND));
+
+		List<EssayQuestion> questions = essayQuestionRepository
+				.findByEssay_IdOrderByQuestionOrderAsc(applicationId);
+		List<EssayAnswer> answers = essayAnswerRepository
+				.findByEssayQuestion_Essay_Id(applicationId);
+		List<AiInterview> interviews = aiInterviewRepository
+				.findByEssayQuestion_Essay_IdOrderByEssayQuestion_IdAscStepOrderAsc(applicationId);
+
+		Map<Long, EssayAnswer> answerByQuestionId = answers.stream()
+				.collect(Collectors.toMap(a -> a.getEssayQuestion().getId(), Function.identity()));
+		Map<Long, List<AiInterview>> interviewsByQuestionId = interviews.stream()
+				.collect(Collectors.groupingBy(i -> i.getEssayQuestion().getId()));
+
+		List<QuestionDetailResponse> questionResponses = questions.stream()
+				.map(q -> toQuestionDetail(
+						q,
+						answerByQuestionId.get(q.getId()),
+						interviewsByQuestionId.getOrDefault(q.getId(), List.of())))
+				.toList();
+
+		return new ApplicationDetailResponse(
+				essay.getId(),
+				essay.getScholarship().getTitle(),
+				essay.getStatus(),
+				essay.getLastEditedAt(),
+				questionResponses);
+	}
+
+	private QuestionDetailResponse toQuestionDetail(EssayQuestion question,
+			EssayAnswer answer,
+			List<AiInterview> interviews) {
+		List<InterviewTurnResponse> interviewResponses = interviews.stream()
+				.map(i -> new InterviewTurnResponse(i.getStepOrder(), i.getQuestionText(), i.getAnswerText()))
+				.toList();
+
+		String seedQuestion = interviews.isEmpty() ? null : interviews.get(0).getQuestionText();
+		AnswerDetailResponse answerResponse = answer == null ? null : new AnswerDetailResponse(
+				answer.getAiDraft(),
+				answer.getUserContent(),
+				answer.getCharCount(),
+				answer.isTemporary(),
+				answer.isCompleted());
+
+		return new QuestionDetailResponse(
+				question.getId(),
+				question.getQuestionOrder(),
+				question.getQuestionTitle(),
+				question.getQuestionDescription(),
+				question.getCharLimit(),
+				deriveCurrentStep(answer),
+				seedQuestion,
+				interviewResponses,
+				answerResponse);
+	}
+
+	private QuestionStep deriveCurrentStep(EssayAnswer answer) {
+		if (answer == null) {
+			return QuestionStep.STEP_1;
+		}
+		if (answer.isCompleted()) {
+			return QuestionStep.DONE;
+		}
+		if (answer.getAiDraft() != null && !answer.getAiDraft().isBlank()) {
+			return QuestionStep.STEP_2;
+		}
+		return QuestionStep.STEP_1;
 	}
 
 	/**

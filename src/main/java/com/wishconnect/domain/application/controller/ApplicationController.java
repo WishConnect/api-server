@@ -1,6 +1,7 @@
 package com.wishconnect.domain.application.controller;
 
 import com.wishconnect.domain.application.dto.request.CreateApplicationRequest;
+import com.wishconnect.domain.application.dto.response.ApplicationDetailResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
 import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
 import com.wishconnect.domain.application.entity.EssayStatus;
@@ -15,6 +16,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,5 +59,16 @@ public class ApplicationController {
 			@Valid @RequestBody CreateApplicationRequest request) {
 		return ApiResponse.ok(
 				essayApplicationService.createApplication(UUID.fromString(userId), request.scholarshipId()));
+	}
+
+	/**
+	 * ③ 지원서 통합 상세 조회. 지원서 화면 진입 시 필요한 모든 데이터를 1회 호출로 반환한다.
+	 */
+	@GetMapping("/{applicationId}")
+	public ApiResponse<ApplicationDetailResponse> getApplicationDetail(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId) {
+		return ApiResponse.ok(
+				essayApplicationService.getApplicationDetail(UUID.fromString(userId), applicationId));
 	}
 }
