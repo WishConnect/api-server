@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.entity;
 
+import com.wishconnect.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -7,8 +8,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -24,7 +23,7 @@ raw_scholarship의 원본 JSON을 파싱한 뒤 제목, 기관, 신청기간, �
 @Entity
 @Table(name = "scholarship")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Scholarship {
+public class Scholarship extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -36,14 +35,12 @@ public class Scholarship {
 	@Column(length = 200)
 	private String provider;
 
-    //지원관련 요약
 	@Column(columnDefinition = "TEXT")
 	private String summary;
 
-    @Column(columnDefinition = "TEXT")
+	@Column(columnDefinition = "TEXT")
 	private String description;
 
-    //교내,외부 장학금 구분
 	@Enumerated(EnumType.STRING)
 	@Column(name = "scholarship_type", length = 20)
 	private ScholarshipType scholarshipType;
@@ -58,14 +55,11 @@ public class Scholarship {
 	@Column(name = "recruitment_status", length = 20)
 	private RecruitmentStatus recruitmentStatus;
 
-    //선발 인원
 	@Column(name = "selection_count")
 	private Integer selectionCount;
 
-    //지원 금액 ex) ○ 연간 500만원 (최대 7학기/ 1학년 2학기 부터)
 	private Long amount;
 
-    //기한 넘었는지 안넘었는지 확인하는부분 입니다.
 	@Column(name = "is_active", nullable = false)
 	private boolean active;
 
@@ -84,12 +78,6 @@ public class Scholarship {
 
 	@Column(name = "last_synced_at")
 	private LocalDateTime lastSyncedAt;
-
-	@Column(name = "created_at", nullable = false, updatable = false)
-	private LocalDateTime createdAt;
-
-	@Column(name = "updated_at", nullable = false)
-	private LocalDateTime updatedAt;
 
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
@@ -164,17 +152,5 @@ public class Scholarship {
 
 	public void updateActive(boolean active) {
 		this.active = active;
-	}
-
-	@PrePersist
-	void prePersist() {
-		LocalDateTime now = LocalDateTime.now();
-		this.createdAt = now;
-		this.updatedAt = now;
-	}
-
-	@PreUpdate
-	void preUpdate() {
-		this.updatedAt = LocalDateTime.now();
 	}
 }

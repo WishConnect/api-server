@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.entity;
 
+import com.wishconnect.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,10 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -27,7 +25,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "scholarship_condition")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ScholarshipCondition {
+public class ScholarshipCondition extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -66,12 +64,6 @@ public class ScholarshipCondition {
 	@Column(name = "is_auto_extracted", nullable = false)
 	private boolean autoExtracted;
 
-	@Column(name = "created_at", nullable = false, updatable = false)
-	private LocalDateTime createdAt;
-
-	@Column(name = "updated_at", nullable = false)
-	private LocalDateTime updatedAt;
-
 	@Builder
 	private ScholarshipCondition(
 		Scholarship scholarship,
@@ -91,17 +83,5 @@ public class ScholarshipCondition {
 		this.valueIntMax = valueIntMax;
 		this.valueString = valueString;
 		this.autoExtracted = autoExtracted;
-	}
-
-	@PrePersist
-	void prePersist() {
-		LocalDateTime now = LocalDateTime.now();
-		this.createdAt = now;
-		this.updatedAt = now;
-	}
-
-	@PreUpdate
-	void preUpdate() {
-		this.updatedAt = LocalDateTime.now();
 	}
 }

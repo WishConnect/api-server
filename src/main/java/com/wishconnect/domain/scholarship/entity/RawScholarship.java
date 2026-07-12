@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.entity;
 
+import com.wishconnect.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,8 +11,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -36,7 +35,7 @@ import org.hibernate.type.SqlTypes;
 	}
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class RawScholarship {
+public class RawScholarship extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -71,12 +70,6 @@ public class RawScholarship {
 
 	@Column(name = "parse_error", columnDefinition = "TEXT")
 	private String parseError;
-
-	@Column(name = "created_at", nullable = false, updatable = false)
-	private LocalDateTime createdAt;
-
-	@Column(name = "updated_at", nullable = false)
-	private LocalDateTime updatedAt;
 
 	@Builder
 	private RawScholarship(
@@ -123,17 +116,5 @@ public class RawScholarship {
 		this.crawledAt = LocalDateTime.now();
 		this.parseStatus = ParseStatus.PENDING;
 		this.parseError = null;
-	}
-
-	@PrePersist
-	void prePersist() {
-		LocalDateTime now = LocalDateTime.now();
-		this.createdAt = now;
-		this.updatedAt = now;
-	}
-
-	@PreUpdate
-	void preUpdate() {
-		this.updatedAt = LocalDateTime.now();
 	}
 }
