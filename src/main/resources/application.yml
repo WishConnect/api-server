@@ -53,7 +53,7 @@ app:
     # 브라우저 요청을 허용할 출처 목록 (테스트 프론트 등). 환경변수 CORS_ALLOWED_ORIGINS(쉼표구분)로 override
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   mail:
-    from: ${MAIL_FROM:no-reply@wishconnect.kr}
+    from: ${MAIL_FROM:no-reply@wish-connect.com}
   email-verification:
     code-ttl-seconds: 300       # 인증 코드 5분
     verified-ttl-seconds: 1800  # 인증완료 상태 30분(회원가입까지)
