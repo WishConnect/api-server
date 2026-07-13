@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
+import com.wishconnect.global.common.ApiResponse;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 (나중에는 자동 동기화로 가져오게 할 것입니다.)
  */
 @RestController
-@RequestMapping("/v1/scholarships")
+@RequestMapping("/api/v1/scholarships")
 @Profile("!test")
 public class ScholarshipSyncController {
 
@@ -24,7 +25,7 @@ public class ScholarshipSyncController {
 	}
 
 	@PostMapping("/sync")
-	public ScholarshipSyncResponse syncScholarships() {
-		return scholarshipSyncService.sync();
+	public ApiResponse<ScholarshipSyncResponse> syncScholarships() {
+		return ApiResponse.ok(scholarshipSyncService.sync());
 	}
 }
