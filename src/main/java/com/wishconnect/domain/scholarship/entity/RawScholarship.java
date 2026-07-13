@@ -12,55 +12,109 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Map;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-@Entity
+/*
+외부 장학금 API에서 받은 원본 데이터를 보관하는 엔티티입니다.
+필드 매핑이 바뀌어도 raw_json을 기준으로 다시 파싱할 수 있도록 원본 응답을 JSONB로 저장합니다.
+ */
 @Getter
-@Table(name = "raw_scholarship")
+@Entity
+@Table(
+	name = "raw_scholarship",
+	uniqueConstraints = {
+		@UniqueConstraint(name = "uk_raw_scholarship_source_source_id", columnNames = {"source", "source_id"})
+	}
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Builder
 public class RawScholarship extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	/** 파싱 결과로 생성된 정제 장학금 (파싱 전이면 null 일 수 있음) */
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "scholarship_id")
 	private Scholarship scholarship;
 
-	@Column(nullable = false)
+	@Column(nullable = false, length = 50)
 	private String source;
 
-	@Column(nullable = false)
+	@Column(name = "source_url", length = 1000)
 	private String sourceUrl;
 
-	@Column(nullable = false)
+	@Column(name = "source_id", nullable = false, length = 200)
 	private String sourceId;
 
 	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(columnDefinition = "jsonb")
-	private String rawJson;
+	@Column(name = "raw_json", columnDefinition = "jsonb")
+	private Map<String, Object> rawJson;
 
-	@Column(columnDefinition = "TEXT")
+	@Column(name = "raw_html", columnDefinition = "TEXT")
 	private String rawHtml;
 
-	@Column(nullable = false)
+	@Column(name = "crawled_at")
 	private LocalDateTime crawledAt;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
+	@Column(name = "parse_status", nullable = false, length = 20)
 	private ParseStatus parseStatus;
 
-	@Column(columnDefinition = "TEXT")
+	@Column(name = "parse_error", columnDefinition = "TEXT")
 	private String parseError;
+
+	@Builder
+	private RawScholarship(
+		Scholarship scholarship,
+		String source,
+		String sourceUrl,
+		String sourceId,
+		Map<String, Object> rawJson,
+		String rawHtml,
+		ParseStatus parseStatus,
+		String parseError
+	) {
+		this.scholarship = scholarship;
+		this.source = source;
+		this.sourceUrl = sourceUrl;
+		this.sourceId = sourceId;
+		this.rawJson = rawJson;
+		this.rawHtml = rawHtml;
+		this.crawledAt = LocalDateTime.now();
+		this.parseStatus = parseStatus == null ? ParseStatus.PENDING : parseStatus;
+		this.parseError = parseError;
+	}
+
+	public void markParsed(Scholarship scholarship) {
+		this.scholarship = scholarship;
+		this.parseStatus = ParseStatus.PARSED;
+		this.parseError = null;
+	}
+
+	public void markFailed(String parseError) {
+		this.parseStatus = ParseStatus.FAILED;
+		this.parseError = parseError;
+	}
+
+	public void markSkipped(String parseError) {
+		this.scholarship = null;
+		this.parseStatus = ParseStatus.SKIPPED;
+		this.parseError = parseError;
+	}
+
+	public void updateRawData(String sourceUrl, Map<String, Object> rawJson) {
+		this.sourceUrl = sourceUrl;
+		this.rawJson = rawJson;
+		this.crawledAt = LocalDateTime.now();
+		this.parseStatus = ParseStatus.PENDING;
+		this.parseError = null;
+	}
 }

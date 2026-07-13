@@ -1,10 +1,11 @@
 package com.wishconnect.domain.scholarship.entity;
 
-/**
- * 모집 상태.
+/*
+장학금 모집 상태를 표현합니다.
+신청 시작일/마감일을 매핑한 뒤 UPCOMING, OPEN, CLOSED 중 하나로 계산해 저장합니다.
  */
 public enum RecruitmentStatus {
-	OPEN,       // 모집중
-	CLOSED,     // 마감
-	UPCOMING    // 모집예정
+	UPCOMING,
+	OPEN,
+	CLOSED
 }

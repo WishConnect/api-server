@@ -13,17 +13,18 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-@Entity
+/*
+장학금 추천/매칭에 사용할 자격 조건 엔티티입니다.
+조건 종류가 계속 늘어날 수 있어 conditionType + value 형태의 EAV 구조로 저장합니다.
+ */
 @Getter
+@Entity
 @Table(name = "scholarship_condition")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Builder
 public class ScholarshipCondition extends BaseEntity {
 
 	@Id
@@ -35,26 +36,52 @@ public class ScholarshipCondition extends BaseEntity {
 	private Scholarship scholarship;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
+	@Column(name = "condition_type", nullable = false, length = 30)
 	private ConditionType conditionType;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
-	private Operator operator;
+	@Column(nullable = false, length = 20)
+	private ConditionOperator operator;
 
-	/** conditionType 에 따라 참조하는 마스터 레코드 id (예: region_id/major_id). 다형이라 FK 미매핑 */
-	@Column
+	@Column(name = "ref_id")
 	private Long refId;
 
-	@Column
+	/*
+	조건에서 추출한 숫자값입니다.
+	예: 중위소득 150% 이하 -> 150, 지원구간 5구간 이내 -> 5, 평점 2.75 이상 -> 275(평점은 100배 저장)
+	 */
+	@Column(name = "value_int")
 	private Integer valueInt;
 
-	@Column
+	// 범위 조건의 최대값입니다. 예: 대학2학기~대학8학기 -> valueInt=2, valueIntMax=8
+	@Column(name = "value_int_max")
 	private Integer valueIntMax;
 
-	@Column
+	// 원본 조건 문장입니다. 숫자 추출을 하더라도 사람이 확인할 수 있게 항상 보존합니다.
+	@Column(name = "value_string", columnDefinition = "TEXT")
 	private String valueString;
 
-	@Column(nullable = false)
-	private boolean isAutoExtracted;
+	@Column(name = "is_auto_extracted", nullable = false)
+	private boolean autoExtracted;
+
+	@Builder
+	private ScholarshipCondition(
+		Scholarship scholarship,
+		ConditionType conditionType,
+		ConditionOperator operator,
+		Long refId,
+		Integer valueInt,
+		Integer valueIntMax,
+		String valueString,
+		boolean autoExtracted
+	) {
+		this.scholarship = scholarship;
+		this.conditionType = conditionType;
+		this.operator = operator == null ? ConditionOperator.EQ : operator;
+		this.refId = refId;
+		this.valueInt = valueInt;
+		this.valueIntMax = valueIntMax;
+		this.valueString = valueString;
+		this.autoExtracted = autoExtracted;
+	}
 }
