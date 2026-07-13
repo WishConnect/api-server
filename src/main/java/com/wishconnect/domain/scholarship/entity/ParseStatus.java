@@ -1,11 +1,12 @@
 package com.wishconnect.domain.scholarship.entity;
 
-/**
- * 원천(raw) 데이터 파싱 상태.
- * ⚠️ 값 확정 필요 — ERD에 값 미정의. 아래는 합리적 추정치.
+/*
+raw_scholarship 원본 데이터의 파싱 상태를 표현합니다.
+원본 저장 후 정제 테이블(scholarship)로 변환하는 단계에서 상태 추적에 사용합니다.
  */
 public enum ParseStatus {
-	PENDING,    // 파싱 대기
-	SUCCESS,    // 파싱 성공
-	FAILED      // 파싱 실패
+	PENDING,
+	PARSED,
+	FAILED,
+	SKIPPED
 }

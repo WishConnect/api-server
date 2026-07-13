@@ -1,6 +1,7 @@
 package com.wishconnect.global.exception;
 
 import com.wishconnect.global.common.ApiResponse;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -25,6 +26,13 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException e) {
 		log.warn("[ValidationException] {}", e.getMessage());
+		return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
+				.body(ApiResponse.fail(ErrorCode.INVALID_INPUT.getMessage()));
+	}
+
+	@ExceptionHandler(ConstraintViolationException.class)
+	public ResponseEntity<ApiResponse<Void>> handleConstraintViolationException(ConstraintViolationException e) {
+		log.warn("[ConstraintViolationException] {}", e.getMessage());
 		return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
 				.body(ApiResponse.fail(ErrorCode.INVALID_INPUT.getMessage()));
 	}
