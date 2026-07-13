@@ -3,6 +3,8 @@ application-local.yml
 application-prod.yml
 .env
 *.log
+# 로컬 개발용 시드 데이터 (data-local.sql.example 을 복사해 사용)
+data-local.sql
 
 ### Gradle ###
 .gradle/
@@ -42,6 +44,37 @@ bin/
 
 ### macOS ###
 .DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+### Windows ###
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
 
 ### VS Code ###
 .vscode/
