@@ -53,6 +53,10 @@ public enum ErrorCode {
 	ONBOARDING_INCOMPLETE(HttpStatus.BAD_REQUEST, "이전 단계를 먼저 완료해주세요."),
 	QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 지원서에 존재하지 않는 문항입니다."),
 	INVALID_INTERVIEW_STEP(HttpStatus.BAD_REQUEST, "현재 인터뷰 진행 상태와 맞지 않는 요청입니다."),
+	ANSWER_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 문항의 답변 레코드를 찾을 수 없습니다."),
+	INTERVIEW_NOT_STARTED(HttpStatus.BAD_REQUEST, "사전 인터뷰가 시작되지 않아 초안을 생성할 수 없습니다."),
+	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
+	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),

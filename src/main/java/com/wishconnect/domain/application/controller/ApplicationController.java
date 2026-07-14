@@ -1,12 +1,15 @@
 package com.wishconnect.domain.application.controller;
 
+import com.wishconnect.domain.application.dto.request.AnswerActionRequest;
 import com.wishconnect.domain.application.dto.request.CreateApplicationRequest;
 import com.wishconnect.domain.application.dto.request.InterviewAnswerRequest;
+import com.wishconnect.domain.application.dto.response.AnswerActionResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationDetailResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
 import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
 import com.wishconnect.domain.application.dto.response.InterviewAdvanceResponse;
 import com.wishconnect.domain.application.entity.EssayStatus;
+import com.wishconnect.domain.application.service.AnswerService;
 import com.wishconnect.domain.application.service.EssayApplicationService;
 import com.wishconnect.domain.application.service.InterviewService;
 import com.wishconnect.global.common.ApiResponse;
@@ -21,6 +24,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,7 +32,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 자기소개서(지원서) API 컨트롤러. Notion API 명세서의 ①·②·③ 엔드포인트를 담당한다.
+ * 자기소개서(지원서) API 컨트롤러. Notion API 명세서의 ①·②·③·④·⑤ 엔드포인트를 담당한다.
  */
 @RestController
 @RequestMapping("/api/v1/applications")
@@ -37,6 +41,7 @@ public class ApplicationController {
 
 	private final EssayApplicationService essayApplicationService;
 	private final InterviewService interviewService;
+	private final AnswerService answerService;
 
 	/**
 	 * ① 지원서 목록 조회.
@@ -92,5 +97,19 @@ public class ApplicationController {
 				: new InterviewAnswerRequest(null, null);
 		return ApiResponse.ok(
 				interviewService.advance(UUID.fromString(userId), applicationId, questionId, safeRequest));
+	}
+
+	/**
+	 * ⑤ STEP2 답변 관리. action=DRAFT/SAVE/CONFIRM 로 세 동작을 통합 처리한다.
+	 * CONFIRM 이 지원서의 마지막 미완료 문항을 완료시키면 essay 를 자동 COMPLETED 로 전환한다.
+	 */
+	@PutMapping("/{applicationId}/questions/{questionId}/answer")
+	public ApiResponse<AnswerActionResponse> handleAnswer(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId,
+			@PathVariable Long questionId,
+			@Valid @RequestBody AnswerActionRequest request) {
+		return ApiResponse.ok(
+				answerService.handle(UUID.fromString(userId), applicationId, questionId, request));
 	}
 }

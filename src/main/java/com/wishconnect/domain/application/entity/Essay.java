@@ -55,4 +55,10 @@ public class Essay extends BaseEntity {
 		}
 		this.lastEditedAt = LocalDateTime.now();
 	}
+
+	/** 모든 문항이 완료 확정된 시점에 자동 호출. status 를 COMPLETED 로 전환한다. */
+	public void markCompleted() {
+		this.status = EssayStatus.COMPLETED;
+		this.lastEditedAt = LocalDateTime.now();
+	}
 }
