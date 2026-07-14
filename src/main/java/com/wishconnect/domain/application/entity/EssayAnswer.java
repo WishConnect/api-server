@@ -46,4 +46,29 @@ public class EssayAnswer extends BaseEntity {
 
 	@Column(nullable = false)
 	private boolean isCompleted;
+
+	/** STEP2 초안 생성 결과 반영. aiDraft 를 저장하고 userContent 에도 초기 복사한다. */
+	public void applyDraft(String draft) {
+		this.aiDraft = draft;
+		this.userContent = draft;
+		this.charCount = draft == null ? 0 : draft.length();
+		this.isTemporary = true;
+		this.isCompleted = false;
+	}
+
+	/** STEP2 임시저장. 사용자가 수정한 본문을 갱신한다. */
+	public void updateUserContent(String userContent) {
+		this.userContent = userContent;
+		this.charCount = userContent == null ? 0 : userContent.length();
+		this.isTemporary = true;
+		this.isCompleted = false;
+	}
+
+	/** STEP2 완료 확정. userContent 는 검증된 본문(빈 문자열/글자수 초과 아님)이어야 한다. */
+	public void confirm(String userContent) {
+		this.userContent = userContent;
+		this.charCount = userContent == null ? 0 : userContent.length();
+		this.isTemporary = false;
+		this.isCompleted = true;
+	}
 }
