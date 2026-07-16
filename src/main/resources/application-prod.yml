@@ -1,0 +1,50 @@
+# 운영(prod) 설정. 모든 민감값은 환경변수로 주입한다(하드코딩 금지).
+# 환경변수는 EC2 의 systemd EnvironmentFile(/etc/wishconnect/wishconnect.env)에서 주입.
+# 공통(비민감) 값(mail.host/port, oauth *-uri, jwt 만료, springdoc, management 등)은 application.yml 사용.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  jpa:
+    hibernate:
+      # 운영: 스키마 자동 변경 금지 (마이그레이션 도구로 관리)
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  mail:
+    # host/port 는 application.yml(SES SMTP) 공통값 사용, 자격증명만 주입
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+
+# CORS 허용 출처 (운영 프론트 도메인). 필요 시 콤마로 추가
+app:
+  cors:
+    allowed-origins:
+      - ${FRONTEND_ORIGIN:https://wish-connect.com}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+kakao:
+  client-id: ${KAKAO_CLIENT_ID}
+  client-secret: ${KAKAO_CLIENT_SECRET}
+  redirect-uri: ${KAKAO_REDIRECT_URI}
+
+google:
+  client-id: ${GOOGLE_CLIENT_ID}
+  client-secret: ${GOOGLE_CLIENT_SECRET}
+  redirect-uri: ${GOOGLE_REDIRECT_URI}
+
+naver:
+  client-id: ${NAVER_CLIENT_ID}
+  client-secret: ${NAVER_CLIENT_SECRET}
+  redirect-uri: ${NAVER_REDIRECT_URI}

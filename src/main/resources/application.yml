@@ -27,6 +27,16 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# 배포 헬스체크용 (/actuator/health 만 노출)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 # JWT 공통 정책 (만료시간). secret 은 민감정보라 application-local/prod.yml + 환경변수로 주입
 jwt:
   access-token-validity: 1800000      # 30분 (ms)
