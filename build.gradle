@@ -39,6 +39,9 @@ dependencies {
 	// 이메일 발송 (JavaMailSender, 구현체는 AWS SES SMTP)
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
+	// 헬스체크/모니터링 (배포 헬스체크에 /actuator/health 사용)
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
 	// API documentation
 	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
 
@@ -56,6 +59,7 @@ dependencies {
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
+	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
 	// Test
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'

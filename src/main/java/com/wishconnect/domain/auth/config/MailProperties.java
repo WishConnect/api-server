@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * 이메일 발신 설정. 발신 주소는 yml + 환경변수로 주입(하드코딩 금지).
  *
- * @param from 발신 주소 (예: no-reply@wishconnect.kr)
+ * @param from 발신 주소 (예: no-reply@wish-connect.com)
  */
 @ConfigurationProperties(prefix = "app.mail")
 public record MailProperties(String from) {
