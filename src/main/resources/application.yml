@@ -68,7 +68,7 @@ llm:
 scholarship:
   sync:
     scheduled: ${SCHOLARSHIP_SYNC_SCHEDULED:true}   # false 면 일일 배치 비활성화
-    cron: ${SCHOLARSHIP_SYNC_CRON:0 0 11 * * *}     # 매일 오전 11시 (Asia/Seoul)
+    cron: ${SCHOLARSHIP_SYNC_CRON:0 0 23 * * *}     # 매일 밤 11시 (Asia/Seoul)
 
 # 애플리케이션 공통 설정
 app:
