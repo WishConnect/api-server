@@ -24,6 +24,7 @@ repositories {
 ext {
 	jjwtVersion = '0.12.6'
 	springdocVersion = '2.6.0'
+	anthropicSdkVersion = '2.34.0'
 }
 
 dependencies {
@@ -51,6 +52,9 @@ dependencies {
 
 	// Database
 	runtimeOnly 'org.postgresql:postgresql'
+
+	// Anthropic Claude SDK (AI 자기소개서 인터뷰 질문·초안 생성)
+	implementation "com.anthropic:anthropic-java:${anthropicSdkVersion}"
 
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
