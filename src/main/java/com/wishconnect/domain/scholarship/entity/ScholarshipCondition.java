@@ -84,4 +84,14 @@ public class ScholarshipCondition extends BaseEntity {
 		this.valueString = valueString;
 		this.autoExtracted = autoExtracted;
 	}
+
+	/** LLM이 원문(valueString)에서 추출한 구조화 값을 반영한다. 원문은 검증용으로 보존한다. */
+	public void applyExtracted(ConditionOperator operator, Integer valueInt, Integer valueIntMax) {
+		if (operator != null) {
+			this.operator = operator;
+		}
+		this.valueInt = valueInt;
+		this.valueIntMax = valueIntMax;
+		this.autoExtracted = true;
+	}
 }
