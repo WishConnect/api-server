@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.repository;
 
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /*
@@ -10,4 +11,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ScholarshipDocumentRepository extends JpaRepository<ScholarshipDocument, Long> {
 
 	void deleteByScholarship(Scholarship scholarship);
+
+	/** 상세 화면용: 제출 서류를 표시 순서대로 조회. */
+	List<ScholarshipDocument> findAllByScholarshipIdOrderByDisplayOrderAsc(Long scholarshipId);
 }

@@ -44,15 +44,18 @@ class ScholarshipRecommendationServiceTest {
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
 
-	private Scholarship scholarship(long id, String title, LocalDateTime endAt) {
+	private Scholarship scholarship(long id, String title, ScholarshipType type, LocalDateTime endAt,
+			LocalDateTime createdAt) {
 		Scholarship scholarship = Scholarship.builder()
 				.title(title)
 				.provider("테스트기관")
-				.scholarshipType(ScholarshipType.EXTERNAL)
+				.scholarshipType(type)
+				.amount(2_000_000L)
 				.applicationEndAt(endAt)
 				.recruitmentStatus(RecruitmentStatus.OPEN)
 				.build();
 		ReflectionTestUtils.setField(scholarship, "id", id);
+		ReflectionTestUtils.setField(scholarship, "createdAt", createdAt);
 		return scholarship;
 	}
 
@@ -67,87 +70,117 @@ class ScholarshipRecommendationServiceTest {
 				.build();
 	}
 
-	@Test
-	@DisplayName("불충족 조건이 있는 장학금은 추천 목록에서 제외된다")
-	void excludesMismatchedScholarship() {
-		Scholarship fits = scholarship(1L, "지원가능 장학금", LocalDateTime.now().plusDays(30));
-		Scholarship excluded = scholarship(2L, "분위초과 장학금", LocalDateTime.now().plusDays(30));
-		given(userProfileRepository.findByUserId(USER_ID))
-				.willReturn(Optional.of(UserProfile.builder().incomeLevel(5).build()));
+	private void stubScholarships(UserProfile profile, List<Scholarship> scholarships,
+			List<ScholarshipCondition> conditions) {
+		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.ofNullable(profile));
 		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
-				.willReturn(List.of(fits, excluded));
-		given(scholarshipConditionRepository.findAllByScholarshipIn(List.of(fits, excluded)))
-				.willReturn(List.of(incomeCondition(fits, 8), incomeCondition(excluded, 3)));
-
-		List<CuratedScholarshipResponse> result = scholarshipRecommendationService.getCuratedScholarships(USER_ID);
-
-		assertThat(result).hasSize(1);
-		assertThat(result.get(0).scholarshipId()).isEqualTo(1L);
-		assertThat(result.get(0).matchReason()).contains("소득분위 충족");
+				.willReturn(scholarships);
+		if (!scholarships.isEmpty()) {
+			given(scholarshipConditionRepository.findAllByScholarshipIn(scholarships)).willReturn(conditions);
+		}
 	}
 
 	@Test
-	@DisplayName("조건 충족 장학금이 점수순으로 정렬된다 (마감임박 가점 반영)")
-	void sortsByScoreWithDeadlineBoost() {
-		Scholarship deadlineSoon = scholarship(1L, "마감임박", LocalDateTime.now().plusDays(3));
-		Scholarship normal = scholarship(2L, "여유", LocalDateTime.now().plusDays(60));
-		given(userProfileRepository.findByUserId(USER_ID))
-				.willReturn(Optional.of(UserProfile.builder().incomeLevel(3).build()));
-		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
-				.willReturn(List.of(normal, deadlineSoon));
-		given(scholarshipConditionRepository.findAllByScholarshipIn(List.of(normal, deadlineSoon)))
-				.willReturn(List.of(incomeCondition(normal, 8), incomeCondition(deadlineSoon, 8)));
+	@DisplayName("불충족 장학금은 eligible=false로 분류되어 그 외 목록 하단에 노출된다")
+	void classifiesMismatchedAsIneligible() {
+		Scholarship fits = scholarship(1L, "지원가능", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30));
+		Scholarship excluded = scholarship(2L, "분위초과", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30));
+		stubScholarships(UserProfile.builder().incomeLevel(5).build(), List.of(fits, excluded),
+				List.of(incomeCondition(fits, 8), incomeCondition(excluded, 3)));
 
-		List<CuratedScholarshipResponse> result = scholarshipRecommendationService.getCuratedScholarships(USER_ID);
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
 
-		assertThat(result).hasSize(2);
-		assertThat(result.get(0).scholarshipId()).isEqualTo(1L);
-		assertThat(result.get(0).matchScore()).isGreaterThan(result.get(1).matchScore());
+		assertThat(response.otherScholarships()).hasSize(1);
+		assertThat(response.otherScholarships().get(0).scholarshipId()).isEqualTo(2L);
+		assertThat(response.otherScholarships().get(0).eligible()).isFalse();
+		// 지원 가능 1건은 마감이 가장 가까운 featured 카드로 승격된다
+		assertThat(response.featured().scholarshipId()).isEqualTo(1L);
+		assertThat(response.featured().matchReasons()).anyMatch(reason -> reason.contains("소득분위 충족"));
 	}
 
 	@Test
-	@DisplayName("프로필이 없으면 배제 없이 전체 OPEN 목록을 반환한다 (온보딩 전 폴백)")
+	@DisplayName("교내(INTERNAL) 장학금은 campusScholarships로 분리된다")
+	void separatesCampusScholarships() {
+		Scholarship campus = scholarship(1L, "교내성적우수", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30));
+		Scholarship external = scholarship(2L, "외부장학", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(3), LocalDateTime.now().minusDays(30));
+		stubScholarships(UserProfile.builder().incomeLevel(3).build(), List.of(campus, external),
+				List.of(incomeCondition(campus, 8), incomeCondition(external, 8)));
+
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
+
+		assertThat(response.campusScholarships()).hasSize(1);
+		assertThat(response.campusScholarships().get(0).scholarshipId()).isEqualTo(1L);
+		assertThat(response.featured().scholarshipId()).isEqualTo(2L);
+	}
+
+	@Test
+	@DisplayName("프로필이 없으면 배제 없이 전체가 노출되고 완성도는 0")
 	void fallbackWithoutProfile() {
-		Scholarship s1 = scholarship(1L, "장학금1", LocalDateTime.now().plusDays(10));
-		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
-		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
-				.willReturn(List.of(s1));
-		given(scholarshipConditionRepository.findAllByScholarshipIn(List.of(s1)))
-				.willReturn(List.of(incomeCondition(s1, 3)));
+		Scholarship s1 = scholarship(1L, "장학금1", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(10), LocalDateTime.now().minusDays(30));
+		stubScholarships(null, List.of(s1), List.of(incomeCondition(s1, 3)));
 
-		List<CuratedScholarshipResponse> result = scholarshipRecommendationService.getCuratedScholarships(USER_ID);
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
 
-		assertThat(result).hasSize(1);
-		assertThat(result.get(0).matchReason()).contains("프로필 등록 전");
+		assertThat(response.profileCompletionRate()).isZero();
+		assertThat(response.featured()).isNotNull();
+		assertThat(response.featured().eligible()).isTrue();
 	}
 
 	@Test
-	@DisplayName("홈 요약: 맞춤 건수와 D-7 이내 마감임박 건수를 센다")
+	@DisplayName("그 외 목록은 page/size로 페이지네이션된다")
+	void paginatesOtherScholarships() {
+		Scholarship s1 = scholarship(1L, "장1", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
+		Scholarship s2 = scholarship(2L, "장2", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
+		Scholarship s3 = scholarship(3L, "장3", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
+		stubScholarships(UserProfile.builder().incomeLevel(3).build(), List.of(s1, s2, s3),
+				List.of(incomeCondition(s1, 8), incomeCondition(s2, 8), incomeCondition(s3, 8)));
+
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 2, 1);
+
+		// 마감일 없는 3건 -> featured 없음 -> others 3건 중 2페이지(1건씩)
+		assertThat(response.featured()).isNull();
+		assertThat(response.otherScholarships()).hasSize(1);
+		assertThat(response.pagination().totalCount()).isEqualTo(3);
+		assertThat(response.pagination().totalPages()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("홈 요약: 신규(7일 이내 등록) 맞춤 건수와 D-7 마감 건수를 센다")
 	void homeSummaryCounts() {
-		Scholarship fits = scholarship(1L, "지원가능", LocalDateTime.now().plusDays(3));
-		Scholarship excluded = scholarship(2L, "분위초과", LocalDateTime.now().plusDays(30));
-		given(userProfileRepository.findByUserId(USER_ID))
-				.willReturn(Optional.of(UserProfile.builder().incomeLevel(5).build()));
-		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
-				.willReturn(List.of(fits, excluded));
-		given(scholarshipConditionRepository.findAllByScholarshipIn(List.of(fits, excluded)))
-				.willReturn(List.of(incomeCondition(fits, 8), incomeCondition(excluded, 3)));
+		Scholarship fresh = scholarship(1L, "신규", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(3), LocalDateTime.now().minusDays(1));
+		Scholarship old = scholarship(2L, "오래됨", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30));
+		stubScholarships(UserProfile.builder().incomeLevel(5).build(), List.of(fresh, old),
+				List.of(incomeCondition(fresh, 8), incomeCondition(old, 8)));
 
 		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
 
-		assertThat(summary.matchedCount()).isEqualTo(1);
-		assertThat(summary.deadlineSoonCount()).isEqualTo(1);
+		assertThat(summary.newMatchedCount()).isEqualTo(1);
+		assertThat(summary.urgentDeadlineCount()).isEqualTo(1);
+		assertThat(summary.hasNewMatched()).isTrue();
 	}
 
 	@Test
-	@DisplayName("OPEN 장학금이 없으면 빈 결과")
+	@DisplayName("OPEN 장학금이 없으면 빈 응답")
 	void emptyWhenNoOpenScholarships() {
-		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
-		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
-				.willReturn(List.of());
+		stubScholarships(null, List.of(), List.of());
 
-		assertThat(scholarshipRecommendationService.getCuratedScholarships(USER_ID)).isEmpty();
-		assertThat(scholarshipRecommendationService.getHomeSummary(USER_ID))
-				.isEqualTo(new HomeSummaryResponse(0, 0));
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
+		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
+
+		assertThat(response.featured()).isNull();
+		assertThat(response.otherScholarships()).isEmpty();
+		assertThat(summary).isEqualTo(new HomeSummaryResponse(0, 0, false));
 	}
 }
