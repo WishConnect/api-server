@@ -64,6 +64,12 @@ llm:
     draft-model: claude-sonnet-5        # STEP2 자기소개서 초안 생성 (문체·품질 중요)
     max-tokens: 4096
 
+# 장학금 공공데이터 동기화 배치 (API 키 등 나머지 scholarship.api.* 는 환경별 주입)
+scholarship:
+  sync:
+    scheduled: ${SCHOLARSHIP_SYNC_SCHEDULED:true}   # false 면 일일 배치 비활성화
+    cron: ${SCHOLARSHIP_SYNC_CRON:0 0 11 * * *}     # 매일 오전 11시 (Asia/Seoul)
+
 # 애플리케이션 공통 설정
 app:
   cors:
