@@ -1,5 +1,7 @@
 package com.wishconnect.domain.scholarship.controller;
 
+import com.wishconnect.domain.scholarship.collector.KonkukNoticeCollector;
+import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
@@ -29,6 +31,7 @@ public class ScholarshipController {
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
 	private final ScholarshipDetailService scholarshipDetailService;
 	private final ConditionExtractionService conditionExtractionService;
+	private final KonkukNoticeCollector konkukNoticeCollector;
 
 	/**
 	 * 맞춤 추천 목록(메인). featured/교내/그 외(+조건 미충족 분류)와 페이지네이션 포함.
@@ -56,6 +59,13 @@ public class ScholarshipController {
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {
 		return ApiResponse.ok(scholarshipDetailService.getDetail(UUID.fromString(userId), scholarshipId));
+	}
+
+	/** 건국대 장학공지 크롤링 수집(운영/개발용 수동 트리거). pages=목록 페이지 수. */
+	@PostMapping("/collect/konkuk")
+	public ApiResponse<CollectResultResponse> collectKonkuk(
+			@RequestParam(defaultValue = "1") int pages) {
+		return ApiResponse.ok(konkukNoticeCollector.collect(pages));
 	}
 
 	/** LLM 조건 구조화 추출 실행(운영/개발용 수동 트리거, sync 후 실행 권장). */
