@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
@@ -210,5 +211,11 @@ public class ScholarshipSyncService {
 		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException("SHA-256 algorithm is not available.", exception);
 		}
+	}
+
+	/** 마감일이 지난 공고를 일괄 CLOSED/비활성 처리한다(배치 선행 스텝). */
+	@Transactional
+	public int closeExpired() {
+		return scholarshipRepository.closeExpired(java.time.LocalDateTime.now());
 	}
 }

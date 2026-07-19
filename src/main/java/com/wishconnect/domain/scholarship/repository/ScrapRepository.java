@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.repository;
 
 import com.wishconnect.domain.scholarship.entity.Scrap;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,4 +12,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ScrapRepository extends JpaRepository<Scrap, Long> {
 
 	boolean existsByUserIdAndScholarshipId(UUID userId, Long scholarshipId);
+
+	Optional<Scrap> findByUserIdAndScholarshipId(UUID userId, Long scholarshipId);
 }

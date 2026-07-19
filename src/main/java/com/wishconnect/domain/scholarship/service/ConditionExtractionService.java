@@ -10,6 +10,7 @@ import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
+import com.wishconnect.domain.scholarship.util.ConditionRuleParser;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -55,28 +56,59 @@ public class ConditionExtractionService {
 		if (targets.isEmpty()) {
 			return new ConditionExtractionResponse(0, 0, 0);
 		}
-		var targetById = targets.stream()
-				.collect(Collectors.toMap(condition -> condition.getId(), Function.identity()));
 
-		String input = targets.stream()
-				.map(condition -> condition.getId() + "|" + condition.getConditionType() + "|"
-						+ condition.getValueString().replaceAll("\\s+", " ").trim())
-				.collect(Collectors.joining("\n"));
-
-		String rawResponse = llmClient.chat(LlmChatRequest.of(
-				LlmModel.INTERVIEW, SYSTEM_PROMPT, List.of(LlmMessage.user(input))));
-
-		int extracted = 0;
-		for (ExtractedCondition item : parse(rawResponse)) {
-			var condition = targetById.get(item.id());
-			if (condition == null || !isValid(condition.getConditionType(), item)) {
-				continue;
+		// 1차: 룰 기반(정규식) 추출 — LLM 없이도 정형 패턴은 확정 처리한다.
+		int ruleExtracted = 0;
+		var unresolved = new java.util.ArrayList<com.wishconnect.domain.scholarship.entity.ScholarshipCondition>();
+		for (var condition : targets) {
+			var parsed = ConditionRuleParser.parse(condition.getConditionType(), condition.getValueString());
+			if (parsed.isPresent()) {
+				var extractedValue = parsed.get();
+				condition.applyExtracted(extractedValue.operator(), extractedValue.valueInt(),
+						extractedValue.valueIntMax());
+				ruleExtracted++;
+			} else {
+				unresolved.add(condition);
 			}
-			condition.applyExtracted(toOperator(item.operator()), item.valueInt(), item.valueIntMax());
-			extracted++;
 		}
-		log.info("[ConditionExtraction] 대상={} 추출={} 스킵={}", targets.size(), extracted, targets.size() - extracted);
+
+		// 2차: 룰로 못 푼 비정형 조건만 LLM에 위임. 실패해도 룰 결과는 유지한다.
+		int llmExtracted = 0;
+		if (!unresolved.isEmpty()) {
+			llmExtracted = tryLlmExtract(unresolved);
+		}
+
+		int extracted = ruleExtracted + llmExtracted;
+		log.info("[ConditionExtraction] 대상={} 룰추출={} LLM추출={} 스킵={}",
+				targets.size(), ruleExtracted, llmExtracted, targets.size() - extracted);
 		return new ConditionExtractionResponse(targets.size(), extracted, targets.size() - extracted);
+	}
+
+	/** LLM 추출 시도. 크레딧 부족·키 미설정 등 어떤 실패도 전체 추출을 깨뜨리지 않는다. */
+	private int tryLlmExtract(List<com.wishconnect.domain.scholarship.entity.ScholarshipCondition> targets) {
+		try {
+			var targetById = targets.stream()
+					.collect(Collectors.toMap(condition -> condition.getId(), Function.identity()));
+			String input = targets.stream()
+					.map(condition -> condition.getId() + "|" + condition.getConditionType() + "|"
+							+ condition.getValueString().replaceAll("\\s+", " ").trim())
+					.collect(Collectors.joining("\n"));
+			String rawResponse = llmClient.chat(LlmChatRequest.of(
+					LlmModel.INTERVIEW, SYSTEM_PROMPT, List.of(LlmMessage.user(input))));
+			int extracted = 0;
+			for (ExtractedCondition item : parse(rawResponse)) {
+				var condition = targetById.get(item.id());
+				if (condition == null || !isValid(condition.getConditionType(), item)) {
+					continue;
+				}
+				condition.applyExtracted(toOperator(item.operator()), item.valueInt(), item.valueIntMax());
+				extracted++;
+			}
+			return extracted;
+		} catch (Exception e) {
+			log.warn("[ConditionExtraction] LLM 추출 생략(룰 결과는 유지): {}", e.getMessage());
+			return 0;
+		}
 	}
 
 	private List<ExtractedCondition> parse(String rawResponse) {
