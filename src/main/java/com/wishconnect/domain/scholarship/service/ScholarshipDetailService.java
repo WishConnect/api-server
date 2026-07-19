@@ -13,6 +13,8 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
+import com.wishconnect.domain.common.repository.ImageRepository;
+import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -43,6 +45,8 @@ public class ScholarshipDetailService {
 	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ScrapRepository scrapRepository;
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
+	private final ImageRepository imageRepository;
+	private final ImageStorageService imageStorageService;
 
 	@Transactional(readOnly = true)
 	public ScholarshipDetailResponse getDetail(UUID userId, Long scholarshipId) {
@@ -69,7 +73,10 @@ public class ScholarshipDetailService {
 				CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt()),
 				scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),
 				List.of(),
-				null,
+				imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+								ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId)
+						.map(image -> imageStorageService.publicUrl(image.getS3Key()))
+						.orElse(null),
 				scholarship.getHomepageUrl(),
 				buildSummary(scholarship, conditions),
 				schedule,
