@@ -73,6 +73,21 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("제목: hidden input(연세형) 우선, 없으면 제목 클래스(건국형), h2 폴백")
+	void extractsTitleBySkin() {
+		var yonsei = org.jsoup.Jsoup.parse(
+				"<html><body><h2>Yonsei University</h2>"
+						+ "<input type=\"hidden\" id=\"artclViewTitle\" value=\"장학생 선발 안내\"></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(yonsei))
+				.isEqualTo("장학생 선발 안내");
+
+		var konkuk = org.jsoup.Jsoup.parse(
+				"<html><body><h2 class=\"artclViewTitle\">[교외] 장학 안내</h2></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(konkuk))
+				.isEqualTo("[교외] 장학 안내");
+	}
+
+	@Test
 	@DisplayName("기간 표기가 없으면 null")
 	void returnsNullWhenNoPeriod() {
 		assertThat(UnivNoticeCollector.parsePeriod("장학생 선발 안내", 2026)).isNull();
