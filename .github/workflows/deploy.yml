@@ -62,6 +62,8 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           NAVER_REDIRECT_URI: ${{ secrets.NAVER_REDIRECT_URI }}
+          SCHOLARSHIP_API_SERVICEKEY: ${{ secrets.SCHOLARSHIP_API_SERVICEKEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -93,6 +95,8 @@ jobs:
             NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
             NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
             NAVER_REDIRECT_URI=${NAVER_REDIRECT_URI}
+            SCHOLARSHIP_API_SERVICEKEY=${SCHOLARSHIP_API_SERVICEKEY}
+            ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
             EOF
             sudo chmod 600 "$ENV_DIR/wishconnect.env"
 
