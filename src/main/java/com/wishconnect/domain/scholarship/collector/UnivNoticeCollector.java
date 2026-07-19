@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.collector;
 
+import com.wishconnect.domain.scholarship.collector.UnivNoticeProperties.Site;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
@@ -8,12 +9,14 @@ import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -27,23 +30,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /*
-건국대학교 장학공지 게시판 수집기(교내 장학금 PoC)입니다.
-목록(/konkuk/2239/subview.do) → 상세(/bbs/konkuk/235/{id}/artclView.do)를 크롤링해
-raw_scholarship(source=KONKUK_NOTICE)에 원본을 보존하고 scholarship(INTERNAL)으로 정제합니다.
-- 신청기간은 제목/본문의 "YYYY. M. D. ~ M. D." 패턴에서 추출(못 찾으면 기간 없이 저장)
-- 이미 수집한 공지(source_id 기준)는 건너뛴다(멱등)
-- 마감 지난 공지는 SKIPPED 처리(정제 안 함) — KOSAF 파이프라인과 동일 정책
+대학 장학공지 게시판 수집기입니다. 국내 다수 대학이 쓰는 공통 CMS
+(목록 subview.do → 상세 /bbs/{site}/{board}/{id}/artclView.do)를 대상으로 하며,
+수집 대학은 scholarship.collect.univ.sites 설정(yml)로 관리합니다.
+- raw_scholarship(source=사이트별)에 원본 보존 후 scholarship(INTERNAL)으로 정제
+- 신청기간은 제목/본문의 "YYYY. M. D. ~ M. D." 패턴 추출(못 찾으면 기간 없이 저장)
+- 이미 수집한 공지(source_id)는 건너뛰고, 마감 지난 공지는 SKIPPED 처리
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class KonkukNoticeCollector {
+public class UnivNoticeCollector {
 
-	public static final String SOURCE = "KONKUK_NOTICE";
-
-	private static final String BASE_URL = "https://www.konkuk.ac.kr";
-	private static final String LIST_URL = BASE_URL + "/konkuk/2239/subview.do";
-	private static final Pattern ARTICLE_LINK = Pattern.compile("/bbs/konkuk/235/(\\d+)/artclView\\.do");
 	/** "2026. 7. 28. ~ 8. 19." / "2026. 7. 28. ~ 2026. 8. 19." / 제목 괄호 "(7. 28. ~ 8. 19.)" */
 	private static final Pattern PERIOD = Pattern.compile(
 			"(?:(20\\d{2})\\s*[.년]\\s*)?(\\d{1,2})\\s*[.월]\\s*(\\d{1,2})\\s*\\.?\\s*~\\s*"
@@ -53,54 +51,81 @@ public class KonkukNoticeCollector {
 
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipRepository scholarshipRepository;
+	private final UnivNoticeProperties univNoticeProperties;
+
+	/** 설정된 모든 대학을 수집한다(배치용). 사이트 간 실패는 서로 격리된다. */
+	public List<CollectResultResponse> collectAll(int pages) {
+		return univNoticeProperties.sitesOrEmpty().stream()
+				.map(site -> {
+					try {
+						return collect(site, pages);
+					} catch (Exception e) {
+						log.warn("[UnivCollector] {} 수집 실패: {}", site.code(), e.getMessage());
+						return new CollectResultResponse(site.source(), 0, 0, 0);
+					}
+				})
+				.toList();
+	}
+
+	/** 특정 대학 코드만 수집한다(수동 트리거용). */
+	public Optional<CollectResultResponse> collectByCode(String code, int pages) {
+		return univNoticeProperties.sitesOrEmpty().stream()
+				.filter(site -> site.code().equalsIgnoreCase(code))
+				.findFirst()
+				.map(site -> collect(site, pages));
+	}
 
 	@Transactional
-	public CollectResultResponse collect(int pages) {
+	public CollectResultResponse collect(Site site, int pages) {
+		Pattern articleLink = Pattern.compile(Pattern.quote(site.articlePath()) + "(\\d+)/artclView\\.do");
+		String baseUrl = baseUrlOf(site.listUrl());
 		int fetched = 0;
 		int saved = 0;
 		int skipped = 0;
 		for (int page = 1; page <= Math.max(pages, 1); page++) {
-			for (String articleId : fetchArticleIds(page)) {
+			for (String articleId : fetchArticleIds(site, articleLink, page)) {
 				fetched++;
-				if (rawScholarshipRepository.existsBySourceAndSourceId(SOURCE, articleId)) {
+				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), articleId)) {
 					continue;
 				}
 				try {
-					if (collectArticle(articleId)) {
+					if (collectArticle(site, baseUrl, articleId)) {
 						saved++;
 					} else {
 						skipped++;
 					}
 				} catch (Exception e) {
-					log.warn("[KonkukCollector] 공지 수집 실패 articleId={} : {}", articleId, e.getMessage());
+					log.warn("[UnivCollector] {} 공지 수집 실패 articleId={} : {}",
+							site.code(), articleId, e.getMessage());
 				}
 			}
 		}
-		log.info("[KonkukCollector] 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}", fetched, saved, skipped);
-		return new CollectResultResponse(SOURCE, fetched, saved, skipped);
+		log.info("[UnivCollector] {} 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}",
+				site.code(), fetched, saved, skipped);
+		return new CollectResultResponse(site.source(), fetched, saved, skipped);
 	}
 
-	private java.util.List<String> fetchArticleIds(int page) {
+	private List<String> fetchArticleIds(Site site, Pattern articleLink, int page) {
 		try {
-			Document doc = Jsoup.connect(LIST_URL + "?page=" + page)
+			Document doc = Jsoup.connect(site.listUrl() + "?page=" + page)
 					.userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-			return doc.select("a[href*=/bbs/konkuk/235/]").stream()
+			return doc.select("a[href*=" + site.articlePath() + "]").stream()
 					.map(a -> {
-						Matcher m = ARTICLE_LINK.matcher(a.attr("href"));
+						Matcher m = articleLink.matcher(a.attr("href"));
 						return m.find() ? m.group(1) : null;
 					})
 					.filter(java.util.Objects::nonNull)
 					.distinct()
 					.toList();
 		} catch (Exception e) {
-			log.warn("[KonkukCollector] 목록 조회 실패 page={} : {}", page, e.getMessage());
-			return java.util.List.of();
+			log.warn("[UnivCollector] {} 목록 조회 실패 page={} : {}", site.code(), page, e.getMessage());
+			return List.of();
 		}
 	}
 
 	/** @return true = 정제 저장됨, false = 마감 등으로 SKIPPED */
-	private boolean collectArticle(String articleId) throws Exception {
-		String detailUrl = BASE_URL + "/bbs/konkuk/235/" + articleId + "/artclView.do";
+	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
+		String detailUrl = baseUrl + site.articlePath() + articleId + "/artclView.do";
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
 		String title = Optional.ofNullable(doc.selectFirst("h2, .view-title, .artclViewTitle"))
 				.map(Element::text).orElse(doc.title()).trim();
@@ -111,7 +136,7 @@ public class KonkukNoticeCollector {
 				&& period.end().isBefore(LocalDateTime.now());
 
 		RawScholarship raw = RawScholarship.builder()
-				.source(SOURCE)
+				.source(site.source())
 				.sourceId(articleId)
 				.sourceUrl(detailUrl)
 				.rawJson(Map.of("title", title, "period", period == null ? "" : period.toString()))
@@ -125,20 +150,20 @@ public class KonkukNoticeCollector {
 			return false;
 		}
 
-		String dedupKey = sha256(SOURCE + "|" + title + "|"
+		String dedupKey = sha256(site.source() + "|" + title + "|"
 				+ (period == null ? "" : period.start() + "~" + period.end()));
 		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
 		if (scholarship == null) {
 			scholarship = scholarshipRepository.save(Scholarship.builder()
 					.title(cleanTitle(title))
-					.provider("건국대학교")
+					.provider(site.provider())
 					.summary(null)
 					.description(bodyText.length() > 2000 ? bodyText.substring(0, 2000) : bodyText)
 					.scholarshipType(ScholarshipType.INTERNAL)
 					.applicationStartAt(period == null ? null : period.start())
 					.applicationEndAt(period == null ? null : period.end())
 					.recruitmentStatus(resolveStatus(period))
-					.primarySource(SOURCE)
+					.primarySource(site.source())
 					.dedupKey(dedupKey)
 					.homepageUrl(detailUrl)
 					.build());
@@ -146,6 +171,11 @@ public class KonkukNoticeCollector {
 		raw.markParsed(scholarship);
 		rawScholarshipRepository.save(raw);
 		return true;
+	}
+
+	private String baseUrlOf(String listUrl) {
+		URI uri = URI.create(listUrl);
+		return uri.getScheme() + "://" + uri.getHost();
 	}
 
 	private RecruitmentStatus resolveStatus(Period period) {

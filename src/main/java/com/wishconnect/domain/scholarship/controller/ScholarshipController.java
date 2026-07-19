@@ -1,6 +1,6 @@
 package com.wishconnect.domain.scholarship.controller;
 
-import com.wishconnect.domain.scholarship.collector.KonkukNoticeCollector;
+import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
@@ -31,7 +31,7 @@ public class ScholarshipController {
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
 	private final ScholarshipDetailService scholarshipDetailService;
 	private final ConditionExtractionService conditionExtractionService;
-	private final KonkukNoticeCollector konkukNoticeCollector;
+	private final UnivNoticeCollector univNoticeCollector;
 
 	/**
 	 * 맞춤 추천 목록(메인). featured/교내/그 외(+조건 미충족 분류)와 페이지네이션 포함.
@@ -61,11 +61,14 @@ public class ScholarshipController {
 		return ApiResponse.ok(scholarshipDetailService.getDetail(UUID.fromString(userId), scholarshipId));
 	}
 
-	/** 건국대 장학공지 크롤링 수집(운영/개발용 수동 트리거). pages=목록 페이지 수. */
-	@PostMapping("/collect/konkuk")
-	public ApiResponse<CollectResultResponse> collectKonkuk(
+	/** 대학 장학공지 크롤링 수집(운영/개발용 수동 트리거). code=yml의 사이트 코드. */
+	@PostMapping("/collect/univ/{code}")
+	public ApiResponse<CollectResultResponse> collectUniv(
+			@PathVariable String code,
 			@RequestParam(defaultValue = "1") int pages) {
-		return ApiResponse.ok(konkukNoticeCollector.collect(pages));
+		return ApiResponse.ok(univNoticeCollector.collectByCode(code, pages)
+				.orElseThrow(() -> new com.wishconnect.global.exception.CustomException(
+						com.wishconnect.global.exception.ErrorCode.INVALID_INPUT)));
 	}
 
 	/** LLM 조건 구조화 추출 실행(운영/개발용 수동 트리거, sync 후 실행 권장). */
