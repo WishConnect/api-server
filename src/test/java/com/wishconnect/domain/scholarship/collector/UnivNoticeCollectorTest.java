@@ -41,6 +41,38 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("본문 인라인 이미지를 포스터 후보로 찾고, 로고/아이콘은 제외한다")
+	void findsPosterFromInlineImage() {
+		org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse("""
+				<html><body>
+				<img src="https://u.ac.kr/common/logo.png">
+				<div class="artclView"><img src="https://u.ac.kr/upload/poster1.jpg"></div>
+				</body></html>""", "https://u.ac.kr/");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.findPosterUrl(doc))
+				.isEqualTo("https://u.ac.kr/upload/poster1.jpg");
+	}
+
+	@Test
+	@DisplayName("이미지 첨부파일(.jpg 링크명)을 포스터 후보로 찾는다")
+	void findsPosterFromAttachment() {
+		org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse("""
+				<html><body>
+				<a href="/bbs/u/1/100/download.do">모집요강.pdf</a>
+				<a href="/bbs/u/1/101/download.do">포스터.jpg</a>
+				</body></html>""", "https://u.ac.kr/");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.findPosterUrl(doc))
+				.isEqualTo("https://u.ac.kr/bbs/u/1/101/download.do");
+	}
+
+	@Test
+	@DisplayName("포스터 후보가 없으면 null")
+	void posterNullWhenNone() {
+		org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse(
+				"<html><body><a href='/bbs/u/1/1/download.do'>안내.hwp</a></body></html>", "https://u.ac.kr/");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.findPosterUrl(doc)).isNull();
+	}
+
+	@Test
 	@DisplayName("기간 표기가 없으면 null")
 	void returnsNullWhenNoPeriod() {
 		assertThat(UnivNoticeCollector.parsePeriod("장학생 선발 안내", 2026)).isNull();

@@ -31,6 +31,8 @@ dependencies {
 	// Spring Boot starters
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.jsoup:jsoup:1.17.2' // 교내 장학공지 크롤링(HTML 파싱)
+	implementation platform('software.amazon.awssdk:bom:2.29.35')
+	implementation 'software.amazon.awssdk:s3' // 장학공지 포스터 이미지 저장
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'

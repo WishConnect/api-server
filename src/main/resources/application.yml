@@ -83,6 +83,16 @@ scholarship:
           source: UNIV_HALLYM
           list-url: https://www.hallym.ac.kr/hallym/1135/subview.do
           article-path: /bbs/hallym/156/
+        - code: yonsei
+          provider: 연세대학교
+          source: UNIV_YONSEI
+          list-url: https://www.yonsei.ac.kr/bbs/sc/58/artclList.do
+          article-path: /bbs/sc/58/
+        - code: hufs
+          provider: 한국외국어대학교
+          source: UNIV_HUFS
+          list-url: https://www.hufs.ac.kr/bbs/hufs/2182/artclList.do
+          article-path: /bbs/hufs/2182/
 
 # 애플리케이션 공통 설정
 app:

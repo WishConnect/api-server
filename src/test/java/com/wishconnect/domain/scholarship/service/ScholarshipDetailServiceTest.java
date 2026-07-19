@@ -57,6 +57,12 @@ class ScholarshipDetailServiceTest {
 	@Mock
 	private ScholarshipRecommendationService scholarshipRecommendationService;
 
+	@Mock
+	private com.wishconnect.domain.common.repository.ImageRepository imageRepository;
+
+	@Mock
+	private com.wishconnect.domain.common.service.ImageStorageService imageStorageService;
+
 	@InjectMocks
 	private ScholarshipDetailService scholarshipDetailService;
 
@@ -98,6 +104,9 @@ class ScholarshipDetailServiceTest {
 						.build()));
 		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).willReturn(List.of());
 		given(scrapRepository.existsByUserIdAndScholarshipId(USER_ID, 1L)).willReturn(true);
+		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
+				.willReturn(Optional.empty());
 		given(scholarshipRecommendationService.getMatchReasons(eq(USER_ID), any(), anyList()))
 				.willReturn(List.of("성적 기준 충족(평점 3.50)"));
 
