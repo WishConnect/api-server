@@ -7,6 +7,7 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
+import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import java.net.URI;
@@ -52,6 +53,7 @@ public class UnivNoticeCollector {
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipRepository scholarshipRepository;
 	private final UnivNoticeProperties univNoticeProperties;
+	private final ImageStorageService imageStorageService;
 
 	/** 설정된 모든 대학을 수집한다(배치용). 사이트 간 실패는 서로 격리된다. */
 	public List<CollectResultResponse> collectAll(int pages) {
@@ -153,6 +155,7 @@ public class UnivNoticeCollector {
 		String dedupKey = sha256(site.source() + "|" + title + "|"
 				+ (period == null ? "" : period.start() + "~" + period.end()));
 		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
+		boolean isNewScholarship = scholarship == null;
 		if (scholarship == null) {
 			scholarship = scholarshipRepository.save(Scholarship.builder()
 					.title(cleanTitle(title))
@@ -170,7 +173,41 @@ public class UnivNoticeCollector {
 		}
 		raw.markParsed(scholarship);
 		rawScholarshipRepository.save(raw);
+		if (isNewScholarship) {
+			storePoster(site, doc, scholarship, title);
+		}
 		return true;
+	}
+
+	/** 본문 인라인 이미지 → 이미지 첨부 순으로 포스터 후보를 찾아 S3에 저장한다(실패해도 수집 계속). */
+	private void storePoster(Site site, Document doc, Scholarship scholarship, String title) {
+		String posterUrl = findPosterUrl(doc);
+		if (posterUrl == null) {
+			return;
+		}
+		imageStorageService.storeFromUrl(posterUrl,
+				"scholarship/" + site.code(), ImageStorageService.ENTITY_TYPE_SCHOLARSHIP,
+				scholarship.getId(), title);
+	}
+
+	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
+	private static final Pattern NON_POSTER = Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet");
+
+	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
+	static String findPosterUrl(Document doc) {
+		for (Element img : doc.select(".artclView img[src], .view-con img[src], article img[src], img[src]")) {
+			String src = img.attr("abs:src");
+			if (!src.isBlank() && IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
+				return src;
+			}
+		}
+		for (Element link : doc.select("a[href*=download.do]")) {
+			String name = link.text();
+			if (IMAGE_EXT.matcher(name.strip()).find()) {
+				return link.attr("abs:href");
+			}
+		}
+		return null;
 	}
 
 	private String baseUrlOf(String listUrl) {
