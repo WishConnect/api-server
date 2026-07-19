@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
+import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import java.util.List;
@@ -23,6 +24,9 @@ class ScholarshipSyncSchedulerTest {
 
 	@Mock
 	private ConditionExtractionService conditionExtractionService;
+
+	@Mock(strictness = org.mockito.Mock.Strictness.LENIENT)
+	private ScholarshipRepository scholarshipRepository;
 
 	@InjectMocks
 	private ScholarshipSyncScheduler scholarshipSyncScheduler;
