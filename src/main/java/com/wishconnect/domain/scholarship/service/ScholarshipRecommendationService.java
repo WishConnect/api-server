@@ -120,7 +120,7 @@ public class ScholarshipRecommendationService {
 
 	private List<ScoredScholarship> scoreOpenScholarships(UserProfile profile) {
 		List<Scholarship> openScholarships =
-				scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN);
+				scholarshipRepository.findAllOpenForRecommendation(RecruitmentStatus.OPEN, LocalDateTime.now());
 		if (openScholarships.isEmpty()) {
 			return List.of();
 		}
