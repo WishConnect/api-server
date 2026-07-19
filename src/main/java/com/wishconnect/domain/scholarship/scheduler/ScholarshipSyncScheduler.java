@@ -1,5 +1,7 @@
 package com.wishconnect.domain.scholarship.scheduler;
 
+import com.wishconnect.domain.scholarship.collector.KonkukNoticeCollector;
+import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
@@ -29,6 +31,7 @@ public class ScholarshipSyncScheduler {
 	private final ScholarshipSyncService scholarshipSyncService;
 	private final ConditionExtractionService conditionExtractionService;
 	private final ScholarshipRepository scholarshipRepository;
+	private final KonkukNoticeCollector konkukNoticeCollector;
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 23 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
@@ -51,6 +54,13 @@ public class ScholarshipSyncScheduler {
 		} catch (Exception e) {
 			log.error("[SyncBatch] 동기화 실패", e);
 			return;
+		}
+		try {
+			CollectResultResponse konkuk = konkukNoticeCollector.collect(1);
+			log.info("[SyncBatch] 건국대 공지 수집 완료 fetched={} saved={}",
+					konkuk.fetchedCount(), konkuk.savedCount());
+		} catch (Exception e) {
+			log.warn("[SyncBatch] 건국대 공지 수집 실패(다른 스텝에 영향 없음): {}", e.getMessage());
 		}
 		try {
 			ConditionExtractionResponse extraction = conditionExtractionService.extract();

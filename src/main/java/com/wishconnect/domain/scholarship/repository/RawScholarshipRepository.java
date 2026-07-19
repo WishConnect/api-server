@@ -14,4 +14,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	Optional<RawScholarship> findBySourceAndSourceId(String source, String sourceId);
 
 	long countByScholarship(Scholarship scholarship);
+
+	/** 수집기 멱등 처리용: 같은 출처의 공지를 이미 수집했는지. */
+	boolean existsBySourceAndSourceId(String source, String sourceId);
 }
