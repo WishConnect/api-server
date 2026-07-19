@@ -73,7 +73,8 @@ class ScholarshipRecommendationServiceTest {
 	private void stubScholarships(UserProfile profile, List<Scholarship> scholarships,
 			List<ScholarshipCondition> conditions) {
 		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.ofNullable(profile));
-		given(scholarshipRepository.findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus.OPEN))
+		given(scholarshipRepository.findAllOpenForRecommendation(
+				org.mockito.ArgumentMatchers.eq(RecruitmentStatus.OPEN), org.mockito.ArgumentMatchers.any()))
 				.willReturn(scholarships);
 		if (!scholarships.isEmpty()) {
 			given(scholarshipConditionRepository.findAllByScholarshipIn(scholarships)).willReturn(conditions);

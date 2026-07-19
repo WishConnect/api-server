@@ -34,6 +34,10 @@ public class ScholarshipSyncScheduler {
 	public void syncDaily() {
 		log.info("[SyncBatch] 장학금 일일 동기화 시작");
 		try {
+			int closedCount = scholarshipSyncService.closeExpired();
+			if (closedCount > 0) {
+				log.info("[SyncBatch] 마감 지난 공고 {}건 CLOSED 처리", closedCount);
+			}
 			long beforeCount = scholarshipRepository.count();
 			ScholarshipSyncResponse result = scholarshipSyncService.sync();
 			long newCount = scholarshipRepository.count() - beforeCount;
