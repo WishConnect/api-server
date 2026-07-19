@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.scheduler;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,14 +28,22 @@ public class ScholarshipSyncScheduler {
 
 	private final ScholarshipSyncService scholarshipSyncService;
 	private final ConditionExtractionService conditionExtractionService;
+	private final ScholarshipRepository scholarshipRepository;
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 23 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
 		log.info("[SyncBatch] 장학금 일일 동기화 시작");
 		try {
+			long beforeCount = scholarshipRepository.count();
 			ScholarshipSyncResponse result = scholarshipSyncService.sync();
-			log.info("[SyncBatch] 동기화 완료 fetched={} saved={} failed={}",
-					result.fetchedCount(), result.savedCount(), result.failedCount());
+			long newCount = scholarshipRepository.count() - beforeCount;
+			log.info("[SyncBatch] 동기화 완료 fetched={} saved={} failed={} 신규정제={}",
+					result.fetchedCount(), result.savedCount(), result.failedCount(), Math.max(newCount, 0));
+			if (result.fetchedCount() == 0) {
+				log.info("[SyncBatch] 수집된 공고가 없습니다 (외부 API 응답 0건)");
+			} else if (newCount <= 0) {
+				log.info("[SyncBatch] 새로운 공고가 없습니다 (기존 공고 갱신만 수행됨)");
+			}
 		} catch (Exception e) {
 			log.error("[SyncBatch] 동기화 실패", e);
 			return;
