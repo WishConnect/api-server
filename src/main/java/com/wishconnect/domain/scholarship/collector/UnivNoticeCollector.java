@@ -129,8 +129,7 @@ public class UnivNoticeCollector {
 	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
 		String detailUrl = baseUrl + site.articlePath() + articleId + "/artclView.do";
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-		String title = Optional.ofNullable(doc.selectFirst("h2, .view-title, .artclViewTitle"))
-				.map(Element::text).orElse(doc.title()).trim();
+		String title = extractTitle(doc);
 		String bodyText = doc.body() == null ? "" : doc.body().text();
 
 		Period period = parsePeriod(title + " " + bodyText, LocalDate.now().getYear());
@@ -192,6 +191,26 @@ public class UnivNoticeCollector {
 
 	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
 	private static final Pattern NON_POSTER = Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet");
+
+	/**
+	 * 공지 제목 추출. 스킨별로 위치가 달라 hidden input(#artclViewTitle, 연세/외대형) →
+	 * 제목 클래스(건국/한림형) → h2 → 문서 title 순으로 시도한다.
+	 */
+	static String extractTitle(Document doc) {
+		Element hidden = doc.selectFirst("input#artclViewTitle[value]");
+		if (hidden != null && !hidden.attr("value").isBlank()) {
+			return hidden.attr("value").trim();
+		}
+		Element titled = doc.selectFirst(".artclViewTitle, .view-title, .board-view .title");
+		if (titled != null && !titled.text().isBlank()) {
+			return titled.text().trim();
+		}
+		Element h2 = doc.selectFirst("h2");
+		if (h2 != null && !h2.text().isBlank()) {
+			return h2.text().trim();
+		}
+		return doc.title().trim();
+	}
 
 	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
 	static String findPosterUrl(Document doc) {
