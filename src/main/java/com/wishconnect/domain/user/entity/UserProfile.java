@@ -85,8 +85,60 @@ public class UserProfile extends BaseEntity {
 	private Integer incomeLevel;
 
 	@Column
+	private Integer familySize;
+
+	/** 온보딩에서 마지막으로 완료한 단계입니다. 중간 이탈 사용자의 재진입 위치를 판단할 때 사용합니다. */
+	@Column
 	private Integer onboardingStep;
 
+	/** 추천/매칭에 사용할 수 있을 만큼 온보딩이 끝났는지 표시합니다. */
 	@Column
 	private boolean isOnboardingCompleted;
+
+	/** 회원가입 직후 또는 온보딩 첫 저장 시 비어 있는 프로필을 생성합니다. */
+	public static UserProfile createFor(User user) {
+		UserProfile profile = new UserProfile();
+		profile.user = user;
+		profile.onboardingStep = 0;
+		profile.isOnboardingCompleted = false;
+		return profile;
+	}
+
+	public void updateBasic(Integer birthYear, Gender gender, Nationality nationality, Region region) {
+		this.birthYear = birthYear;
+		this.gender = gender;
+		this.nationality = nationality;
+		this.region = region;
+		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 1);
+	}
+
+	public void updateAcademic(
+			School school,
+			Major major,
+			EnrollmentStatus enrollmentStatus,
+			Integer grade,
+			BigDecimal semesterGpa,
+			BigDecimal cumulativeGpa,
+			SecondMajorType secondMajorType
+	) {
+		this.school = school;
+		this.major = major;
+		this.enrollmentStatus = enrollmentStatus;
+		this.grade = grade;
+		this.semesterGpa = semesterGpa;
+		this.cumulativeGpa = cumulativeGpa;
+		this.secondMajorType = secondMajorType;
+		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 2);
+	}
+
+	public void updateHousehold(Integer incomeLevel, Integer familySize) {
+		this.incomeLevel = incomeLevel;
+		this.familySize = familySize;
+		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 3);
+	}
+
+	public void completeOnboarding() {
+		this.isOnboardingCompleted = true;
+		this.onboardingStep = 4;
+	}
 }
