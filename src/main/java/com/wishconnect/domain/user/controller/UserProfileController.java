@@ -62,7 +62,7 @@ public class UserProfileController {
 		return ApiResponse.ok(userProfileService.saveHousehold(UUID.fromString(userId), request));
 	}
 
-	// STEP 4: 온보딩 완료 처리. 추천 생성은 추후 비동기 작업으로 연결할 수 있습니다.
+	// STEP 4: 온보딩 완료 처리. 추천 결과는 /api/v1/scholarships/curated에서 조회 시 계산합니다.
 	@PostMapping("/complete")
 	public ApiResponse<OnboardingCompleteResponse> complete(@AuthenticationPrincipal String userId) {
 		return ApiResponse.ok(userProfileService.complete(UUID.fromString(userId)));

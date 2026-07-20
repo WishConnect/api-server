@@ -6,7 +6,7 @@ import java.util.List;
 
 public record ProfileHouseholdRequest(
 		@NotBlank String incomeLevel,
-		@Min(1) Integer familySize,
+		@Min(1) Long familySize,
 		List<String> familyTypes,
 		List<String> personalStatuses,
 		List<String> interests

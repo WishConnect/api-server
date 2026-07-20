@@ -52,71 +52,71 @@ public class UserProfile extends BaseEntity {
 	@JoinColumn(name = "region_id")
 	private Region region;
 
-	@Column
-	private Integer birthYear;
+	@Column(name = "birth_year", length = 4)
+	private String birthYear;
 
 	@Enumerated(EnumType.STRING)
-	@Column
+	@Column(length = 10)
 	private Gender gender;
 
 	@Enumerated(EnumType.STRING)
-	@Column
+	@Column(length = 10)
 	private Nationality nationality;
 
 	@Enumerated(EnumType.STRING)
-	@Column
+	@Column(name = "enrollment_status", length = 20)
 	private EnrollmentStatus enrollmentStatus;
 
-	@Column
-	private Integer grade;
+	@Column(length = 20)
+	private String grade;
 
-	@Column(precision = 3, scale = 2)
+	@Column(name = "semester_gpa", precision = 3, scale = 2)
 	private BigDecimal semesterGpa;
 
-	@Column(precision = 3, scale = 2)
+	@Column(name = "cumulative_gpa", precision = 3, scale = 2)
 	private BigDecimal cumulativeGpa;
 
 	/** 복수전공/부전공 구분. 해당 없으면 null */
 	@Enumerated(EnumType.STRING)
-	@Column
+	@Column(name = "dual_major", length = 10)
 	private SecondMajorType secondMajorType;
 
-	@Column
+	@Column(name = "income_level")
 	private Integer incomeLevel;
 
-	@Column
-	private Integer familySize;
+	@Column(name = "family_size")
+	private Long familySize;
 
 	/** 온보딩에서 마지막으로 완료한 단계입니다. 중간 이탈 사용자의 재진입 위치를 판단할 때 사용합니다. */
-	@Column
-	private Integer onboardingStep;
+	@Column(name = "onboarding_step", length = 20)
+	private String onboardingStep;
 
 	/** 추천/매칭에 사용할 수 있을 만큼 온보딩이 끝났는지 표시합니다. */
-	@Column
+	@Column(name = "is_onboarding_completed")
 	private boolean isOnboardingCompleted;
 
 	/** 회원가입 직후 또는 온보딩 첫 저장 시 비어 있는 프로필을 생성합니다. */
 	public static UserProfile createFor(User user) {
 		UserProfile profile = new UserProfile();
 		profile.user = user;
-		profile.onboardingStep = 0;
+		profile.onboardingStep = "STEP_1";
 		profile.isOnboardingCompleted = false;
 		return profile;
 	}
 
-	public void updateBasic(Integer birthYear, Gender gender, Nationality nationality, Region region) {
+	public void updateBasic(String birthYear, Gender gender, Nationality nationality, Region region) {
 		this.birthYear = birthYear;
 		this.gender = gender;
 		this.nationality = nationality;
 		this.region = region;
-		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 1);
+		advanceOnboardingStep("STEP_1");
 	}
 
 	public void updateAcademic(
 			School school,
 			Major major,
 			EnrollmentStatus enrollmentStatus,
-			Integer grade,
+			String grade,
 			BigDecimal semesterGpa,
 			BigDecimal cumulativeGpa,
 			SecondMajorType secondMajorType
@@ -128,17 +128,36 @@ public class UserProfile extends BaseEntity {
 		this.semesterGpa = semesterGpa;
 		this.cumulativeGpa = cumulativeGpa;
 		this.secondMajorType = secondMajorType;
-		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 2);
+		advanceOnboardingStep("STEP_2");
 	}
 
-	public void updateHousehold(Integer incomeLevel, Integer familySize) {
+	public void updateHousehold(Integer incomeLevel, Long familySize) {
 		this.incomeLevel = incomeLevel;
 		this.familySize = familySize;
-		this.onboardingStep = Math.max(this.onboardingStep == null ? 0 : this.onboardingStep, 3);
+		advanceOnboardingStep("STEP_3");
 	}
 
 	public void completeOnboarding() {
 		this.isOnboardingCompleted = true;
-		this.onboardingStep = 4;
+		this.onboardingStep = "STEP_4";
+	}
+
+	private void advanceOnboardingStep(String nextStep) {
+		if (stepOrder(nextStep) > stepOrder(this.onboardingStep)) {
+			this.onboardingStep = nextStep;
+		}
+	}
+
+	private int stepOrder(String step) {
+		if (step == null) {
+			return 0;
+		}
+		return switch (step) {
+			case "STEP_1" -> 1;
+			case "STEP_2" -> 2;
+			case "STEP_3" -> 3;
+			case "STEP_4" -> 4;
+			default -> 0;
+		};
 	}
 }

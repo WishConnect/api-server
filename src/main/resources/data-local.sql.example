@@ -15,6 +15,27 @@
 --   2) POST /api/v1/applications { scholarshipId: 1 } 로 essay + essay_question 생성
 --   3) STEP1 인터뷰 왕복 → STEP2 초안 생성 순서로 API 호출
 
+-- 표준 시/도 지역 마스터 데이터
+INSERT INTO region (name, parent_id, created_at, updated_at) VALUES
+	('서울', NULL, NOW(), NOW()),
+	('부산', NULL, NOW(), NOW()),
+	('대구', NULL, NOW(), NOW()),
+	('인천', NULL, NOW(), NOW()),
+	('광주', NULL, NOW(), NOW()),
+	('대전', NULL, NOW(), NOW()),
+	('울산', NULL, NOW(), NOW()),
+	('세종', NULL, NOW(), NOW()),
+	('경기', NULL, NOW(), NOW()),
+	('강원', NULL, NOW(), NOW()),
+	('충북', NULL, NOW(), NOW()),
+	('충남', NULL, NOW(), NOW()),
+	('전북', NULL, NOW(), NOW()),
+	('전남', NULL, NOW(), NOW()),
+	('경북', NULL, NOW(), NOW()),
+	('경남', NULL, NOW(), NOW()),
+	('제주', NULL, NOW(), NOW())
+ON CONFLICT DO NOTHING;
+
 -- 테스트 사용자 1명 (UUID 고정)
 INSERT INTO users (id, email, name, login_type, onboarding_completed, created_at, updated_at)
 VALUES (

@@ -53,6 +53,19 @@ naver:
   client-secret: ${NAVER_CLIENT_SECRET:<NAVER_CLIENT_SECRET>}
   redirect-uri: ${NAVER_REDIRECT_URI:http://localhost:8080/api/v1/auth/naver/callback}
 
+# 대학알리미/공공데이터 학교·학과 마스터 동기화
+academic-info:
+  api:
+    service-key: ${ACADEMIC_INFO_API_SERVICE_KEY:<PUBLIC_DATA_SERVICE_KEY>}
+    school-base-url: ${ACADEMIC_INFO_SCHOOL_BASE_URL:https://apis.data.go.kr/B340014/BasicInformationService_2}
+    school-path: ${ACADEMIC_INFO_SCHOOL_PATH:/getUniversityCode}
+    major-base-url: ${ACADEMIC_INFO_MAJOR_BASE_URL:https://apis.data.go.kr/B340014/BasicInformationService_1}
+    major-path: ${ACADEMIC_INFO_MAJOR_PATH:/getUniversityMajorCode}
+    page-size: ${ACADEMIC_INFO_PAGE_SIZE:1000}
+    max-pages: ${ACADEMIC_INFO_MAX_PAGES:100}
+    # 대학 학과 정보 API의 필수 파라미터(svyYr). 포털 상세설명에서 조회 가능한 조사년도를 확인해 입력합니다.
+    survey-year: ${ACADEMIC_INFO_SURVEY_YEAR:2025}
+
 # Anthropic Claude API 키. AI 자기소개서 파트(사전 인터뷰·초안 생성) 로컬 테스트 시 필요.
 # 환경변수 ANTHROPIC_API_KEY 로 주입하는 것을 권장.
 # 모델 ID / max-tokens 는 application.yml 의 llm.anthropic 기본값을 그대로 사용한다.

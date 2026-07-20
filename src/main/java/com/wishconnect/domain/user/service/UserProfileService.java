@@ -44,7 +44,8 @@ import org.springframework.util.StringUtils;
 
 /*
 온보딩 단계별 입력값을 users, user_profile, user_family_type, user_interest에 저장하는 서비스입니다.
-프론트 명세는 학교/전공/관심사를 문자열로 보내므로 현재는 이름 기준으로 찾고, 없으면 마스터 데이터를 생성합니다.
+프론트 명세는 학교/전공/관심사를 문자열로 보내므로 이름 기준으로 저장합니다.
+지역은 드롭다운 기반 마스터 데이터에서만 찾고, 학교/전공/가구/관심사는 초기 데이터가 없으면 생성합니다.
  */
 @Service
 @RequiredArgsConstructor
@@ -67,11 +68,11 @@ public class UserProfileService {
 	public OnboardingStepResponse saveBasic(UUID userId, ProfileBasicRequest request) {
 		User user = getUser(userId);
 		UserProfile profile = getOrCreateProfile(user);
-		Region region = getOrCreateRegion(request.region());
+		Region region = getRegion(request.region());
 
 		user.updateBasicProfile(request.name().trim(), request.phone().trim());
 		profile.updateBasic(
-				parseRequiredInteger(request.birthYear()),
+				parseBirthYear(request.birthYear()),
 				parseEnum(Gender.class, request.gender()),
 				parseEnum(Nationality.class, request.nationality()),
 				region
@@ -91,7 +92,7 @@ public class UserProfileService {
 				school,
 				major,
 				parseEnum(EnrollmentStatus.class, request.enrollmentStatus()),
-				parseGrade(request.grade()),
+				normalizeRequired(request.grade()),
 				request.semesterGpa(),
 				request.cumulativeGpa(),
 				parseSecondMajorType(request.dualMajor())
@@ -104,7 +105,10 @@ public class UserProfileService {
 	public OnboardingStepResponse saveHousehold(UUID userId, ProfileHouseholdRequest request) {
 		User user = getUser(userId);
 		UserProfile profile = getOrCreateProfile(user);
-		profile.updateHousehold(parseIncomeLevel(request.incomeLevel()), request.familySize());
+		profile.updateHousehold(
+				parseIncomeLevel(request.incomeLevel()),
+				request.familySize()
+		);
 
 		replaceFamilyTypes(user, request.familyTypes(), FamilyCategory.FAMILY);
 		replaceFamilyTypes(user, request.personalStatuses(), FamilyCategory.PERSONAL);
@@ -117,13 +121,13 @@ public class UserProfileService {
 	public OnboardingCompleteResponse complete(UUID userId) {
 		User user = getUser(userId);
 		UserProfile profile = getOrCreateProfile(user);
-		if (profile.getOnboardingStep() == null || profile.getOnboardingStep() < 3) {
+		if (onboardingStepOrder(profile.getOnboardingStep()) < 3) {
 			throw new CustomException(ErrorCode.ONBOARDING_INCOMPLETE);
 		}
 
 		user.completeOnboarding();
 		profile.completeOnboarding();
-		return new OnboardingCompleteResponse(true, UUID.randomUUID());
+		return new OnboardingCompleteResponse(true);
 	}
 
 	// 마이페이지/온보딩 재진입 시 현재 저장된 프로필과 완성도를 조회합니다.
@@ -148,7 +152,7 @@ public class UserProfileService {
 		return new ProfileResponse(
 				user.getId(),
 				user.getName(),
-				profile == null || profile.getBirthYear() == null ? null : String.valueOf(profile.getBirthYear()),
+				profile == null ? null : profile.getBirthYear(),
 				user.getPhone(),
 				profile == null || profile.getGender() == null ? null : profile.getGender().name(),
 				profile == null || profile.getNationality() == null ? null : profile.getNationality().name(),
@@ -171,11 +175,10 @@ public class UserProfileService {
 				.orElseGet(() -> userProfileRepository.save(UserProfile.createFor(user)));
 	}
 
-	// 초기 데이터가 부족한 로컬 환경에서도 온보딩 저장이 가능하도록 이름 기반 생성 방식을 사용합니다.
-	private Region getOrCreateRegion(String name) {
-		String normalized = normalizeRequired(name);
+	private Region getRegion(String name) {
+		String normalized = normalizeRegionName(name);
 		return regionRepository.findByName(normalized)
-				.orElseGet(() -> regionRepository.save(Region.builder().name(normalized).build()));
+				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
 	}
 
 	private School getOrCreateSchool(String name) {
@@ -254,18 +257,10 @@ public class UserProfileService {
 			return null;
 		}
 		return switch (value.trim()) {
-			case "DOUBLE", "DOUBLE_MAJOR" -> SecondMajorType.DOUBLE_MAJOR;
+			case "DOUBLE", "DOUBLE_MAJOR" -> SecondMajorType.DOUBLE;
 			case "MINOR" -> SecondMajorType.MINOR;
 			default -> throw new CustomException(ErrorCode.INVALID_INPUT);
 		};
-	}
-
-	private Integer parseGrade(String value) {
-		Matcher matcher = FIRST_NUMBER.matcher(normalizeRequired(value));
-		if (!matcher.find()) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
-		}
-		return Integer.parseInt(matcher.group(1));
 	}
 
 	private Integer parseIncomeLevel(String value) {
@@ -276,12 +271,12 @@ public class UserProfileService {
 		return Integer.parseInt(matcher.group(1));
 	}
 
-	private Integer parseRequiredInteger(String value) {
-		try {
-			return Integer.parseInt(normalizeRequired(value));
-		} catch (NumberFormatException exception) {
+	private String parseBirthYear(String value) {
+		String normalized = normalizeRequired(value);
+		if (!normalized.matches("\\d{4}")) {
 			throw new CustomException(ErrorCode.INVALID_INPUT);
 		}
+		return normalized;
 	}
 
 	private String normalizeRequired(String value) {
@@ -289,6 +284,30 @@ public class UserProfileService {
 			throw new CustomException(ErrorCode.INVALID_INPUT);
 		}
 		return value.trim();
+	}
+
+	private String normalizeRegionName(String value) {
+		String normalized = normalizeRequired(value);
+		return switch (normalized) {
+			case "서울특별시" -> "서울";
+			case "부산광역시" -> "부산";
+			case "대구광역시" -> "대구";
+			case "인천광역시" -> "인천";
+			case "광주광역시" -> "광주";
+			case "대전광역시" -> "대전";
+			case "울산광역시" -> "울산";
+			case "세종특별자치시" -> "세종";
+			case "경기도" -> "경기";
+			case "강원특별자치도", "강원도" -> "강원";
+			case "충청북도" -> "충북";
+			case "충청남도" -> "충남";
+			case "전북특별자치도", "전라북도" -> "전북";
+			case "전라남도" -> "전남";
+			case "경상북도" -> "경북";
+			case "경상남도" -> "경남";
+			case "제주특별자치도", "제주도" -> "제주";
+			default -> normalized;
+		};
 	}
 
 	private ProfileResponse.Academic toAcademic(UserProfile profile) {
@@ -300,7 +319,7 @@ public class UserProfileService {
 				profile.getMajor() == null ? null : profile.getMajor().getCategory(),
 				profile.getMajor() == null ? null : profile.getMajor().getName(),
 				profile.getEnrollmentStatus() == null ? null : profile.getEnrollmentStatus().name(),
-				profile.getGrade() == null ? null : profile.getGrade() + "학년",
+				profile.getGrade(),
 				profile.getSemesterGpa(),
 				profile.getCumulativeGpa(),
 				toDualMajorResponse(profile.getSecondMajorType())
@@ -327,7 +346,20 @@ public class UserProfileService {
 		if (secondMajorType == null) {
 			return null;
 		}
-		return secondMajorType == SecondMajorType.DOUBLE_MAJOR ? "DOUBLE" : "MINOR";
+		return secondMajorType.name();
+	}
+
+	private int onboardingStepOrder(String step) {
+		if (!StringUtils.hasText(step)) {
+			return 0;
+		}
+		return switch (step) {
+			case "STEP_1" -> 1;
+			case "STEP_2" -> 2;
+			case "STEP_3" -> 3;
+			case "STEP_4" -> 4;
+			default -> 0;
+		};
 	}
 
 	private int calculateCompletionRate(

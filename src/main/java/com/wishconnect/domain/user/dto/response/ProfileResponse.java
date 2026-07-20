@@ -33,7 +33,7 @@ public record ProfileResponse(
 
 	public record Household(
 			String incomeLevel,
-			Integer familySize,
+			Long familySize,
 			List<String> familyTypes,
 			List<String> personalStatuses
 	) {

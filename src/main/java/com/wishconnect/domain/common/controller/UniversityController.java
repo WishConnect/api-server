@@ -1,11 +1,14 @@
 package com.wishconnect.domain.common.controller;
 
+import com.wishconnect.domain.common.dto.AcademicInfoSyncResponse;
 import com.wishconnect.domain.common.dto.UniversityResponse;
+import com.wishconnect.domain.common.service.AcademicInfoSyncService;
 import com.wishconnect.domain.common.service.UniversitySearchService;
 import com.wishconnect.global.common.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,9 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class UniversityController {
 
 	private final UniversitySearchService universitySearchService;
+	private final AcademicInfoSyncService academicInfoSyncService;
 
 	@GetMapping("/search")
 	public ApiResponse<List<UniversityResponse>> search(@RequestParam String keyword) {
 		return ApiResponse.ok(universitySearchService.search(keyword));
 	}
+
+	@PostMapping("/sync")
+	public ApiResponse<AcademicInfoSyncResponse> syncAcademicInfo() {
+		return ApiResponse.ok(academicInfoSyncService.sync());
+	}
+
 }
