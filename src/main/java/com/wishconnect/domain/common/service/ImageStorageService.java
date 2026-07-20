@@ -13,12 +13,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 /*
 외부 URL의 이미지를 내려받아 S3(wishconnect-images)에 저장하고 image 테이블에 메타를 남깁니다.
 - 수집 파이프라인에서 사용: 포스터가 없거나 다운로드/업로드 실패 시 null 반환(수집 자체는 계속)
-- 공개 URL은 버킷 퍼블릭 읽기 정책 기준 (미설정 시 프론트에서 접근 불가 — 인프라 노트 참고)
+- 조회 URL은 presigned URL(1시간 유효) — 버킷 퍼블릭 정책 불필요
  */
 @Slf4j
 @Service
@@ -34,6 +37,7 @@ public class ImageStorageService {
 			.build();
 
 	private final S3Client s3Client;
+	private final S3Presigner s3Presigner;
 	private final ImageRepository imageRepository;
 
 	@Value("${app.s3.bucket:wishconnect-images}")
@@ -86,8 +90,18 @@ public class ImageStorageService {
 		}
 	}
 
+	/** 조회용 서명 URL(1시간 유효). 버킷을 공개로 열지 않아도 이미지 접근 가능. 실패 시 null. */
 	public String publicUrl(String key) {
-		return "https://" + bucket + ".s3." + region + ".amazonaws.com/" + key;
+		try {
+			return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+							.signatureDuration(Duration.ofHours(1))
+							.getObjectRequest(GetObjectRequest.builder().bucket(bucket).key(key).build())
+							.build())
+					.url().toString();
+		} catch (Exception e) {
+			log.warn("[ImageStorage] presign 실패 key={} : {}", key, e.getMessage());
+			return null;
+		}
 	}
 
 	private String extensionOf(String contentType) {
