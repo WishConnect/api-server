@@ -50,6 +50,8 @@ public enum ErrorCode {
 	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),
 	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
 	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
+	QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 지원서에 존재하지 않는 문항입니다."),
+	INVALID_INTERVIEW_STEP(HttpStatus.BAD_REQUEST, "현재 인터뷰 진행 상태와 맞지 않는 요청입니다."),
 
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
