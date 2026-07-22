@@ -1,11 +1,14 @@
 package com.wishconnect.domain.application.controller;
 
 import com.wishconnect.domain.application.dto.request.CreateApplicationRequest;
+import com.wishconnect.domain.application.dto.request.InterviewAnswerRequest;
 import com.wishconnect.domain.application.dto.response.ApplicationDetailResponse;
 import com.wishconnect.domain.application.dto.response.ApplicationListResponse;
 import com.wishconnect.domain.application.dto.response.CreateApplicationResponse;
+import com.wishconnect.domain.application.dto.response.InterviewAdvanceResponse;
 import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.service.EssayApplicationService;
+import com.wishconnect.domain.application.service.InterviewService;
 import com.wishconnect.global.common.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -33,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ApplicationController {
 
 	private final EssayApplicationService essayApplicationService;
+	private final InterviewService interviewService;
 
 	/**
 	 * ① 지원서 목록 조회.
@@ -70,5 +74,23 @@ public class ApplicationController {
 			@PathVariable Long applicationId) {
 		return ApiResponse.ok(
 				essayApplicationService.getApplicationDetail(UUID.fromString(userId), applicationId));
+	}
+
+	/**
+	 * ④ STEP1 사전 인터뷰 대화. 인터뷰 이력이 없으면 seed 질문 자동 생성(부트스트랩), 있으면
+	 * 요청의 stepOrder 위치에 답변 저장 후 다음 질문 생성. body 를 비운 채 호출하면 부트스트랩만
+	 * 수행된다.
+	 */
+	@PostMapping("/{applicationId}/questions/{questionId}/interview")
+	public ApiResponse<InterviewAdvanceResponse> advanceInterview(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId,
+			@PathVariable Long questionId,
+			@RequestBody(required = false) InterviewAnswerRequest request) {
+		InterviewAnswerRequest safeRequest = request != null
+				? request
+				: new InterviewAnswerRequest(null, null);
+		return ApiResponse.ok(
+				interviewService.advance(UUID.fromString(userId), applicationId, questionId, safeRequest));
 	}
 }

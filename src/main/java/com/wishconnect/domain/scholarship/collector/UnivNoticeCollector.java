@@ -79,7 +79,7 @@ public class UnivNoticeCollector {
 
 	@Transactional
 	public CollectResultResponse collect(Site site, int pages) {
-		Pattern articleLink = Pattern.compile(Pattern.quote(site.articlePath()) + "(\\d+)/artclView\\.do");
+		Pattern articleLink = Pattern.compile(site.effectiveLinkPattern());
 		String baseUrl = baseUrlOf(site.listUrl());
 		int fetched = 0;
 		int saved = 0;
@@ -109,9 +109,9 @@ public class UnivNoticeCollector {
 
 	private List<String> fetchArticleIds(Site site, Pattern articleLink, int page) {
 		try {
-			Document doc = Jsoup.connect(site.listUrl() + "?page=" + page)
+			Document doc = Jsoup.connect(site.listPageUrl(page))
 					.userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-			return doc.select("a[href*=" + site.articlePath() + "]").stream()
+			return doc.select("a[href]").stream()
 					.map(a -> {
 						Matcher m = articleLink.matcher(a.attr("href"));
 						return m.find() ? m.group(1) : null;
@@ -127,7 +127,7 @@ public class UnivNoticeCollector {
 
 	/** @return true = 정제 저장됨, false = 마감 등으로 SKIPPED */
 	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
-		String detailUrl = baseUrl + site.articlePath() + articleId + "/artclView.do";
+		String detailUrl = site.detailUrl(baseUrl, articleId);
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
 		String title = extractTitle(doc);
 		String bodyText = doc.body() == null ? "" : doc.body().text();
@@ -155,13 +155,14 @@ public class UnivNoticeCollector {
 				+ (period == null ? "" : period.start() + "~" + period.end()));
 		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
 		boolean isNewScholarship = scholarship == null;
+		Classification classification = classify(title, site.provider());
 		if (scholarship == null) {
 			scholarship = scholarshipRepository.save(Scholarship.builder()
 					.title(cleanTitle(title))
-					.provider(site.provider())
+					.provider(classification.provider())
 					.summary(null)
 					.description(bodyText.length() > 2000 ? bodyText.substring(0, 2000) : bodyText)
-					.scholarshipType(ScholarshipType.INTERNAL)
+					.scholarshipType(classification.type())
 					.applicationStartAt(period == null ? null : period.start())
 					.applicationEndAt(period == null ? null : period.end())
 					.recruitmentStatus(resolveStatus(period))
@@ -201,6 +202,15 @@ public class UnivNoticeCollector {
 		if (hidden != null && !hidden.attr("value").isBlank()) {
 			return hidden.attr("value").trim();
 		}
+		Element titled0 = doc.selectFirst(".artclViewTitle, .view-title, .board-view .title, .bbs-view-title, .view_tit, .b-title");
+		if (titled0 != null && !titled0.text().isBlank()) {
+			return titled0.text().trim();
+		}
+		Element og = doc.selectFirst("meta[property=og:title][content]");
+		if (og != null && !og.attr("content").isBlank()) {
+			// "홍익대학교 | 제목" 형태의 사이트명 접두 제거
+			return og.attr("content").replaceFirst("^[^|]{1,20}\\|\\s*", "").trim();
+		}
 		Element titled = doc.selectFirst(".artclViewTitle, .view-title, .board-view .title");
 		if (titled != null && !titled.text().isBlank()) {
 			return titled.text().trim();
@@ -214,6 +224,13 @@ public class UnivNoticeCollector {
 
 	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
 	static String findPosterUrl(Document doc) {
+		Element ogImg = doc.selectFirst("meta[property=og:image][content]");
+		if (ogImg != null) {
+			String src = ogImg.attr("content").trim();
+			if (IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
+				return src;
+			}
+		}
 		for (Element img : doc.select(".artclView img[src], .view-con img[src], article img[src], img[src]")) {
 			String src = img.attr("abs:src");
 			if (!src.isBlank() && IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
@@ -243,6 +260,27 @@ public class UnivNoticeCollector {
 			return RecruitmentStatus.UPCOMING;
 		}
 		return RecruitmentStatus.OPEN;
+	}
+
+	private static final Pattern EXTERNAL_TAG = Pattern.compile("\\[(교외|학교추천|국가|국가근로|정부초청)\\]");
+	private static final Pattern PROVIDER_IN_TITLE = Pattern.compile(
+			"([가-힣A-Za-z0-9·]+(?:장학재단|장학회|문화재단|복지재단|공익재단|인재육성재단|진흥원|동문회|위원회))");
+
+	/**
+	 * 공지 제목 태그로 교내/교외를 분류한다.
+	 * [교외]/[학교추천]/[국가] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL,
+	 * 그 외([교내]/무태그)는 INTERNAL. 교외인 경우 제목에서 운영기관명 추출을 시도한다.
+	 */
+	record Classification(ScholarshipType type, String provider) {
+	}
+
+	static Classification classify(String title, String univProvider) {
+		if (EXTERNAL_TAG.matcher(title).find()) {
+			Matcher provider = PROVIDER_IN_TITLE.matcher(title);
+			return new Classification(ScholarshipType.EXTERNAL,
+					provider.find() ? provider.group(1) : univProvider);
+		}
+		return new Classification(ScholarshipType.INTERNAL, univProvider);
 	}
 
 	/** 제목 앞의 분류 태그([교외][등록금] 등)는 유지하되 공백을 정리한다. */

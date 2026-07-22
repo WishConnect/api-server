@@ -47,4 +47,12 @@ public class Essay extends BaseEntity {
 
 	@Column
 	private LocalDateTime lastEditedAt;
+
+	/** 사용자가 인터뷰·답변을 수정할 때 호출. status 를 IN_PROGRESS 로 전환하고 lastEditedAt 을 갱신. */
+	public void markInProgress() {
+		if (this.status != EssayStatus.COMPLETED) {
+			this.status = EssayStatus.IN_PROGRESS;
+		}
+		this.lastEditedAt = LocalDateTime.now();
+	}
 }

@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 /**
  * S3 클라이언트 빈. 자격증명은 기본 공급자 체인(EC2 IAM 역할 → 환경변수 → 프로파일)을 따른다.
@@ -16,6 +17,13 @@ public class S3Config {
 	@Bean
 	public S3Client s3Client(@Value("${app.s3.region:ap-northeast-2}") String region) {
 		return S3Client.builder()
+				.region(Region.of(region))
+				.build();
+	}
+
+	@Bean
+	public S3Presigner s3Presigner(@Value("${app.s3.region:ap-northeast-2}") String region) {
+		return S3Presigner.builder()
 				.region(Region.of(region))
 				.build();
 	}

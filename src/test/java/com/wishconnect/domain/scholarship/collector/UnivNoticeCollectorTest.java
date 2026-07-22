@@ -88,6 +88,45 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("제목: og:title 폴백 시 사이트명 접두를 제거한다")
+	void extractsTitleFromOgWithPrefixStrip() {
+		var doc = org.jsoup.Jsoup.parse(
+				"<html><head><meta property=\"og:title\" content=\"홍익대학교 | 2026-2 교내장학금 신청 안내\"></head><body></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(doc))
+				.isEqualTo("2026-2 교내장학금 신청 안내");
+	}
+
+	@Test
+	@DisplayName("[교외]/[학교추천]/[국가] 태그는 EXTERNAL + 제목에서 재단명 추출")
+	void classifiesExternalByTag() {
+		var ext = UnivNoticeCollector.classify(
+				"[교외][생활비] 2026년 정읍시민장학재단 우수인재 장학생 모집", "건국대학교");
+		org.assertj.core.api.Assertions.assertThat(ext.type())
+				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.EXTERNAL);
+		org.assertj.core.api.Assertions.assertThat(ext.provider()).isEqualTo("정읍시민장학재단");
+
+		var rec = UnivNoticeCollector.classify(
+				"[학교추천][교외] 광진구장학회 장학생 추천 선발 안내", "건국대학교");
+		org.assertj.core.api.Assertions.assertThat(rec.provider()).isEqualTo("광진구장학회");
+
+		var noProvider = UnivNoticeCollector.classify("[국가근로] 2026-1 국가근로장학금 안내", "한림대학교");
+		org.assertj.core.api.Assertions.assertThat(noProvider.type())
+				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.EXTERNAL);
+		org.assertj.core.api.Assertions.assertThat(noProvider.provider()).isEqualTo("한림대학교");
+	}
+
+	@Test
+	@DisplayName("[교내]/무태그 공지는 INTERNAL 유지")
+	void keepsInternalWithoutExternalTag() {
+		var internal = UnivNoticeCollector.classify("[공통][교내] 2026-2 교내 면학장학금 신청 안내", "한국외국어대학교");
+		org.assertj.core.api.Assertions.assertThat(internal.type())
+				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.INTERNAL);
+		var plain = UnivNoticeCollector.classify("2026학년도 2학기 성적우수장학금 안내", "연세대학교");
+		org.assertj.core.api.Assertions.assertThat(plain.type())
+				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.INTERNAL);
+	}
+
+	@Test
 	@DisplayName("기간 표기가 없으면 null")
 	void returnsNullWhenNoPeriod() {
 		assertThat(UnivNoticeCollector.parsePeriod("장학생 선발 안내", 2026)).isNull();
