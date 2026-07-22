@@ -28,6 +28,8 @@ public class SecurityConfig {
 			"/api/v1/auth/email/**",
 			"/api/v1/auth/password/**",
 			"/api/v1/auth/refresh",
+			"/api/v1/universities/search",
+			"/api/v1/majors/search",
 			"/actuator/health",
 			"/swagger-ui/**",
 			"/swagger-ui.html",

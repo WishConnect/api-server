@@ -37,6 +37,8 @@ public final class ConditionMatcher {
 	private static final Pattern GPA_PATTERN = Pattern.compile("([0-4])\\.([0-9]{1,2})");
 	// 예: "3학년", "2학년 이상"
 	private static final Pattern GRADE_YEAR_PATTERN = Pattern.compile("([1-6])\\s*학년");
+	// 예: "대학5학기", "3학년 1학기"
+	private static final Pattern SEMESTER_PATTERN = Pattern.compile("([1-9]|1[0-2])\\s*학기");
 
 	private ConditionMatcher() {
 	}
@@ -100,14 +102,16 @@ public final class ConditionMatcher {
 	 * 원문이 "N학년" 표기면 학년끼리 직접 비교한다.
 	 */
 	private static Evaluation evaluateGrade(ScholarshipCondition condition, UserProfile profile) {
-		Integer grade = profile.getGrade();
+		String profileGrade = profile.getGrade();
+		Integer grade = firstInt(GRADE_YEAR_PATTERN, profileGrade);
 		if (grade == null) {
 			return Evaluation.unknown();
 		}
 		String raw = condition.getValueString() == null ? "" : condition.getValueString();
 		if (condition.getValueInt() != null && condition.getValueIntMax() != null) {
-			int semesterLow = grade * 2 - 1;
-			int semesterHigh = grade * 2;
+			Integer semester = firstInt(SEMESTER_PATTERN, profileGrade);
+			int semesterLow = semester != null ? semester : grade * 2 - 1;
+			int semesterHigh = semester != null ? semester : grade * 2;
 			boolean overlaps = semesterHigh >= condition.getValueInt() && semesterLow <= condition.getValueIntMax();
 			return overlaps
 				? Evaluation.match("학기 범위 충족(" + grade + "학년)")

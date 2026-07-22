@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -57,6 +58,9 @@ public class User extends BaseEntity {
 
 	@Column(nullable = false)
 	private boolean onboardingCompleted;
+
+	@Column
+	private LocalDateTime deletedAt;
 
 	@Builder
 	private User(String email, String password, String name, String phone,
@@ -108,5 +112,22 @@ public class User extends BaseEntity {
 	/** 비밀번호 변경 (BCrypt 해시된 값을 전달). */
 	public void changePassword(String encodedPassword) {
 		this.password = encodedPassword;
+	}
+
+	public void updateBasicProfile(String name, String phone) {
+		this.name = name;
+		this.phone = phone;
+	}
+
+	public void completeOnboarding() {
+		this.onboardingCompleted = true;
+	}
+
+	public void softDelete() {
+		this.deletedAt = LocalDateTime.now();
+	}
+
+	public boolean isDeleted() {
+		return deletedAt != null;
 	}
 }

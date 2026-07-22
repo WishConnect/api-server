@@ -106,7 +106,7 @@ class ConditionMatcherTest {
 		@Test
 		@DisplayName("학기 BETWEEN 범위와 겹치면 MATCH (2학년 -> 3~4학기)")
 		void semesterRangeMatch() {
-			UserProfile profile = UserProfile.builder().grade(2).build();
+			UserProfile profile = UserProfile.builder().grade("2학년").build();
 			var evaluation = ConditionMatcher.evaluate(
 					condition(ConditionType.GRADE_LEVEL, 2, 8, "대학2학기부터 대학8학기까지"), profile);
 			assertThat(evaluation.result()).isEqualTo(Result.MATCH);
@@ -115,7 +115,7 @@ class ConditionMatcherTest {
 		@Test
 		@DisplayName("학기 범위 밖이면 MISMATCH (1학년 -> 1~2학기, 조건 5~8학기)")
 		void semesterRangeMismatch() {
-			UserProfile profile = UserProfile.builder().grade(1).build();
+			UserProfile profile = UserProfile.builder().grade("1학년").build();
 			var evaluation = ConditionMatcher.evaluate(
 					condition(ConditionType.GRADE_LEVEL, 5, 8, "대학5학기부터 대학8학기까지"), profile);
 			assertThat(evaluation.result()).isEqualTo(Result.MISMATCH);
@@ -124,7 +124,7 @@ class ConditionMatcherTest {
 		@Test
 		@DisplayName("원문 N학년 표기는 학년끼리 비교")
 		void yearTextComparison() {
-			UserProfile profile = UserProfile.builder().grade(3).build();
+			UserProfile profile = UserProfile.builder().grade("3학년").build();
 			var evaluation = ConditionMatcher.evaluate(
 					condition(ConditionType.GRADE_LEVEL, null, null, "3학년 재학생"), profile);
 			assertThat(evaluation.result()).isEqualTo(Result.MATCH);
