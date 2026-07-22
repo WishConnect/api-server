@@ -88,6 +88,15 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("제목: og:title 폴백 시 사이트명 접두를 제거한다")
+	void extractsTitleFromOgWithPrefixStrip() {
+		var doc = org.jsoup.Jsoup.parse(
+				"<html><head><meta property=\"og:title\" content=\"홍익대학교 | 2026-2 교내장학금 신청 안내\"></head><body></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(doc))
+				.isEqualTo("2026-2 교내장학금 신청 안내");
+	}
+
+	@Test
 	@DisplayName("[교외]/[학교추천]/[국가] 태그는 EXTERNAL + 제목에서 재단명 추출")
 	void classifiesExternalByTag() {
 		var ext = UnivNoticeCollector.classify(

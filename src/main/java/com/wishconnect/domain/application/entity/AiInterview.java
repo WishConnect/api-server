@@ -43,4 +43,11 @@ public class AiInterview extends BaseEntity {
 
 	@Column(nullable = false)
 	private int stepOrder;
+
+	/** 사전 인터뷰에서 사용자의 답변을 기록. answerText 가 이미 채워져 있으면 아무 작업도 하지 않는다. */
+	public void recordAnswer(String answerText) {
+		if (this.answerText == null || this.answerText.isBlank()) {
+			this.answerText = answerText;
+		}
+	}
 }
