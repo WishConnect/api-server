@@ -25,7 +25,6 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	// 키워드 없을 때
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
-			"AND s.verified = true " +
 			"AND s.deletedAt IS NULL " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findAllWithoutKeyword(
@@ -36,7 +35,6 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	// 키워드 있을 때
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
-			"AND s.verified = true " +
 			"AND s.deletedAt IS NULL " +
 			"AND (s.title LIKE CONCAT('%', :keyword, '%') " +
 			"     OR s.provider LIKE CONCAT('%', :keyword, '%')) " +
@@ -46,6 +44,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			@Param("category") String category,
 			Pageable pageable
 	);
+
 	/** 추천/큐레이팅 대상: 특정 모집 상태의 활성(삭제 안 된) 장학금 전체. */
 	List<Scholarship> findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus recruitmentStatus);
 

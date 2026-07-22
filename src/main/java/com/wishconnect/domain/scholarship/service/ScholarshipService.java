@@ -1,10 +1,10 @@
 package com.wishconnect.domain.scholarship.service;
 
-import com.wishconnect.domain.archive.repository.ScrapRepository;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSearchResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -59,19 +59,19 @@ public class ScholarshipService {
                 .toList();
 
         // 6. 페이지네이션 정보 구성
-        ScholarshipSearchResponse.PaginationDto pagination = ScholarshipSearchResponse.PaginationDto.builder()
-                .page(page)
-                .size(size)
-                .totalCount((int) scholarshipPage.getTotalElements())
-                .totalPages(scholarshipPage.getTotalPages())
-                .build();
+        ScholarshipSearchResponse.PaginationDto pagination = new ScholarshipSearchResponse.PaginationDto(
+                page,                                              // page
+                size,                                              // size
+                (int) scholarshipPage.getTotalElements(),          // totalCount
+                scholarshipPage.getTotalPages()                    // totalPages
+        );
 
-        return ScholarshipSearchResponse.builder()
-                .keyword(keyword)
-                .totalCount((int) scholarshipPage.getTotalElements())
-                .results(results)
-                .pagination(pagination)
-                .build();
+        return new ScholarshipSearchResponse(
+                keyword,                                           // keyword
+                (int) scholarshipPage.getTotalElements(),          // totalCount
+                results,                                           // results
+                pagination                                         // pagination
+        );
 
     }
 
@@ -119,18 +119,18 @@ public class ScholarshipService {
                 ? scholarship.getApplicationEndAt().toLocalDate().toString()
                 : "미정";
 
-        return ScholarshipSummaryResponse.builder()
-                .scholarshipId(scholarship.getId())
-                .title(scholarship.getTitle())
-                .organization(scholarship.getProvider())
-                .applicationPeriod(applicationPeriod)
-                .maxAmount(maxAmount)
-                .deadline(deadline)
-                .dDay(dDay)
-                .recruitStatus(recruitStatus)
-                .tags(List.of())        // TODO: 태그 연동 후 구현
-                .isScrapped(scrappedIds.contains(scholarship.getId()))
-                .build();
+        return new ScholarshipSummaryResponse(
+                scholarship.getId(),                              // scholarshipId
+                scholarship.getTitle(),                           // title
+                scholarship.getProvider(),                        // organization
+                applicationPeriod,                                // applicationPeriod
+                maxAmount,                                        // maxAmount
+                deadline,                                         // deadline
+                dDay,                                             // dDay
+                recruitStatus,                                    // recruitStatus
+                List.of(),                                        // tags (TODO: 태그 연동)
+                scrappedIds.contains(scholarship.getId())         // isScrapped
+        );
 
     }
 
