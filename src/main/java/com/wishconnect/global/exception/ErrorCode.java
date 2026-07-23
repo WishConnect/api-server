@@ -67,7 +67,7 @@ public enum ErrorCode {
 
 	//검색
 	INVALID_SORT(HttpStatus.BAD_REQUEST,"지원하지 않는 정렬 기준입니다."),
-	FAILED_SORT(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+	LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
 
 
 	private final HttpStatus status;

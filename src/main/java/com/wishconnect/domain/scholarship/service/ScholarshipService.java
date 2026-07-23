@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.JpaSort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,25 +42,22 @@ public class ScholarshipService {
         if (!validSorts.contains(sort)) {
             throw new CustomException(ErrorCode.INVALID_SORT);
         }
+
+        if (scrappedOnly && userId == null) {
+            throw new CustomException(ErrorCode.LOGIN_REQUIRED);
+        }
+
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
 
-        // 3. DB 조회 (scrappedOnly 여부에 따라 분기)
+        // 4. DB 조회
         Page<Scholarship> scholarshipPage;
 
         if (scrappedOnly) {
-            List<Long> scrappedIds = scrapRepository.findScholarshipIdsByUserId(userId);
-
-            if (scrappedIds.isEmpty()) {
-                // 스크랩한 게 없으면 바로 빈 응답 반환
-                ScholarshipSearchResponse.PaginationDto emptyPagination =
-                        new ScholarshipSearchResponse.PaginationDto(page, size, 0, 0);
-                return new ScholarshipSearchResponse(keyword, 0, List.of(), emptyPagination);
-            }
-
+            // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
             scholarshipPage = (keyword == null || keyword.isBlank())
-                    ? scholarshipRepository.findByScrappedIds(scrappedIds, category, pageable)
-                    : scholarshipRepository.searchByScrappedIdsAndKeyword(scrappedIds, keyword, category, pageable);
+                    ? scholarshipRepository.findScrappedByUser(userId, category, pageable)
+                    : scholarshipRepository.searchScrappedByUserAndKeyword(userId, keyword, category, pageable);
 
         } else if (keyword == null || keyword.isBlank()) {
             scholarshipPage = scholarshipRepository.findAllWithoutKeyword(category, pageable);
@@ -68,12 +66,12 @@ public class ScholarshipService {
         }
 
         // 4.유저의 스크랩 여부 확인
-        Set<Long> scrappedIds = getScrapped(userId,scholarshipPage.getContent());
+        Set<Long> scrappedInPage = getScrapped(userId,scholarshipPage.getContent());
 
         // 5.Entity -> DTO
         List<ScholarshipSummaryResponse> results = scholarshipPage.getContent()
                 .stream()
-                .map(s -> toSummaryResponse(s, scrappedIds))
+                .map(s -> toSummaryResponse(s, scrappedInPage))
                 .toList();
 
         // 6. 페이지네이션 정보 구성
@@ -106,7 +104,7 @@ public class ScholarshipService {
         );
     }
 
-    private ScholarshipSummaryResponse toSummaryResponse(Scholarship scholarship, Set<Long> scrappedIds) {
+    private ScholarshipSummaryResponse toSummaryResponse(Scholarship scholarship, Set<Long> scrappedInPage) {
 
         int dDay = 0;
         if(scholarship.getApplicationEndAt() != null ){
@@ -147,7 +145,7 @@ public class ScholarshipService {
                 dDay,                                             // dDay
                 recruitStatus,                                    // recruitStatus
                 List.of(),                                        // tags (TODO: 태그 연동)
-                scrappedIds.contains(scholarship.getId())         // isScrapped
+                scrappedInPage.contains(scholarship.getId())         // isScrapped
         );
 
     }
@@ -162,9 +160,9 @@ public class ScholarshipService {
 
     private Pageable createPageable(int page, int size, String sort) {
         Sort sortOrder = switch (sort) {
-            case "deadline" -> Sort.by(Sort.Direction.ASC, "applicationEndAt");
-            case "latest" -> Sort.by(Sort.Direction.DESC, "applicationStartAt");
-            case "amount" -> Sort.by(Sort.Direction.DESC, "amount");
+            case "deadline" -> JpaSort.unsafe(Sort.Direction.ASC, "COALESCE(applicationEndAt, CAST('9999-12-31' AS timestamp))");
+            case "latest" -> JpaSort.unsafe(Sort.Direction.DESC, "COALESCE(applicationStartAt, CAST('1900-01-01' AS timestamp))");
+            case "amount" -> JpaSort.unsafe(Sort.Direction.DESC, "COALESCE(amount, 0)");
             default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };
         return PageRequest.of(page, size, sortOrder);

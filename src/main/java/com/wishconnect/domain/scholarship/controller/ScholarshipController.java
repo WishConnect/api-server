@@ -9,8 +9,6 @@ import com.wishconnect.domain.scholarship.service.ScholarshipService;
 import com.wishconnect.global.common.ApiResponse;
 import java.util.UUID;
 
-import com.wishconnect.global.exception.CustomException;
-import com.wishconnect.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -89,10 +87,7 @@ public class ScholarshipController {
 			@RequestParam(defaultValue = "10") int size
 	) {
 		UUID userId = resolveUserId(userIdStr);
-		if (scrappedOnly && userId == null) {
-			throw new CustomException(ErrorCode.FAILED_SORT);
-		}
-		return ApiResponse.ok(scholarshipService.search(userId, keyword, category, sort, scrappedOnly,page, size));
+		return ApiResponse.ok(scholarshipService.search(userId, keyword, category, sort, scrappedOnly, page, size));
 	}
 
 

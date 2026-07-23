@@ -6,6 +6,7 @@ import com.wishconnect.domain.scholarship.entity.Scholarship;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -45,24 +46,26 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			Pageable pageable
 	);
 
-	@Query("SELECT s FROM Scholarship s " +
-			"WHERE s.active = true AND s.deletedAt IS NULL " +
-			"AND s.id IN :scrappedIds " +
+	// 스크랩 필터 + 키워드 없을 때
+	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
+			"WHERE sc.user.id = :userId " +
+			"AND s.active = true AND s.deletedAt IS NULL " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
-	Page<Scholarship> findByScrappedIds(
-			@Param("scrappedIds") List<Long> scrappedIds,
+	Page<Scholarship> findScrappedByUser(
+			@Param("userId") UUID userId,
 			@Param("category") String category,
 			Pageable pageable
 	);
 
-	@Query("SELECT s FROM Scholarship s " +
-			"WHERE s.active = true AND s.deletedAt IS NULL " +
-			"AND s.id IN :scrappedIds " +
+	// 스크랩 필터 + 키워드 있을 때
+	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
+			"WHERE sc.user.id = :userId " +
+			"AND s.active = true AND s.deletedAt IS NULL " +
 			"AND (s.title LIKE CONCAT('%', :keyword, '%') " +
 			"     OR s.provider LIKE CONCAT('%', :keyword, '%')) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
-	Page<Scholarship> searchByScrappedIdsAndKeyword(
-			@Param("scrappedIds") List<Long> scrappedIds,
+	Page<Scholarship> searchScrappedByUserAndKeyword(
+			@Param("userId") UUID userId,
 			@Param("keyword") String keyword,
 			@Param("category") String category,
 			Pageable pageable
