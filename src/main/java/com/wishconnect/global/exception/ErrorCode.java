@@ -66,7 +66,8 @@ public enum ErrorCode {
 	SCRAP_NOT_FOUND(HttpStatus.NOT_FOUND, "스크랩하지 않은 장학금입니다."),
 
 	//검색
-	INVALID_SORT(HttpStatus.BAD_REQUEST,"지원하지 않는 정렬 기준입니다.");
+	INVALID_SORT(HttpStatus.BAD_REQUEST,"지원하지 않는 정렬 기준입니다."),
+	FAILED_SORT(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
 
 
 	private final HttpStatus status;

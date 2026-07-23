@@ -34,20 +34,38 @@ public class ScholarshipService {
 
     public ScholarshipSearchResponse search(
             UUID userId, String keyword, String category,
-            String sort, int page, int size
+            String sort,boolean scrappedOnly ,int page, int size
     ) {
         // 1. Sort 유효한지 검사
-        List<String> validSorts = List.of("deadline", "amount", "relevance");
+        List<String> validSorts = List.of("deadline", "amount","latest","relevance");
         if (!validSorts.contains(sort)) {
             throw new CustomException(ErrorCode.INVALID_SORT);
         }
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
 
-        // 3. DB 조회 — keyword 유무에 따라 분기 ← 여기만 변경
-        Page<Scholarship> scholarshipPage = (keyword == null || keyword.isBlank())
-                ? scholarshipRepository.findAllWithoutKeyword(category, pageable)
-                : scholarshipRepository.searchByKeyword(keyword, category, pageable);
+        // 3. DB 조회 (scrappedOnly 여부에 따라 분기)
+        Page<Scholarship> scholarshipPage;
+
+        if (scrappedOnly) {
+            List<Long> scrappedIds = scrapRepository.findScholarshipIdsByUserId(userId);
+
+            if (scrappedIds.isEmpty()) {
+                // 스크랩한 게 없으면 바로 빈 응답 반환
+                ScholarshipSearchResponse.PaginationDto emptyPagination =
+                        new ScholarshipSearchResponse.PaginationDto(page, size, 0, 0);
+                return new ScholarshipSearchResponse(keyword, 0, List.of(), emptyPagination);
+            }
+
+            scholarshipPage = (keyword == null || keyword.isBlank())
+                    ? scholarshipRepository.findByScrappedIds(scrappedIds, category, pageable)
+                    : scholarshipRepository.searchByScrappedIdsAndKeyword(scrappedIds, keyword, category, pageable);
+
+        } else if (keyword == null || keyword.isBlank()) {
+            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(category, pageable);
+        } else {
+            scholarshipPage = scholarshipRepository.searchByKeyword(keyword, category, pageable);
+        }
 
         // 4.유저의 스크랩 여부 확인
         Set<Long> scrappedIds = getScrapped(userId,scholarshipPage.getContent());
@@ -145,6 +163,7 @@ public class ScholarshipService {
     private Pageable createPageable(int page, int size, String sort) {
         Sort sortOrder = switch (sort) {
             case "deadline" -> Sort.by(Sort.Direction.ASC, "applicationEndAt");
+            case "latest" -> Sort.by(Sort.Direction.DESC, "applicationStartAt");
             case "amount" -> Sort.by(Sort.Direction.DESC, "amount");
             default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };

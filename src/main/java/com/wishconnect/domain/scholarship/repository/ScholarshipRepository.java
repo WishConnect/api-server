@@ -45,6 +45,29 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			Pageable pageable
 	);
 
+	@Query("SELECT s FROM Scholarship s " +
+			"WHERE s.active = true AND s.deletedAt IS NULL " +
+			"AND s.id IN :scrappedIds " +
+			"AND (:category IS NULL OR s.scholarshipType = :category)")
+	Page<Scholarship> findByScrappedIds(
+			@Param("scrappedIds") List<Long> scrappedIds,
+			@Param("category") String category,
+			Pageable pageable
+	);
+
+	@Query("SELECT s FROM Scholarship s " +
+			"WHERE s.active = true AND s.deletedAt IS NULL " +
+			"AND s.id IN :scrappedIds " +
+			"AND (s.title LIKE CONCAT('%', :keyword, '%') " +
+			"     OR s.provider LIKE CONCAT('%', :keyword, '%')) " +
+			"AND (:category IS NULL OR s.scholarshipType = :category)")
+	Page<Scholarship> searchByScrappedIdsAndKeyword(
+			@Param("scrappedIds") List<Long> scrappedIds,
+			@Param("keyword") String keyword,
+			@Param("category") String category,
+			Pageable pageable
+	);
+
 	/** 추천/큐레이팅 대상: 특정 모집 상태의 활성(삭제 안 된) 장학금 전체. */
 	List<Scholarship> findAllByRecruitmentStatusAndActiveTrueAndDeletedAtIsNull(RecruitmentStatus recruitmentStatus);
 
