@@ -1,14 +1,11 @@
 package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
-import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
-import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
-import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
-import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
-import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.*;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
 import com.wishconnect.domain.scholarship.service.ScholarshipRecommendationService;
+import com.wishconnect.domain.scholarship.service.ScholarshipService;
 import com.wishconnect.global.common.ApiResponse;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +29,8 @@ public class ScholarshipController {
 	private final ScholarshipDetailService scholarshipDetailService;
 	private final ConditionExtractionService conditionExtractionService;
 	private final UnivNoticeCollector univNoticeCollector;
-
+	private final ScholarshipService scholarshipService;
+	
 	/**
 	 * 맞춤 추천 목록(메인). featured/교내/그 외(+조건 미충족 분류)와 페이지네이션 포함.
 	 * category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
@@ -75,5 +73,26 @@ public class ScholarshipController {
 	@PostMapping("/conditions/extract")
 	public ApiResponse<ConditionExtractionResponse> extractConditions() {
 		return ApiResponse.ok(conditionExtractionService.extract());
+	}
+
+	@GetMapping("/search")
+	public ApiResponse<ScholarshipSearchResponse> searchScholarships(
+			@AuthenticationPrincipal String userIdStr,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String category,
+			@RequestParam(defaultValue = "deadline") String sort,
+			@RequestParam(defaultValue = "1") int page,
+			@RequestParam(defaultValue = "10") int size
+	) {
+		UUID userId = resolveUserId(userIdStr);
+		return ApiResponse.ok(scholarshipService.search(userId, keyword, category, sort, page, size));
+	}
+
+
+	private UUID resolveUserId(String userIdStr) {
+		if (userIdStr == null || "anonymousUser".equals(userIdStr)) {
+			return null;
+		}
+		return UUID.fromString(userIdStr);
 	}
 }
