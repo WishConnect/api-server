@@ -265,19 +265,29 @@ public class UnivNoticeCollector {
 		return RecruitmentStatus.OPEN;
 	}
 
+	/** 근로 대가로 지급되는 근로장학금. 태그([국가근로])와 본문 표현(국가근로장학생 모집) 모두 대응한다. */
+	private static final Pattern WORK_STUDY_KEYWORD = Pattern.compile("(국가근로|교내근로|일반근로|근로장학)");
 	private static final Pattern EXTERNAL_TAG = Pattern.compile("\\[(교외|학교추천|국가|국가근로|정부초청)\\]");
 	private static final Pattern PROVIDER_IN_TITLE = Pattern.compile(
 			"([가-힣A-Za-z0-9·]+(?:장학재단|장학회|문화재단|복지재단|공익재단|인재육성재단|진흥원|동문회|위원회))");
 
 	/**
-	 * 공지 제목 태그로 교내/교외를 분류한다.
-	 * [교외]/[학교추천]/[국가] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL,
-	 * 그 외([교내]/무태그)는 INTERNAL. 교외인 경우 제목에서 운영기관명 추출을 시도한다.
+	 * 공지 제목으로 장학 유형을 분류한다.
+	 * <ol>
+	 *   <li>근로장학(국가근로/교내근로/일반근로)은 성격이 달라 WORK_STUDY로 우선 분리한다.
+	 *       ([국가근로] 태그가 있어 EXTERNAL로 잡히던 건도 여기로 온다)</li>
+	 *   <li>[교외]/[학교추천]/[정부초청] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL.
+	 *       이 경우 제목에서 운영기관명 추출을 시도한다.</li>
+	 *   <li>그 외([교내]/무태그)는 INTERNAL.</li>
+	 * </ol>
 	 */
 	record Classification(ScholarshipType type, String provider) {
 	}
 
 	static Classification classify(String title, String univProvider) {
+		if (WORK_STUDY_KEYWORD.matcher(title).find()) {
+			return new Classification(ScholarshipType.WORK_STUDY, univProvider);
+		}
 		if (EXTERNAL_TAG.matcher(title).find()) {
 			Matcher provider = PROVIDER_IN_TITLE.matcher(title);
 			return new Classification(ScholarshipType.EXTERNAL,
