@@ -88,6 +88,31 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("제목: 분류 라벨을 자식 요소로 넣는 스킨(인천대형)에서 라벨을 제외한다")
+	void extractsTitleExcludingCategoryLabel() {
+		var inu = org.jsoup.Jsoup.parse("""
+				<html><body>
+				<h2 class="view-title">
+					<span class="hidden">분류</span>
+					<span>[교외장학금]</span>
+					[교외장학] 2026년도 드림재단 장학생 선발 안내
+				</h2>
+				</body></html>
+				""");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(inu))
+				.isEqualTo("[교외장학] 2026년도 드림재단 장학생 선발 안내");
+	}
+
+	@Test
+	@DisplayName("제목: 제목이 자식 요소 안에만 있으면 기존대로 전체 텍스트를 쓴다")
+	void extractsTitleFromChildElementWhenNoOwnText() {
+		var doc = org.jsoup.Jsoup.parse(
+				"<html><body><div class=\"view-title\"><span>2026-2 교내장학금 신청</span></div></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(doc))
+				.isEqualTo("2026-2 교내장학금 신청");
+	}
+
+	@Test
 	@DisplayName("제목: og:title 폴백 시 사이트명 접두를 제거한다")
 	void extractsTitleFromOgWithPrefixStrip() {
 		var doc = org.jsoup.Jsoup.parse(

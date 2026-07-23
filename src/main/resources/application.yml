@@ -100,6 +100,16 @@ scholarship:
           source: UNIV_HUFS
           list-url: https://www.hufs.ac.kr/bbs/hufs/2182/artclList.do
           article-path: /bbs/hufs/2182/
+        - code: inu
+          provider: 인천대학교
+          source: UNIV_INU
+          list-url: https://life.inu.ac.kr/bbs/inu/249/artclList.do
+          article-path: /bbs/inu/249/
+        - code: swu
+          provider: 서울여자대학교
+          source: UNIV_SWU
+          list-url: https://www.swu.ac.kr/bbs/swu/57/artclList.do
+          article-path: /bbs/swu/57/
 
 # 애플리케이션 공통 설정
 app:

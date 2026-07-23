@@ -204,7 +204,10 @@ public class UnivNoticeCollector {
 		}
 		Element titled0 = doc.selectFirst(".artclViewTitle, .view-title, .board-view .title, .bbs-view-title, .view_tit, .b-title");
 		if (titled0 != null && !titled0.text().isBlank()) {
-			return titled0.text().trim();
+			// 제목 영역에 분류 라벨(<span class="hidden">분류</span><span>[교외장학금]</span>)을
+			// 함께 넣는 스킨(인천대 등)이 있어, 자식 요소를 뺀 직접 텍스트를 우선한다.
+			String ownText = titled0.ownText().trim();
+			return ownText.isBlank() ? titled0.text().trim() : ownText;
 		}
 		Element og = doc.selectFirst("meta[property=og:title][content]");
 		if (og != null && !og.attr("content").isBlank()) {
