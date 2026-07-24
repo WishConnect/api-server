@@ -2,13 +2,16 @@ package com.wishconnect.domain.scholarship.collector;
 
 import com.wishconnect.domain.scholarship.collector.UnivNoticeProperties.Site;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -52,6 +55,7 @@ public class UnivNoticeCollector {
 
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipRepository scholarshipRepository;
+	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UnivNoticeProperties univNoticeProperties;
 	private final ImageStorageService imageStorageService;
 
@@ -174,9 +178,30 @@ public class UnivNoticeCollector {
 		raw.markParsed(scholarship);
 		rawScholarshipRepository.save(raw);
 		if (isNewScholarship) {
+			storeConditions(scholarship, title + "\n" + bodyText);
 			storePoster(site, doc, scholarship, title);
 		}
 		return true;
+	}
+
+	/**
+	 * 공지 본문에서 지원 자격 조건을 뽑아 저장한다.
+	 * 숫자 구조화(valueInt)는 이후 조건 추출 배치(ConditionExtractionService)가 이어서 처리하므로
+	 * 여기서는 원문 문장만 남긴다. 조건을 못 찾으면 아무것도 만들지 않는다.
+	 */
+	private void storeConditions(Scholarship scholarship, String text) {
+		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(text).stream()
+				.map(extracted -> ScholarshipCondition.builder()
+						.scholarship(scholarship)
+						.conditionType(extracted.type())
+						.operator(ConditionOperator.EQ)
+						.valueString(extracted.snippet())
+						.autoExtracted(false)
+						.build())
+				.toList();
+		if (!conditions.isEmpty()) {
+			scholarshipConditionRepository.saveAll(conditions);
+		}
 	}
 
 	/** 본문 인라인 이미지 → 이미지 첨부 순으로 포스터 후보를 찾아 S3에 저장한다(실패해도 수집 계속). */
