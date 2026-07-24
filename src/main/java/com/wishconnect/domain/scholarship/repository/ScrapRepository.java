@@ -19,6 +19,8 @@ public interface ScrapRepository extends JpaRepository<Scrap, Long> {
 
 	Optional<Scrap> findByUserIdAndScholarshipId(UUID userId, Long scholarshipId);
 
+	long countByUser_Id(UUID userId);
+
 	@Query("SELECT s.scholarship.id FROM Scrap s " +
 			"WHERE s.user.id = :userId " +
 			"AND s.scholarship.id IN :scholarshipIds")

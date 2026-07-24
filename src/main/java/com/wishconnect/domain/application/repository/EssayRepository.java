@@ -21,4 +21,8 @@ public interface EssayRepository extends JpaRepository<Essay, Long> {
 
 	/** (user, scholarship) UNIQUE 제약 검사용. */
 	Optional<Essay> findByUser_IdAndScholarship_Id(UUID userId, Long scholarshipId);
+
+	long countByUser_Id(UUID userId);
+
+	long countByUser_IdAndStatus(UUID userId, EssayStatus status);
 }
