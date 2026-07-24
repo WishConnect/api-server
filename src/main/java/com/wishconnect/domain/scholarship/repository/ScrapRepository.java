@@ -24,4 +24,6 @@ public interface ScrapRepository extends JpaRepository<Scrap, Long> {
 			"AND s.scholarship.id IN :scholarshipIds")
 	List<Long> findScrappedScholarshipIds(@Param("userId") UUID userId,
 										  @Param("scholarshipIds") List<Long> scholarshipIds);
+
+
 }
