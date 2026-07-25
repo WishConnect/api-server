@@ -93,13 +93,43 @@ scholarship:
         - code: yonsei
           provider: 연세대학교
           source: UNIV_YONSEI
-          list-url: https://www.yonsei.ac.kr/bbs/sc/58/artclList.do
+          # 학사·일반 공지가 섞인 통합 게시판이라 장학 분류(findClSeq=257)만 수집한다.
+          list-url: https://www.yonsei.ac.kr/bbs/sc/58/artclList.do?findClSeq=257
           article-path: /bbs/sc/58/
         - code: hufs
           provider: 한국외국어대학교
           source: UNIV_HUFS
           list-url: https://www.hufs.ac.kr/bbs/hufs/2182/artclList.do
           article-path: /bbs/hufs/2182/
+        - code: inu
+          provider: 인천대학교
+          source: UNIV_INU
+          list-url: https://life.inu.ac.kr/bbs/inu/249/artclList.do
+          article-path: /bbs/inu/249/
+        - code: swu
+          provider: 서울여자대학교
+          source: UNIV_SWU
+          list-url: https://www.swu.ac.kr/bbs/swu/57/artclList.do
+          article-path: /bbs/swu/57/
+        # 쿼리파라미터 계열(artclView 아님). 같은 페이지에 다른 게시판(학사공지 등) 링크도 있어
+        # 목록 자기 게시판의 상대링크(?mode=view...)만 잡도록 ^ 로 고정한다.
+        - code: sejong
+          provider: 세종대학교
+          source: UNIV_SEJONG
+          list-url: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=list
+          link-pattern: '^\?mode=view&articleNo=(\d+)'
+          detail-template: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=view&articleNo={id}
+        # Tier B: JS 함수형 링크(fnView(날짜, 순번) 복합키). link-pattern 그룹2까지 사용 → {id}/{id2} 치환.
+        - code: uos
+          provider: 서울시립대학교
+          source: UNIV_UOS
+          list-url: https://scholarship.uos.ac.kr/scholarship/notice/notice/list.do?brdBbsseq=1&identified=anonymous
+          link-pattern: "fnView\\('(\\d+)',\\s*'(\\d+)'\\)"
+          detail-template: https://scholarship.uos.ac.kr/scholarship/notice/notice/view.do?brdBbsseq=1&brdDate={id}&brdSeq={id2}&identified=anonymous
+          list-param: pageIndex
+          # 테이블형 스킨: 제목은 fontBold td, 본문은 hwp 에디터 영역
+          title-selector: "td.fontBold"
+          body-selector: ".hwp_editor_board_content, .notice_tb_view_contents"
 
 # 애플리케이션 공통 설정
 app:
