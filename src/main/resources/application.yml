@@ -119,6 +119,17 @@ scholarship:
           list-url: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=list
           link-pattern: '^\?mode=view&articleNo=(\d+)'
           detail-template: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=view&articleNo={id}
+        # Tier B: JS 함수형 링크(fnView(날짜, 순번) 복합키). link-pattern 그룹2까지 사용 → {id}/{id2} 치환.
+        - code: uos
+          provider: 서울시립대학교
+          source: UNIV_UOS
+          list-url: https://scholarship.uos.ac.kr/scholarship/notice/notice/list.do?brdBbsseq=1&identified=anonymous
+          link-pattern: "fnView\\('(\\d+)',\\s*'(\\d+)'\\)"
+          detail-template: https://scholarship.uos.ac.kr/scholarship/notice/notice/view.do?brdBbsseq=1&brdDate={id}&brdSeq={id2}&identified=anonymous
+          list-param: pageIndex
+          # 테이블형 스킨: 제목은 fontBold td, 본문은 hwp 에디터 영역
+          title-selector: "td.fontBold"
+          body-selector: ".hwp_editor_board_content, .notice_tb_view_contents"
 
 # 애플리케이션 공통 설정
 app:
