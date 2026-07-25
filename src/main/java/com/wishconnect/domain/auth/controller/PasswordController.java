@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
+@Tag(name = "인증 - 비밀번호", description = "비밀번호 재설정 요청·확정")
 @RestController
 @RequestMapping("/api/v1/auth/password")
 @RequiredArgsConstructor

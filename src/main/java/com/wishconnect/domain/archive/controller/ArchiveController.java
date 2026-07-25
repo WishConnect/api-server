@@ -13,10 +13,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /*
 아카이빙(스크랩) API 컨트롤러입니다. 노션 명세: POST /api/v1/archive/{scholarshipId}/scrap
  */
+@Tag(name = "아카이빙", description = "장학금 스크랩 추가·해제")
 @RestController
 @RequestMapping("/api/v1/archive")
 @RequiredArgsConstructor
