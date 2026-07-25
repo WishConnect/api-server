@@ -2,13 +2,16 @@ package com.wishconnect.domain.scholarship.collector;
 
 import com.wishconnect.domain.scholarship.collector.UnivNoticeProperties.Site;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -52,6 +55,7 @@ public class UnivNoticeCollector {
 
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipRepository scholarshipRepository;
+	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UnivNoticeProperties univNoticeProperties;
 	private final ImageStorageService imageStorageService;
 
@@ -87,7 +91,7 @@ public class UnivNoticeCollector {
 		for (int page = 1; page <= Math.max(pages, 1); page++) {
 			for (String articleId : fetchArticleIds(site, articleLink, page)) {
 				fetched++;
-				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), articleId)) {
+				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), site.sourceIdOf(articleId))) {
 					continue;
 				}
 				try {
@@ -111,10 +115,11 @@ public class UnivNoticeCollector {
 		try {
 			Document doc = Jsoup.connect(site.listPageUrl(page))
 					.userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-			return doc.select("a[href]").stream()
+			return doc.select("a").stream()
 					.map(a -> {
-						Matcher m = articleLink.matcher(a.attr("href"));
-						return m.find() ? m.group(1) : null;
+						// artclView 계열은 href 에, JS 함수형(fnView/view)은 onclick 또는 href="javascript:" 에 ID가 있다.
+						Matcher m = articleLink.matcher(a.attr("href") + " " + a.attr("onclick"));
+						return m.find() ? site.articleIdOf(m) : null;
 					})
 					.filter(java.util.Objects::nonNull)
 					.distinct()
@@ -129,8 +134,8 @@ public class UnivNoticeCollector {
 	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
 		String detailUrl = site.detailUrl(baseUrl, articleId);
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-		String title = extractTitle(doc);
-		String bodyText = doc.body() == null ? "" : doc.body().text();
+		String title = extractTitle(doc, site.titleSelector());
+		String bodyText = extractBody(doc, site.bodySelector());
 
 		Period period = parsePeriod(title + " " + bodyText, LocalDate.now().getYear());
 		boolean closed = period != null && period.end() != null
@@ -138,7 +143,7 @@ public class UnivNoticeCollector {
 
 		RawScholarship raw = RawScholarship.builder()
 				.source(site.source())
-				.sourceId(articleId)
+				.sourceId(site.sourceIdOf(articleId))
 				.sourceUrl(detailUrl)
 				.rawJson(Map.of("title", title, "period", period == null ? "" : period.toString()))
 				.rawHtml(doc.outerHtml())
@@ -174,9 +179,30 @@ public class UnivNoticeCollector {
 		raw.markParsed(scholarship);
 		rawScholarshipRepository.save(raw);
 		if (isNewScholarship) {
+			storeConditions(scholarship, title + "\n" + bodyText);
 			storePoster(site, doc, scholarship, title);
 		}
 		return true;
+	}
+
+	/**
+	 * 공지 본문에서 지원 자격 조건을 뽑아 저장한다.
+	 * 숫자 구조화(valueInt)는 이후 조건 추출 배치(ConditionExtractionService)가 이어서 처리하므로
+	 * 여기서는 원문 문장만 남긴다. 조건을 못 찾으면 아무것도 만들지 않는다.
+	 */
+	private void storeConditions(Scholarship scholarship, String text) {
+		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(text).stream()
+				.map(extracted -> ScholarshipCondition.builder()
+						.scholarship(scholarship)
+						.conditionType(extracted.type())
+						.operator(ConditionOperator.EQ)
+						.valueString(extracted.snippet())
+						.autoExtracted(false)
+						.build())
+				.toList();
+		if (!conditions.isEmpty()) {
+			scholarshipConditionRepository.saveAll(conditions);
+		}
 	}
 
 	/** 본문 인라인 이미지 → 이미지 첨부 순으로 포스터 후보를 찾아 S3에 저장한다(실패해도 수집 계속). */
@@ -193,6 +219,29 @@ public class UnivNoticeCollector {
 	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
 	private static final Pattern NON_POSTER = Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet");
 
+	/** 상세 본문 텍스트. bodySelector 지정 시 그 영역만, 없으면 body 전체. */
+	static String extractBody(Document doc, String bodySelector) {
+		if (bodySelector != null && !bodySelector.isBlank()) {
+			Element el = doc.selectFirst(bodySelector);
+			if (el != null && !el.text().isBlank()) {
+				return el.text();
+			}
+		}
+		return doc.body() == null ? "" : doc.body().text();
+	}
+
+	/** titleSelector 가 지정되면 그것을 우선 사용하고, 없으면 스킨 자동추출 규칙을 따른다. */
+	static String extractTitle(Document doc, String titleSelector) {
+		if (titleSelector != null && !titleSelector.isBlank()) {
+			Element el = doc.selectFirst(titleSelector);
+			if (el != null && !el.text().isBlank()) {
+				String ownText = el.ownText().trim();
+				return ownText.isBlank() ? el.text().trim() : ownText;
+			}
+		}
+		return extractTitle(doc);
+	}
+
 	/**
 	 * 공지 제목 추출. 스킨별로 위치가 달라 hidden input(#artclViewTitle, 연세/외대형) →
 	 * 제목 클래스(건국/한림형) → h2 → 문서 title 순으로 시도한다.
@@ -204,7 +253,10 @@ public class UnivNoticeCollector {
 		}
 		Element titled0 = doc.selectFirst(".artclViewTitle, .view-title, .board-view .title, .bbs-view-title, .view_tit, .b-title");
 		if (titled0 != null && !titled0.text().isBlank()) {
-			return titled0.text().trim();
+			// 제목 영역에 분류 라벨(<span class="hidden">분류</span><span>[교외장학금]</span>)을
+			// 함께 넣는 스킨(인천대 등)이 있어, 자식 요소를 뺀 직접 텍스트를 우선한다.
+			String ownText = titled0.ownText().trim();
+			return ownText.isBlank() ? titled0.text().trim() : ownText;
 		}
 		Element og = doc.selectFirst("meta[property=og:title][content]");
 		if (og != null && !og.attr("content").isBlank()) {
@@ -262,19 +314,29 @@ public class UnivNoticeCollector {
 		return RecruitmentStatus.OPEN;
 	}
 
+	/** 근로 대가로 지급되는 근로장학금. 태그([국가근로])와 본문 표현(국가근로장학생 모집) 모두 대응한다. */
+	private static final Pattern WORK_STUDY_KEYWORD = Pattern.compile("(국가근로|교내근로|일반근로|근로장학)");
 	private static final Pattern EXTERNAL_TAG = Pattern.compile("\\[(교외|학교추천|국가|국가근로|정부초청)\\]");
 	private static final Pattern PROVIDER_IN_TITLE = Pattern.compile(
 			"([가-힣A-Za-z0-9·]+(?:장학재단|장학회|문화재단|복지재단|공익재단|인재육성재단|진흥원|동문회|위원회))");
 
 	/**
-	 * 공지 제목 태그로 교내/교외를 분류한다.
-	 * [교외]/[학교추천]/[국가] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL,
-	 * 그 외([교내]/무태그)는 INTERNAL. 교외인 경우 제목에서 운영기관명 추출을 시도한다.
+	 * 공지 제목으로 장학 유형을 분류한다.
+	 * <ol>
+	 *   <li>근로장학(국가근로/교내근로/일반근로)은 성격이 달라 WORK_STUDY로 우선 분리한다.
+	 *       ([국가근로] 태그가 있어 EXTERNAL로 잡히던 건도 여기로 온다)</li>
+	 *   <li>[교외]/[학교추천]/[정부초청] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL.
+	 *       이 경우 제목에서 운영기관명 추출을 시도한다.</li>
+	 *   <li>그 외([교내]/무태그)는 INTERNAL.</li>
+	 * </ol>
 	 */
 	record Classification(ScholarshipType type, String provider) {
 	}
 
 	static Classification classify(String title, String univProvider) {
+		if (WORK_STUDY_KEYWORD.matcher(title).find()) {
+			return new Classification(ScholarshipType.WORK_STUDY, univProvider);
+		}
 		if (EXTERNAL_TAG.matcher(title).find()) {
 			Matcher provider = PROVIDER_IN_TITLE.matcher(title);
 			return new Classification(ScholarshipType.EXTERNAL,

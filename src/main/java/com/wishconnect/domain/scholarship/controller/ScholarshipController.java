@@ -17,10 +17,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /*
 장학금 큐레이팅(추천/매칭)·상세 API 컨트롤러입니다. (동기화는 ScholarshipSyncController 담당)
  */
+@Tag(name = "장학금", description = "큐레이팅·상세·검색·홈 요약")
 @RestController
 @RequestMapping("/api/v1/scholarships")
 @RequiredArgsConstructor
@@ -76,6 +78,7 @@ public class ScholarshipController {
 		return ApiResponse.ok(conditionExtractionService.extract());
 	}
 
+	/** 장학금을 키워드·카테고리로 검색한다. 비로그인도 조회 가능하며 이때 isScrapped 는 항상 false 다. */
 	@GetMapping("/search")
 	public ApiResponse<ScholarshipSearchResponse> searchScholarships(
 			@AuthenticationPrincipal String userIdStr,

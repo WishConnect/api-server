@@ -9,11 +9,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /*
 온보딩 전공 입력 자동완성 API입니다.
 전공명은 여러 사용자와 장학금 조건 매칭에서 공통으로 사용하므로 common 도메인에서 조회합니다.
  */
+@Tag(name = "공통 - 전공", description = "전공 검색")
 @RestController
 @RequestMapping("/api/v1/majors")
 @RequiredArgsConstructor
@@ -21,6 +23,7 @@ public class MajorController {
 
 	private final MajorSearchService majorSearchService;
 
+	/** 전공명을 키워드로 검색한다(온보딩 전공 선택용). */
 	@GetMapping("/search")
 	public ApiResponse<List<MajorResponse>> search(@RequestParam String keyword) {
 		return ApiResponse.ok(majorSearchService.search(keyword));

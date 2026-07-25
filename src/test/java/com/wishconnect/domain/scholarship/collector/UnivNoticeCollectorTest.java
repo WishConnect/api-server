@@ -88,6 +88,31 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
+	@DisplayName("제목: 분류 라벨을 자식 요소로 넣는 스킨(인천대형)에서 라벨을 제외한다")
+	void extractsTitleExcludingCategoryLabel() {
+		var inu = org.jsoup.Jsoup.parse("""
+				<html><body>
+				<h2 class="view-title">
+					<span class="hidden">분류</span>
+					<span>[교외장학금]</span>
+					[교외장학] 2026년도 드림재단 장학생 선발 안내
+				</h2>
+				</body></html>
+				""");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(inu))
+				.isEqualTo("[교외장학] 2026년도 드림재단 장학생 선발 안내");
+	}
+
+	@Test
+	@DisplayName("제목: 제목이 자식 요소 안에만 있으면 기존대로 전체 텍스트를 쓴다")
+	void extractsTitleFromChildElementWhenNoOwnText() {
+		var doc = org.jsoup.Jsoup.parse(
+				"<html><body><div class=\"view-title\"><span>2026-2 교내장학금 신청</span></div></body></html>");
+		org.assertj.core.api.Assertions.assertThat(UnivNoticeCollector.extractTitle(doc))
+				.isEqualTo("2026-2 교내장학금 신청");
+	}
+
+	@Test
 	@DisplayName("제목: og:title 폴백 시 사이트명 접두를 제거한다")
 	void extractsTitleFromOgWithPrefixStrip() {
 		var doc = org.jsoup.Jsoup.parse(
@@ -109,10 +134,31 @@ class UnivNoticeCollectorTest {
 				"[학교추천][교외] 광진구장학회 장학생 추천 선발 안내", "건국대학교");
 		org.assertj.core.api.Assertions.assertThat(rec.provider()).isEqualTo("광진구장학회");
 
-		var noProvider = UnivNoticeCollector.classify("[국가근로] 2026-1 국가근로장학금 안내", "한림대학교");
+		var noProvider = UnivNoticeCollector.classify("[교외] 2026-1 정부초청 장학생 안내", "한림대학교");
 		org.assertj.core.api.Assertions.assertThat(noProvider.type())
 				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.EXTERNAL);
 		org.assertj.core.api.Assertions.assertThat(noProvider.provider()).isEqualTo("한림대학교");
+	}
+
+	@Test
+	@DisplayName("근로장학(국가근로/교내근로/일반근로)은 WORK_STUDY 로 분리한다")
+	void classifiesWorkStudy() {
+		var workStudyType = com.wishconnect.domain.scholarship.entity.ScholarshipType.WORK_STUDY;
+		// [국가근로] 태그가 있어도 EXTERNAL 이 아니라 WORK_STUDY 가 우선한다
+		org.assertj.core.api.Assertions.assertThat(
+						UnivNoticeCollector.classify("[국가근로] 2026-1 국가근로장학금 안내", "한림대학교").type())
+				.isEqualTo(workStudyType);
+		// 태그 없이 제목 표현만 있는 경우(인천대·서울여대형)도 잡는다
+		org.assertj.core.api.Assertions.assertThat(
+						UnivNoticeCollector.classify("[수학과] 2026학년도 2학기 국가근로장학생 모집 안내", "인천대학교").type())
+				.isEqualTo(workStudyType);
+		org.assertj.core.api.Assertions.assertThat(
+						UnivNoticeCollector.classify("2026학년도 2학기 교내근로 장학생 신청", "서울여자대학교").type())
+				.isEqualTo(workStudyType);
+		// 운영기관은 학교로 유지한다(근로 제공처가 학교이므로)
+		org.assertj.core.api.Assertions.assertThat(
+						UnivNoticeCollector.classify("[일반근로] 2026-2 일반근로장학생 신청", "한림대학교").provider())
+				.isEqualTo("한림대학교");
 	}
 
 	@Test
