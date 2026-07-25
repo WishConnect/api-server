@@ -75,7 +75,7 @@ llm:
 scholarship:
   sync:
     scheduled: ${SCHOLARSHIP_SYNC_SCHEDULED:true}   # false 면 일일 배치 비활성화
-    cron: ${SCHOLARSHIP_SYNC_CRON:0 0 23 * * *}     # 매일 밤 11시 (Asia/Seoul)
+    cron: ${SCHOLARSHIP_SYNC_CRON:0 0 11 * * *}     # 매일 오전 11시 (Asia/Seoul)
   collect:
     univ:
       # 대학 장학공지 수집 대상 (공통 CMS: 목록 subview.do + 상세 artclView.do 패턴만 지원)
@@ -130,6 +130,14 @@ scholarship:
           # 테이블형 스킨: 제목은 fontBold td, 본문은 hwp 에디터 영역
           title-selector: "td.fontBold"
           body-selector: ".hwp_editor_board_content, .notice_tb_view_contents"
+
+# 알림 생성 배치. 장학금 수집 이후 알림이 만들어지도록 기본 실행 순서를 둔다.
+notification:
+  scheduled: ${NOTIFICATION_SCHEDULED:true}
+  deadline:
+    cron: ${NOTIFICATION_DEADLINE_CRON:0 20 11 * * *}        # 매일 오전 11시 20분
+  recommendation:
+    cron: ${NOTIFICATION_RECOMMENDATION_CRON:0 30 11 * * *} # 매일 오전 11시 30분
 
 # 애플리케이션 공통 설정
 app:

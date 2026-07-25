@@ -35,6 +35,9 @@ public class NotificationSetting extends BaseEntity {
 	private User user;
 
 	@Column(nullable = false)
+	private boolean isNotificationEnabled;
+
+	@Column(nullable = false)
 	private boolean isMatchingEnabled;
 
 	@Column(nullable = false)
@@ -42,4 +45,39 @@ public class NotificationSetting extends BaseEntity {
 
 	@Column(nullable = false)
 	private boolean isEssayEnabled;
+
+	@Column(nullable = false)
+	private boolean isEtcEnabled;
+
+	public static NotificationSetting createDefault(User user) {
+		return NotificationSetting.builder()
+				.user(user)
+				.isNotificationEnabled(true)
+				.isMatchingEnabled(true)
+				.isScheduleEnabled(true)
+				.isEssayEnabled(true)
+				.isEtcEnabled(true)
+				.build();
+	}
+
+	public void update(boolean notificationEnabled, boolean matchingEnabled, boolean scheduleEnabled,
+			boolean essayEnabled, boolean etcEnabled) {
+		this.isNotificationEnabled = notificationEnabled;
+		this.isMatchingEnabled = matchingEnabled;
+		this.isScheduleEnabled = scheduleEnabled;
+		this.isEssayEnabled = essayEnabled;
+		this.isEtcEnabled = etcEnabled;
+	}
+
+	public boolean isEnabled(NotificationType type) {
+		if (!isNotificationEnabled) {
+			return false;
+		}
+		return switch (type) {
+			case RECOMMENDATION -> isMatchingEnabled;
+			case SCHEDULE -> isScheduleEnabled;
+			case WRITING -> isEssayEnabled;
+			case ETC -> isEtcEnabled;
+		};
+	}
 }

@@ -10,6 +10,7 @@ import com.wishconnect.domain.application.entity.EssayQuestion;
 import com.wishconnect.domain.application.repository.AiInterviewRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.notification.service.NotificationService;
 import com.wishconnect.domain.application.service.prompt.InterviewPromptBuilder;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -41,6 +42,7 @@ public class InterviewService {
 	private final AiInterviewRepository aiInterviewRepository;
 	private final InterviewPromptBuilder promptBuilder;
 	private final LlmClient llmClient;
+	private final NotificationService notificationService;
 
 	public InterviewAdvanceResponse advance(UUID userId,
 			Long applicationId,
@@ -92,6 +94,7 @@ public class InterviewService {
 
 		pending.recordAnswer(request.answerText());
 		essay.markInProgress();
+		createWritingNotificationSafely(essay);
 
 		int nextStepOrder = pending.getStepOrder() + 1;
 		if (nextStepOrder >= InterviewPromptBuilder.MAX_TURNS) {
@@ -125,6 +128,14 @@ public class InterviewService {
 		}
 		if (request.answerText() == null || request.answerText().isBlank()) {
 			throw new CustomException(ErrorCode.INVALID_INTERVIEW_STEP);
+		}
+	}
+
+	private void createWritingNotificationSafely(Essay essay) {
+		try {
+			notificationService.createWritingNotification(essay);
+		} catch (Exception e) {
+			log.warn("인터뷰 작성 알림 생성 실패. essayId={}", essay.getId(), e);
 		}
 	}
 }

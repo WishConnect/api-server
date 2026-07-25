@@ -88,6 +88,18 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	List<Scholarship> findAllOpenForRecommendation(@Param("status") RecruitmentStatus status,
 												   @Param("now") LocalDateTime now);
 
+	/** 알림 배치용: 특정 기간 안에 마감되는 활성 공고를 조회한다. */
+	@Query("""
+			select s from Scholarship s
+			where s.recruitmentStatus = com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN
+			  and s.active = true
+			  and s.deletedAt is null
+			  and s.applicationEndAt >= :start
+			  and s.applicationEndAt < :end
+			""")
+	List<Scholarship> findOpenByApplicationEndAtBetween(@Param("start") LocalDateTime start,
+														@Param("end") LocalDateTime end);
+
 	/** 배치용: 마감일이 지났는데 CLOSED가 아닌 공고를 일괄 마감 처리한다. 처리 건수 반환. */
 	@Modifying(clearAutomatically = true)
 	@Query("""
