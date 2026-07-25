@@ -10,6 +10,7 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Evaluation;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Result;
@@ -20,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -47,11 +49,16 @@ public class ScholarshipRecommendationService {
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UserProfileRepository userProfileRepository;
+	private final ScrapRepository scrapRepository;
 
 	@Transactional(readOnly = true)
 	public CuratedScholarshipResponse getCuratedScholarships(UUID userId, int page, int size) {
 		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
 		List<ScoredScholarship> scored = scoreOpenScholarships(profile);
+
+		// 화면에 노출되는 카드(featured/교내/그외)의 스크랩 여부를 한 번에 조회한다.
+		// 상세·검색과 달리 큐레이팅 카드에 isScrapped 가 없어, 뒤로가기 시 스크랩 상태가 사라지던 문제 해결.
+		Set<Long> scrappedIds = findScrappedIds(userId, scored);
 
 		List<ScoredScholarship> eligibleList = scored.stream().filter(ScoredScholarship::eligible).toList();
 		ScoredScholarship featured = eligibleList.stream()
@@ -61,7 +68,7 @@ public class ScholarshipRecommendationService {
 
 		List<ScholarshipCard> campus = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
-				.map(ScoredScholarship::toCard)
+				.map(s -> s.toCard(scrappedIds))
 				.toList();
 
 		// 그 외 추천: 지원 가능(점수순) 뒤에 조건 미충족(분류 노출)을 붙인다.
@@ -77,7 +84,7 @@ public class ScholarshipRecommendationService {
 								.filter(s -> !s.eligible())
 								.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
 								.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()))
-				.map(ScoredScholarship::toCard)
+				.map(s -> s.toCard(scrappedIds))
 				.toList();
 
 		int safePage = Math.max(page, 1);
@@ -87,12 +94,21 @@ public class ScholarshipRecommendationService {
 		int totalPages = (int) Math.ceil((double) others.size() / safeSize);
 
 		return new CuratedScholarshipResponse(
-				featured == null ? null : featured.toCard(),
+				featured == null ? null : featured.toCard(scrappedIds),
 				calculateProfileCompletionRate(profile),
 				campus,
 				others.subList(fromIndex, toIndex),
 				new Pagination(safePage, safeSize, others.size(), totalPages)
 		);
+	}
+
+	/** 로그인 사용자가 스크랩한 장학금 ID 집합. 비로그인/후보 없음이면 빈 집합. */
+	private Set<Long> findScrappedIds(UUID userId, List<ScoredScholarship> scored) {
+		if (userId == null || scored.isEmpty()) {
+			return Set.of();
+		}
+		List<Long> ids = scored.stream().map(s -> s.scholarship().getId()).toList();
+		return new java.util.HashSet<>(scrapRepository.findScrappedScholarshipIds(userId, ids));
 	}
 
 	@Transactional(readOnly = true)
@@ -186,8 +202,9 @@ public class ScholarshipRecommendationService {
 	private record ScoredScholarship(Scholarship scholarship, boolean eligible, int matchScore, Long dDay,
 			List<String> matchReasons) {
 
-		ScholarshipCard toCard() {
-			return ScholarshipCard.of(scholarship, matchScore, matchReasons, eligible);
+		ScholarshipCard toCard(Set<Long> scrappedIds) {
+			return ScholarshipCard.of(scholarship, matchScore, matchReasons, eligible,
+					scrappedIds.contains(scholarship.getId()));
 		}
 	}
 }

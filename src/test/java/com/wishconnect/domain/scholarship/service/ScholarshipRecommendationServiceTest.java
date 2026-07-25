@@ -2,8 +2,10 @@ package com.wishconnect.domain.scholarship.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
+import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
@@ -13,6 +15,7 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.domain.user.entity.UserProfile;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import java.time.LocalDateTime;
@@ -40,6 +43,9 @@ class ScholarshipRecommendationServiceTest {
 
 	@Mock
 	private UserProfileRepository userProfileRepository;
+
+	@Mock
+	private ScrapRepository scrapRepository;
 
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
@@ -79,6 +85,35 @@ class ScholarshipRecommendationServiceTest {
 		if (!scholarships.isEmpty()) {
 			given(scholarshipConditionRepository.findAllByScholarshipIn(scholarships)).willReturn(conditions);
 		}
+		// 기본: 스크랩 없음. 스크랩 케이스 테스트에서 개별 override.
+		lenient().when(scrapRepository.findScrappedScholarshipIds(
+						org.mockito.ArgumentMatchers.eq(USER_ID), org.mockito.ArgumentMatchers.anyList()))
+				.thenReturn(List.of());
+	}
+
+	@Test
+	@DisplayName("스크랩한 장학금은 카드의 isScrapped=true로 표시된다(featured/교내 모두)")
+	void marksScrappedCards() {
+		Scholarship scrapped = scholarship(1L, "스크랩함", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(10), LocalDateTime.now().minusDays(1));
+		Scholarship notScrapped = scholarship(2L, "스크랩안함", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(20), LocalDateTime.now().minusDays(1));
+		stubScholarships(null, List.of(scrapped, notScrapped), List.of());
+		given(scrapRepository.findScrappedScholarshipIds(
+						org.mockito.ArgumentMatchers.eq(USER_ID), org.mockito.ArgumentMatchers.anyList()))
+				.willReturn(List.of(1L));
+
+		CuratedScholarshipResponse response =
+				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
+
+		// featured = 마감 가장 가까운 스크랩함(1L)
+		assertThat(response.featured().scholarshipId()).isEqualTo(1L);
+		assertThat(response.featured().isScrapped()).isTrue();
+		// 교내 목록에서도 1L 만 true
+		assertThat(response.campusScholarships())
+				.filteredOn(card -> card.scholarshipId() == 1L).allMatch(ScholarshipCard::isScrapped);
+		assertThat(response.campusScholarships())
+				.filteredOn(card -> card.scholarshipId() == 2L).noneMatch(ScholarshipCard::isScrapped);
 	}
 
 	@Test

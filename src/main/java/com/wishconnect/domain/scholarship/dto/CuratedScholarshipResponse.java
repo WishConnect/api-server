@@ -28,11 +28,12 @@ public record CuratedScholarshipResponse(
 			Long dDay,
 			int matchScore,
 			List<String> matchReasons,
-			boolean eligible
+			boolean eligible,
+			boolean isScrapped
 	) {
 
 		public static ScholarshipCard of(Scholarship scholarship, int matchScore, List<String> matchReasons,
-				boolean eligible) {
+				boolean eligible, boolean isScrapped) {
 			return new ScholarshipCard(
 					scholarship.getId(),
 					scholarship.getTitle(),
@@ -42,7 +43,8 @@ public record CuratedScholarshipResponse(
 					calculateDday(scholarship.getApplicationEndAt()),
 					matchScore,
 					matchReasons,
-					eligible
+					eligible,
+					isScrapped
 			);
 		}
 	}
