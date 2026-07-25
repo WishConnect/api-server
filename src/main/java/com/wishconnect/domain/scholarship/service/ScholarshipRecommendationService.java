@@ -64,16 +64,18 @@ public class ScholarshipRecommendationService {
 				.map(ScoredScholarship::toCard)
 				.toList();
 
-		// 그 외 추천: 지원 가능(점수순) 뒤에 조건 미충족(분류 노출)을 붙인다. featured/교내는 제외.
+		// 그 외 추천: 지원 가능(점수순) 뒤에 조건 미충족(분류 노출)을 붙인다.
+		// featured/교내는 제외하고, 근로장학(WORK_STUDY)도 성격이 달라 추천 목록에 넣지 않는다.
 		List<ScholarshipCard> others = Stream.concat(
 						eligibleList.stream()
 								.filter(s -> s != featured)
-								.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.INTERNAL)
+								.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.EXTERNAL)
 								.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
 										.thenComparing(s -> s.scholarship().getApplicationEndAt(),
 												Comparator.nullsLast(Comparator.naturalOrder()))),
 						scored.stream()
 								.filter(s -> !s.eligible())
+								.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
 								.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()))
 				.map(ScoredScholarship::toCard)
 				.toList();
