@@ -85,6 +85,7 @@ public class UserAccountService {
 			throw new CustomException(ErrorCode.INVALID_PASSWORD_FORMAT);
 		}
 		user.changePassword(passwordEncoder.encode(request.newPassword()));
+		refreshTokenService.delete(userId);
 		return new UpdateResponse(true);
 	}
 
@@ -94,7 +95,8 @@ public class UserAccountService {
 	}
 
 	@Transactional
-	public UpdateResponse sendEmailVerification(EmailVerificationSendRequest request) {
+	public UpdateResponse sendEmailVerification(UUID userId, EmailVerificationSendRequest request) {
+		getActiveUser(userId);
 		if (!emailVerificationService.isEmailAvailable(request.email())) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
@@ -103,22 +105,23 @@ public class UserAccountService {
 	}
 
 	@Transactional
-	public UpdateResponse verifyEmail(EmailVerificationConfirmRequest request) {
-		emailVerificationService.verifyCode(request.email(), request.code());
+	public UpdateResponse verifyEmail(UUID userId, EmailVerificationConfirmRequest request) {
+		getActiveUser(userId);
+		emailVerificationService.verifyCodeForUser(userId, request.email(), request.code());
 		return new UpdateResponse(true);
 	}
 
 	@Transactional
 	public UpdateResponse updateEmail(UUID userId, EmailUpdateRequest request) {
 		User user = getActiveUser(userId);
-		if (!emailVerificationService.isVerified(request.email())) {
+		if (!emailVerificationService.isVerifiedForUser(userId, request.email())) {
 			throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
 		}
 		if (!request.email().equals(user.getEmail()) && !emailVerificationService.isEmailAvailable(request.email())) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
 		user.changeEmail(request.email());
-		emailVerificationService.clearVerified(request.email());
+		emailVerificationService.clearVerifiedForUser(userId, request.email());
 		return new UpdateResponse(true);
 	}
 

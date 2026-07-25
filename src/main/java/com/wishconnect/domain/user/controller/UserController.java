@@ -53,16 +53,18 @@ public class UserController {
 
 	@PostMapping("/email/verification")
 	public ApiResponse<UpdateResponse> sendEmailVerification(
+			@AuthenticationPrincipal String userId,
 			@Valid @RequestBody EmailVerificationSendRequest request
 	) {
-		return ApiResponse.ok(userAccountService.sendEmailVerification(request));
+		return ApiResponse.ok(userAccountService.sendEmailVerification(UUID.fromString(userId), request));
 	}
 
 	@PostMapping("/email/verify")
 	public ApiResponse<UpdateResponse> verifyEmail(
+			@AuthenticationPrincipal String userId,
 			@Valid @RequestBody EmailVerificationConfirmRequest request
 	) {
-		return ApiResponse.ok(userAccountService.verifyEmail(request));
+		return ApiResponse.ok(userAccountService.verifyEmail(UUID.fromString(userId), request));
 	}
 
 	@PatchMapping("/email")
