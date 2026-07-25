@@ -152,6 +152,7 @@ public class UserProfileService {
 		return new ProfileResponse(
 				user.getId(),
 				user.getName(),
+				user.getEmail(),
 				profile == null ? null : profile.getBirthYear(),
 				user.getPhone(),
 				profile == null || profile.getGender() == null ? null : profile.getGender().name(),

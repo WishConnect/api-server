@@ -27,6 +27,7 @@ public class EmailVerificationService {
 
 	private static final String CODE_KEY = "email:verify:code:";
 	private static final String VERIFIED_KEY = "email:verify:done:";
+	private static final String USER_VERIFIED_KEY = "email:verify:done:user:";
 	private static final String COOLDOWN_KEY = "email:verify:cooldown:";
 
 	private final StringRedisTemplate redisTemplate;
@@ -57,6 +58,21 @@ public class EmailVerificationService {
 
 	/** 코드 대조 후 '인증됨' 상태 기록. */
 	public void verifyCode(String email, String code) {
+		verifyCodeOnly(email, code);
+		redisTemplate.opsForValue()
+				.set(VERIFIED_KEY + email, "1", Duration.ofSeconds(properties.verifiedTtlSeconds()));
+		log.info("[EmailVerify] 인증 완료 email={}", maskEmail(email));
+	}
+
+	/** 마이페이지 이메일 변경용: 인증 완료 상태를 사용자와 이메일 조합으로 기록한다. */
+	public void verifyCodeForUser(java.util.UUID userId, String email, String code) {
+		verifyCodeOnly(email, code);
+		redisTemplate.opsForValue()
+				.set(userVerifiedKey(userId, email), "1", Duration.ofSeconds(properties.verifiedTtlSeconds()));
+		log.info("[EmailVerify] 사용자 이메일 변경 인증 완료 userId={}, email={}", userId, maskEmail(email));
+	}
+
+	private void verifyCodeOnly(String email, String code) {
 		String stored = redisTemplate.opsForValue().get(CODE_KEY + email);
 		if (stored == null) {
 			throw new CustomException(ErrorCode.VERIFICATION_CODE_EXPIRED);
@@ -65,9 +81,6 @@ public class EmailVerificationService {
 			throw new CustomException(ErrorCode.INVALID_VERIFICATION_CODE);
 		}
 		redisTemplate.delete(CODE_KEY + email);
-		redisTemplate.opsForValue()
-				.set(VERIFIED_KEY + email, "1", Duration.ofSeconds(properties.verifiedTtlSeconds()));
-		log.info("[EmailVerify] 인증 완료 email={}", maskEmail(email));
 	}
 
 	/** 회원가입 선행 검증용: 이메일이 '인증됨' 상태인지. */
@@ -75,9 +88,21 @@ public class EmailVerificationService {
 		return Boolean.TRUE.equals(redisTemplate.hasKey(VERIFIED_KEY + email));
 	}
 
+	public boolean isVerifiedForUser(java.util.UUID userId, String email) {
+		return Boolean.TRUE.equals(redisTemplate.hasKey(userVerifiedKey(userId, email)));
+	}
+
 	/** 회원가입 완료 후 '인증됨' 상태 소거. */
 	public void clearVerified(String email) {
 		redisTemplate.delete(VERIFIED_KEY + email);
+	}
+
+	public void clearVerifiedForUser(java.util.UUID userId, String email) {
+		redisTemplate.delete(userVerifiedKey(userId, email));
+	}
+
+	private String userVerifiedKey(java.util.UUID userId, String email) {
+		return USER_VERIFIED_KEY + userId + ":" + email;
 	}
 
 	private String generateCode() {

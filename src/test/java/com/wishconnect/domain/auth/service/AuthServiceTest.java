@@ -37,7 +37,6 @@ import com.wishconnect.domain.user.repository.UserAgreementRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
 import java.util.List;
-import java.util.Optional;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.global.jwt.JwtProvider;
@@ -433,6 +432,8 @@ class AuthServiceTest {
 			given(jwtProvider.validateToken("refresh-token")).willReturn(true);
 			given(jwtProvider.getUserId("refresh-token")).willReturn(userId);
 			given(refreshTokenService.find(userId)).willReturn(Optional.of("refresh-token"));
+			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
+			given(userRepository.findById(userId)).willReturn(Optional.of(user));
 			stubTokenIssue();
 
 			TokenResponse response = authService.refresh("refresh-token");
