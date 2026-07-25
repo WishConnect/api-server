@@ -37,7 +37,7 @@ public class NotificationDispatchLog extends BaseCreatedEntity {
 	private Long id;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "scholarship_id", nullable = false)
+	@JoinColumn(name = "scholarship_id")
 	private Scholarship scholarship;
 
 	@ManyToOne(fetch = FetchType.LAZY)

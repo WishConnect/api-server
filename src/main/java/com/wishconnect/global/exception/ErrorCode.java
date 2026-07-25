@@ -65,6 +65,9 @@ public enum ErrorCode {
 	ALREADY_SCRAPPED(HttpStatus.CONFLICT, "이미 스크랩한 장학금입니다."),
 	SCRAP_NOT_FOUND(HttpStatus.NOT_FOUND, "스크랩하지 않은 장학금입니다."),
 
+	// 알림
+	NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 알림입니다."),
+
 	//검색
 	INVALID_SORT(HttpStatus.BAD_REQUEST,"지원하지 않는 정렬 기준입니다."),
 	LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");

@@ -15,7 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /*
-장학금 공공데이터 자동 수집 배치입니다. 매일 정해진 시각(기본 밤 11시 KST)에
+장학금 공공데이터 자동 수집 배치입니다. 매일 정해진 시각(기본 오전 11시 KST)에
 동기화를 실행해 최신 공고를 반영하고, 이어서 LLM 조건 구조화 추출을 시도합니다.
 - 시각 변경: scholarship.sync.cron (스프링 cron 6필드)
 - 배치 비활성화: scholarship.sync.scheduled=false (로컬에서 외부 API 호출을 원치 않을 때)
@@ -33,7 +33,7 @@ public class ScholarshipSyncScheduler {
 	private final ScholarshipRepository scholarshipRepository;
 	private final UnivNoticeCollector univNoticeCollector;
 
-	@Scheduled(cron = "${scholarship.sync.cron:0 0 23 * * *}", zone = "Asia/Seoul")
+	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
 		log.info("[SyncBatch] 장학금 일일 동기화 시작");
 		try {
