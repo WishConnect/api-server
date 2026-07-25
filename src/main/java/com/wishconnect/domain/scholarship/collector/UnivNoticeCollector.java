@@ -91,7 +91,7 @@ public class UnivNoticeCollector {
 		for (int page = 1; page <= Math.max(pages, 1); page++) {
 			for (String articleId : fetchArticleIds(site, articleLink, page)) {
 				fetched++;
-				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), articleId)) {
+				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), site.sourceIdOf(articleId))) {
 					continue;
 				}
 				try {
@@ -115,10 +115,11 @@ public class UnivNoticeCollector {
 		try {
 			Document doc = Jsoup.connect(site.listPageUrl(page))
 					.userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-			return doc.select("a[href]").stream()
+			return doc.select("a").stream()
 					.map(a -> {
-						Matcher m = articleLink.matcher(a.attr("href"));
-						return m.find() ? m.group(1) : null;
+						// artclView 계열은 href 에, JS 함수형(fnView/view)은 onclick 또는 href="javascript:" 에 ID가 있다.
+						Matcher m = articleLink.matcher(a.attr("href") + " " + a.attr("onclick"));
+						return m.find() ? site.articleIdOf(m) : null;
 					})
 					.filter(java.util.Objects::nonNull)
 					.distinct()
@@ -133,8 +134,8 @@ public class UnivNoticeCollector {
 	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
 		String detailUrl = site.detailUrl(baseUrl, articleId);
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
-		String title = extractTitle(doc);
-		String bodyText = doc.body() == null ? "" : doc.body().text();
+		String title = extractTitle(doc, site.titleSelector());
+		String bodyText = extractBody(doc, site.bodySelector());
 
 		Period period = parsePeriod(title + " " + bodyText, LocalDate.now().getYear());
 		boolean closed = period != null && period.end() != null
@@ -142,7 +143,7 @@ public class UnivNoticeCollector {
 
 		RawScholarship raw = RawScholarship.builder()
 				.source(site.source())
-				.sourceId(articleId)
+				.sourceId(site.sourceIdOf(articleId))
 				.sourceUrl(detailUrl)
 				.rawJson(Map.of("title", title, "period", period == null ? "" : period.toString()))
 				.rawHtml(doc.outerHtml())
@@ -217,6 +218,29 @@ public class UnivNoticeCollector {
 
 	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
 	private static final Pattern NON_POSTER = Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet");
+
+	/** 상세 본문 텍스트. bodySelector 지정 시 그 영역만, 없으면 body 전체. */
+	static String extractBody(Document doc, String bodySelector) {
+		if (bodySelector != null && !bodySelector.isBlank()) {
+			Element el = doc.selectFirst(bodySelector);
+			if (el != null && !el.text().isBlank()) {
+				return el.text();
+			}
+		}
+		return doc.body() == null ? "" : doc.body().text();
+	}
+
+	/** titleSelector 가 지정되면 그것을 우선 사용하고, 없으면 스킨 자동추출 규칙을 따른다. */
+	static String extractTitle(Document doc, String titleSelector) {
+		if (titleSelector != null && !titleSelector.isBlank()) {
+			Element el = doc.selectFirst(titleSelector);
+			if (el != null && !el.text().isBlank()) {
+				String ownText = el.ownText().trim();
+				return ownText.isBlank() ? el.text().trim() : ownText;
+			}
+		}
+		return extractTitle(doc);
+	}
 
 	/**
 	 * 공지 제목 추출. 스킨별로 위치가 달라 hidden input(#artclViewTitle, 연세/외대형) →

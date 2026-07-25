@@ -16,19 +16,26 @@ import org.springframework.util.StringUtils;
 @ConfigurationProperties(prefix = "scholarship.collect.univ")
 public record UnivNoticeProperties(List<Site> sites) {
 
+	/** 복합 ID 내부 결합 구분자(제어문자라 실제 값과 충돌하지 않는다). */
+	static final String ID_SEPARATOR = "\u0001";
+
 	/**
 	 * @param code           사이트 식별 코드 (예: konkuk)
 	 * @param provider       운영기관 표시명 (예: 건국대학교)
 	 * @param source         raw_scholarship.source 값
 	 * @param listUrl        장학공지 목록 URL
 	 * @param articlePath    (artclView 계열) 게시글 링크 경로 접두. 예: /bbs/konkuk/235/
-	 * @param linkPattern    (범용) 목록에서 게시글 ID를 뽑는 정규식(그룹1=id). 예: articleNo=(\\d+)
-	 * @param detailTemplate (범용) 상세 URL 템플릿. {id} 치환. 예: https://.../notice.do?mode=view&articleNo={id}
+	 * @param linkPattern    (범용) 목록에서 게시글 ID를 뽑는 정규식. 그룹1(=id). 복합키는 그룹2도 사용.
+	 *                       예: articleNo=(\\d+) / fnView\\('(\\d+)',\\s*'(\\d+)'\\)
+	 * @param detailTemplate (범용) 상세 URL 템플릿. {id}(=그룹1), {id2}(=그룹2) 치환.
 	 * @param listParam      페이지네이션 쿼리 파라미터명(기본 page)
+	 * @param titleSelector  (선택) 상세 페이지 제목 CSS 선택자. 지정 시 스킨 자동추출보다 우선.
+	 * @param bodySelector   (선택) 상세 페이지 본문 CSS 선택자. 지정 시 body 전체 대신 이 영역만 사용.
 	 */
 	public record Site(
 			String code, String provider, String source, String listUrl,
-			String articlePath, String linkPattern, String detailTemplate, String listParam) {
+			String articlePath, String linkPattern, String detailTemplate, String listParam,
+			String titleSelector, String bodySelector) {
 
 		/** 목록에서 게시글 ID를 뽑는 정규식. 지정 없으면 articlePath 기반 artclView 패턴. */
 		public String effectiveLinkPattern() {
@@ -38,12 +45,33 @@ public record UnivNoticeProperties(List<Site> sites) {
 			return java.util.regex.Pattern.quote(articlePath) + "(\\d+)/artclView\\.do";
 		}
 
-		/** 상세 URL을 만든다. detailTemplate 우선, 없으면 artclView 규칙. */
-		public String detailUrl(String baseUrl, String id) {
-			if (StringUtils.hasText(detailTemplate)) {
-				return detailTemplate.replace("{id}", id);
+		/**
+		 * 정규식 매칭 결과를 하나의 articleId 문자열로 만든다. 그룹이 2개 이상이면
+		 * 제어문자로 이어붙여 복합키를 표현한다(fnView(date, seq) 같은 게시판 대응).
+		 */
+		public String articleIdOf(java.util.regex.Matcher matcher) {
+			if (matcher.groupCount() >= 2 && matcher.group(2) != null) {
+				return matcher.group(1) + ID_SEPARATOR + matcher.group(2);
 			}
-			return baseUrl + articlePath + id + "/artclView.do";
+			return matcher.group(1);
+		}
+
+		/** raw_scholarship.source_id 로 저장할 안정적인 문자열(멱등성 키). 복합키는 '_' 결합. */
+		public String sourceIdOf(String articleId) {
+			return articleId.replace(ID_SEPARATOR, "_");
+		}
+
+		/** 상세 URL을 만든다. detailTemplate 우선({id},{id2} 치환), 없으면 artclView 규칙. */
+		public String detailUrl(String baseUrl, String articleId) {
+			String[] parts = articleId.split(ID_SEPARATOR, -1);
+			if (StringUtils.hasText(detailTemplate)) {
+				String url = detailTemplate.replace("{id}", parts[0]);
+				if (parts.length > 1) {
+					url = url.replace("{id2}", parts[1]);
+				}
+				return url;
+			}
+			return baseUrl + articlePath + parts[0] + "/artclView.do";
 		}
 
 		/** 목록에서 게시글 링크를 걸러낼 CSS 선택자 힌트(넓게 a[href] 후 정규식 필터). */
