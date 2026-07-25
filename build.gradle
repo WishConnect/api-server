@@ -24,6 +24,7 @@ repositories {
 ext {
 	jjwtVersion = '0.12.6'
 	springdocVersion = '2.6.0'
+	therapiVersion = '0.15.0'
 	anthropicSdkVersion = '2.34.0'
 }
 
@@ -47,6 +48,9 @@ dependencies {
 
 	// API documentation
 	implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${springdocVersion}"
+	// 컨트롤러/DTO 의 javadoc 을 Swagger 설명으로 자동 추출 (별도 @Operation 주석 없이 문서화)
+	implementation "com.github.therapi:therapi-runtime-javadoc:${therapiVersion}"
+	annotationProcessor "com.github.therapi:therapi-runtime-javadoc-scribe:${therapiVersion}"
 
 	// JWT
 	implementation "io.jsonwebtoken:jjwt-api:${jjwtVersion}"

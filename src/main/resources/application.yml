@@ -24,8 +24,15 @@ spring:
             enable: true
 
 springdoc:
+  # 문서를 끄려면 배포 환경변수에 SWAGGER_ENABLED=false 만 주면 된다(운영 노출 차단용 스위치).
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
     path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+    doc-expansion: none   # 태그 접힌 상태로 시작(엔드포인트가 많아 가독성 우선)
 
 # 배포 헬스체크용 (/actuator/health 만 노출)
 management:

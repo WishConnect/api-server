@@ -26,10 +26,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 자기소개서(지원서) API 컨트롤러. Notion API 명세서의 ①·②·③ 엔드포인트를 담당한다.
  */
+@Tag(name = "자기소개서", description = "지원서 생성·조회 및 AI 인터뷰")
 @RestController
 @RequestMapping("/api/v1/applications")
 @RequiredArgsConstructor
