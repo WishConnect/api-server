@@ -54,4 +54,21 @@ public class Notification extends BaseCreatedEntity {
 
 	@Column(nullable = false)
 	private boolean isRead;
+
+	public static Notification create(User user, NotificationType type, String title, String content,
+			String relatedType, Long relatedId) {
+		return Notification.builder()
+				.user(user)
+				.type(type)
+				.title(title)
+				.content(content)
+				.relatedType(relatedType)
+				.relatedId(relatedId)
+				.isRead(false)
+				.build();
+	}
+
+	public void markAsRead() {
+		this.isRead = true;
+	}
 }

@@ -18,6 +18,7 @@ import com.wishconnect.domain.application.repository.AiInterviewRepository;
 import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.notification.service.NotificationService;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.user.entity.User;
@@ -30,6 +31,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  * (STEP1 인터뷰·STEP2 답변 관리는 별도 서비스에서 처리)
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class EssayApplicationService {
@@ -51,6 +54,7 @@ public class EssayApplicationService {
 	private final AiInterviewRepository aiInterviewRepository;
 	private final ScholarshipRepository scholarshipRepository;
 	private final UserRepository userRepository;
+	private final NotificationService notificationService;
 
 	/**
 	 * ① 지원서 목록 조회. status 로 필터링 가능.
@@ -179,8 +183,17 @@ public class EssayApplicationService {
 					.isCompleted(false)
 					.build());
 		}
+		createWritingNotificationSafely(essay);
 
 		return new CreateApplicationResponse(essay.getId(), essay.getStatus(), questions.size());
+	}
+
+	private void createWritingNotificationSafely(Essay essay) {
+		try {
+			notificationService.createWritingNotification(essay);
+		} catch (Exception e) {
+			log.warn("지원서 작성 알림 생성 실패. essayId={}", essay.getId(), e);
+		}
 	}
 
 	/**
