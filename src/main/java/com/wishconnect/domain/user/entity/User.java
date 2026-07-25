@@ -114,6 +114,10 @@ public class User extends BaseEntity {
 		this.password = encodedPassword;
 	}
 
+	public void changeEmail(String email) {
+		this.email = email;
+	}
+
 	public void updateBasicProfile(String name, String phone) {
 		this.name = name;
 		this.phone = phone;

@@ -96,6 +96,9 @@ public class AuthService {
 	public LoginResponse login(LoginRequest request) {
 		User user = userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+		if (user.isDeleted()) {
+			throw new CustomException(ErrorCode.LOGIN_FAILED);
+		}
 
 		if (!StringUtils.hasText(user.getPassword())
 				|| !passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -120,6 +123,9 @@ public class AuthService {
 		User existing = userRepository.findByKakaoId(kakaoId).orElse(null);
 		boolean isNewUser = (existing == null);
 		User user = isNewUser ? registerKakaoUser(kakaoUser) : existing;
+		if (user.isDeleted()) {
+			throw new CustomException(ErrorCode.LOGIN_FAILED);
+		}
 
 		TokenPair tokens = issueTokens(user.getId());
 		return KakaoLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
@@ -161,6 +167,9 @@ public class AuthService {
 		User user = isNewUser
 				? registerSocialUser(loginType, providerId, email, name, emailPrefix)
 				: existing;
+		if (user.isDeleted()) {
+			throw new CustomException(ErrorCode.LOGIN_FAILED);
+		}
 
 		TokenPair tokens = issueTokens(user.getId());
 		return SocialLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
@@ -187,6 +196,11 @@ public class AuthService {
 				.orElseThrow(() -> new CustomException(ErrorCode.TOKEN_NOT_FOUND));
 		if (!stored.equals(refreshToken)) {
 			throw new CustomException(ErrorCode.INVALID_TOKEN);
+		}
+		User user = userRepository.findById(userId)
+				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+		if (user.isDeleted()) {
+			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
 
 		TokenPair tokens = issueTokens(userId);
