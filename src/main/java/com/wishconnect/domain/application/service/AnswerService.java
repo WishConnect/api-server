@@ -8,6 +8,7 @@ import com.wishconnect.domain.application.entity.AiInterview;
 import com.wishconnect.domain.application.entity.Essay;
 import com.wishconnect.domain.application.entity.EssayAnswer;
 import com.wishconnect.domain.application.entity.EssayQuestion;
+import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.repository.AiInterviewRepository;
 import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
@@ -121,10 +122,15 @@ public class AnswerService {
 			throw new CustomException(ErrorCode.ANSWER_EXCEEDS_CHAR_LIMIT);
 		}
 
+		// markInProgress 가 COMPLETED 를 IN_PROGRESS 로 되돌리기 전 상태 캡처.
+		// 이미 COMPLETED 였다면 재확정에 해당하므로 applicationCompleted=false 로 반환한다.
+		boolean wasAlreadyCompleted = essay.getStatus() == EssayStatus.COMPLETED;
+
 		answer.confirm(content);
 		essay.markInProgress();
 
-		boolean applicationCompleted = checkAndCompleteEssay(essay);
+		boolean nowCompleted = checkAndCompleteEssay(essay);
+		boolean applicationCompleted = nowCompleted && !wasAlreadyCompleted;
 
 		return new AnswerActionResponse(
 				question.getId(),

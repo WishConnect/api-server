@@ -48,11 +48,14 @@ public class Essay extends BaseEntity {
 	@Column
 	private LocalDateTime lastEditedAt;
 
-	/** 사용자가 인터뷰·답변을 수정할 때 호출. status 를 IN_PROGRESS 로 전환하고 lastEditedAt 을 갱신. */
+	/**
+	 * 사용자가 인터뷰·답변을 수정할 때 호출. status 를 IN_PROGRESS 로 전환하고 lastEditedAt 을 갱신.
+	 * <p>
+	 * COMPLETED 상태에서도 IN_PROGRESS 로 되돌린다. 사용자가 완료 확정 이후에도 문항을 수정할 수 있게 하고,
+	 * 수정된 문항이 다시 confirm 되면 {@link #markCompleted()} 로 재전환된다.
+	 */
 	public void markInProgress() {
-		if (this.status != EssayStatus.COMPLETED) {
-			this.status = EssayStatus.IN_PROGRESS;
-		}
+		this.status = EssayStatus.IN_PROGRESS;
 		this.lastEditedAt = LocalDateTime.now();
 	}
 
