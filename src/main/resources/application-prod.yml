@@ -25,11 +25,10 @@ spring:
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
 
-# CORS 허용 출처 (운영 프론트 도메인). 필요 시 콤마로 추가
+# CORS 허용 출처 (운영 프론트 도메인). scheme(https://) 까지 포함해야 하며, 여러 개는 콤마로 구분한다.
 app:
   cors:
-    allowed-origins:
-      - ${FRONTEND_ORIGIN:https://wish-connect.com}
+    allowed-origins: ${FRONTEND_ORIGIN:https://wish-connect.com,https://www.wish-connect.com}
 
 jwt:
   secret: ${JWT_SECRET}
