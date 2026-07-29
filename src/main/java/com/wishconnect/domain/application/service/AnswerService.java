@@ -83,6 +83,14 @@ public class AnswerService {
 		answer.applyDraft(draft.trim());
 		essay.markInProgress();
 
+		// LLM 이 프롬프트의 글자수 제약을 어겨 초과 생성할 수 있다. 사용자는 CONFIRM 단계에서만
+		// 400 을 만나 원인 파악이 어려우므로 DRAFT 시점에 미리 로그로 남긴다.
+		if (question.getCharLimit() != null && answer.getCharCount() > question.getCharLimit()) {
+			log.warn("AI 초안이 문항 글자수 제한을 초과했습니다. "
+					+ "questionId={}, charCount={}, charLimit={}",
+					question.getId(), answer.getCharCount(), question.getCharLimit());
+		}
+
 		return new AnswerActionResponse(
 				question.getId(),
 				answer.getCharCount(),
