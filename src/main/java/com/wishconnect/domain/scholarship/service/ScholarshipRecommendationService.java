@@ -33,9 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 /*
 프로필 룰 기반 장학금 맞춤 추천(Phase 1)입니다.
 - 조건별 판정은 충족/불충족/판정불가 3값(ConditionMatcher). 판정불가는 탈락 사유로 쓰지 않는다.
-- 불충족 조건이 있으면 eligible=false로 "조건 미충족" 분류(목록 하단 노출, 명세의 조건 미충족 장학금).
+- 불충족 조건이 있으면 eligible=false로 "조건 미충족" 분류(ineligibleScholarships 로 분리 노출).
 - 점수 = 충족 비율(최대 70) + 판정 가능 조건 존재 가점(10) + 마감 임박 가점(20).
-- featured = 지원 가능 공고 중 마감이 가장 가까운 카드. campus = 교내(INTERNAL).
+- featured = 지원 가능 공고 중 마감 임박순 상위 5건(캐러셀). campus = 소속 학교의 교내(INTERNAL).
 - 프로필이 없으면 배제 없이 전체 OPEN을 마감 임박순으로 노출(온보딩 전 폴백).
 추후 Phase 2 에서 스크랩 등 행동 데이터 가점을 결합한다.
  */
@@ -44,6 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ScholarshipRecommendationService {
 
 	private static final int DEADLINE_SOON_DAYS = 7;
+	/** 히어로 배너(dot 캐러셀) 노출 개수. 피그마 기준 5개. */
+	private static final int FEATURED_LIMIT = 5;
 	private static final int NEW_MATCHED_DAYS = 7;
 
 	private final ScholarshipRepository scholarshipRepository;
@@ -61,29 +63,41 @@ public class ScholarshipRecommendationService {
 		Set<Long> scrappedIds = findScrappedIds(userId, scored);
 
 		List<ScoredScholarship> eligibleList = scored.stream().filter(ScoredScholarship::eligible).toList();
-		ScoredScholarship featured = eligibleList.stream()
-				.filter(s -> s.dDay() != null && s.dDay() >= 0)
-				.min(Comparator.comparingLong(ScoredScholarship::dDay))
-				.orElse(null);
 
+		// featured: 마감 임박순 상위 N. 피그마가 dot 캐러셀이라 단건이 아니라 목록이다.
+		// 근로장학은 추천 성격이 아니라 그 외 목록에서 빠지므로, 히어로 배너에도 올리지 않는다.
+		List<ScoredScholarship> featured = eligibleList.stream()
+				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
+				.filter(s -> s.dDay() != null && s.dDay() >= 0)
+				.sorted(Comparator.comparingLong(ScoredScholarship::dDay))
+				.limit(FEATURED_LIMIT)
+				.toList();
+		Set<Long> featuredIds = featured.stream()
+				.map(s -> s.scholarship().getId())
+				.collect(Collectors.toSet());
+
+		// 교내는 소속 학교 것만 노출한다. 학교 정보가 없으면(온보딩 전) 판단할 수 없어 비운다.
 		List<ScholarshipCard> campus = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
+				.filter(s -> isSameSchool(s.scholarship(), profile))
 				.map(s -> s.toCard(scrappedIds))
 				.toList();
 
-		// 그 외 추천: 지원 가능(점수순) 뒤에 조건 미충족(분류 노출)을 붙인다.
-		// featured/교내는 제외하고, 근로장학(WORK_STUDY)도 성격이 달라 추천 목록에 넣지 않는다.
-		List<ScholarshipCard> others = Stream.concat(
-						eligibleList.stream()
-								.filter(s -> s != featured)
-								.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.EXTERNAL)
-								.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
-										.thenComparing(s -> s.scholarship().getApplicationEndAt(),
-												Comparator.nullsLast(Comparator.naturalOrder()))),
-						scored.stream()
-								.filter(s -> !s.eligible())
-								.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
-								.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()))
+		// 그 외 추천: 지원 가능한 교외(EXTERNAL) 공고를 점수순으로. featured 중복은 제외한다.
+		List<ScholarshipCard> others = eligibleList.stream()
+				.filter(s -> !featuredIds.contains(s.scholarship().getId()))
+				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.EXTERNAL)
+				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
+						.thenComparing(s -> s.scholarship().getApplicationEndAt(),
+								Comparator.nullsLast(Comparator.naturalOrder())))
+				.map(s -> s.toCard(scrappedIds))
+				.toList();
+
+		// 조건 미충족은 피그마상 별도 섹션이라 분리한다. 근로장학(WORK_STUDY)은 성격이 달라 제외.
+		List<ScholarshipCard> ineligible = scored.stream()
+				.filter(s -> !s.eligible())
+				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
+				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed())
 				.map(s -> s.toCard(scrappedIds))
 				.toList();
 
@@ -94,12 +108,37 @@ public class ScholarshipRecommendationService {
 		int totalPages = (int) Math.ceil((double) others.size() / safeSize);
 
 		return new CuratedScholarshipResponse(
-				featured == null ? null : featured.toCard(scrappedIds),
+				featured.stream().map(s -> s.toCard(scrappedIds)).toList(),
 				calculateProfileCompletionRate(profile),
 				campus,
 				others.subList(fromIndex, toIndex),
+				ineligible,
 				new Pagination(safePage, safeSize, others.size(), totalPages)
 		);
+	}
+
+	/**
+	 * 교내 장학금이 사용자 소속 학교의 것인지 판단한다.
+	 *
+	 * <p>Scholarship 엔티티에 학교 FK 가 없어 수집기가 넣은 {@code provider}(대학명)와
+	 * 프로필의 학교명을 대조한다. 문자열 비교라 표기가 다르면 놓칠 수 있으므로,
+	 * 추후 {@code school_id} FK 를 추가하는 것이 근본 해법이다.
+	 */
+	private boolean isSameSchool(Scholarship scholarship, UserProfile profile) {
+		if (profile == null || profile.getSchool() == null) {
+			return false;
+		}
+		String schoolName = profile.getSchool().getName();
+		String provider = scholarship.getProvider();
+		if (schoolName == null || provider == null) {
+			return false;
+		}
+		return normalizeSchoolName(provider).equals(normalizeSchoolName(schoolName));
+	}
+
+	/** 표기 차이(공백, "대학교"/"대") 를 흡수한다. */
+	private String normalizeSchoolName(String name) {
+		return name.replaceAll("\\s+", "").replaceAll("대학교$", "대");
 	}
 
 	/** 로그인 사용자가 스크랩한 장학금 ID 집합. 비로그인/후보 없음이면 빈 집합. */

@@ -93,7 +93,7 @@ class AuthServiceTest {
 	}
 
 	private void stubTokenIssue() {
-		given(jwtProvider.createAccessToken(any())).willReturn("access-token");
+		given(jwtProvider.createAccessToken(any(), any())).willReturn("access-token");
 		given(jwtProvider.createRefreshToken(any())).willReturn("refresh-token");
 	}
 

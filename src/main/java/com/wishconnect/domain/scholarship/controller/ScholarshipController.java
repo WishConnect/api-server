@@ -1,8 +1,6 @@
 package com.wishconnect.domain.scholarship.controller;
 
-import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.*;
-import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
 import com.wishconnect.domain.scholarship.service.ScholarshipRecommendationService;
 import com.wishconnect.domain.scholarship.service.ScholarshipService;
@@ -13,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,8 +27,6 @@ public class ScholarshipController {
 
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
 	private final ScholarshipDetailService scholarshipDetailService;
-	private final ConditionExtractionService conditionExtractionService;
-	private final UnivNoticeCollector univNoticeCollector;
 	private final ScholarshipService scholarshipService;
 	
 	/**
@@ -60,22 +55,6 @@ public class ScholarshipController {
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {
 		return ApiResponse.ok(scholarshipDetailService.getDetail(UUID.fromString(userId), scholarshipId));
-	}
-
-	/** 대학 장학공지 크롤링 수집(운영/개발용 수동 트리거). code=yml의 사이트 코드. */
-	@PostMapping("/collect/univ/{code}")
-	public ApiResponse<CollectResultResponse> collectUniv(
-			@PathVariable String code,
-			@RequestParam(defaultValue = "1") int pages) {
-		return ApiResponse.ok(univNoticeCollector.collectByCode(code, pages)
-				.orElseThrow(() -> new com.wishconnect.global.exception.CustomException(
-						com.wishconnect.global.exception.ErrorCode.INVALID_INPUT)));
-	}
-
-	/** LLM 조건 구조화 추출 실행(운영/개발용 수동 트리거, sync 후 실행 권장). */
-	@PostMapping("/conditions/extract")
-	public ApiResponse<ConditionExtractionResponse> extractConditions() {
-		return ApiResponse.ok(conditionExtractionService.extract());
 	}
 
 	/** 장학금을 키워드·카테고리로 검색한다. 비로그인도 조회 가능하며 이때 isScrapped 는 항상 false 다. */

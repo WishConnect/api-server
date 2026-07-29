@@ -131,6 +131,22 @@ scholarship:
           title-selector: "td.fontBold"
           body-selector: ".hwp_editor_board_content, .notice_tb_view_contents"
 
+# 대학알리미/공공데이터 학교·학과 마스터 동기화 (온보딩 STEP2 학교·전공 검색의 원천 데이터).
+# service-key 는 반드시 환경변수로 주입한다(저장소에 커밋 금지). 미주입 시 동기화만 실패하고 앱 기동에는 영향 없다.
+# NOTE: prefix 에 하이픈이 있어 ACADEMIC_INFO_API_SERVICE_KEY 환경변수가 relaxed binding 으로는 잡히지 않는다.
+#       따라서 아래처럼 플레이스홀더를 명시해야 주입된다.
+academic-info:
+  api:
+    service-key: ${ACADEMIC_INFO_API_SERVICE_KEY:}
+    school-base-url: ${ACADEMIC_INFO_SCHOOL_BASE_URL:https://apis.data.go.kr/B340014/BasicInformationService_2}
+    school-path: ${ACADEMIC_INFO_SCHOOL_PATH:/getUniversityCode}
+    major-base-url: ${ACADEMIC_INFO_MAJOR_BASE_URL:https://apis.data.go.kr/B340014/BasicInformationService_1}
+    major-path: ${ACADEMIC_INFO_MAJOR_PATH:/getUniversityMajorCode}
+    page-size: ${ACADEMIC_INFO_PAGE_SIZE:1000}
+    max-pages: ${ACADEMIC_INFO_MAX_PAGES:100}
+    # 대학 학과 정보 API 의 필수 파라미터(svyYr). 포털에서 조회 가능한 조사년도를 확인해 입력한다.
+    survey-year: ${ACADEMIC_INFO_SURVEY_YEAR:2025}
+
 # 알림 생성 배치. 장학금 수집 이후 알림이 만들어지도록 기본 실행 순서를 둔다.
 notification:
   scheduled: ${NOTIFICATION_SCHEDULED:true}
