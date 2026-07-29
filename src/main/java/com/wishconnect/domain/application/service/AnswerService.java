@@ -103,6 +103,9 @@ public class AnswerService {
 			EssayQuestion question,
 			EssayAnswer answer,
 			AnswerActionRequest request) {
+		// 임시저장은 사용자가 방금 본문을 지운 상태(빈 문자열)도 그대로 보존해야 하므로
+		// blank 는 허용한다. null 만 방어하고, 빈 문자열/공백은 그대로 저장.
+		// (CONFIRM 은 최종 제출이라 blank 를 별도로 거부한다)
 		if (request.userContent() == null) {
 			throw new CustomException(ErrorCode.ANSWER_CONTENT_REQUIRED);
 		}
