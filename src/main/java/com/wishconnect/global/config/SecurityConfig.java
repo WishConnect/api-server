@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -16,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -37,6 +39,18 @@ public class SecurityConfig {
 			"/api/v1/scholarships/search"
 	};
 
+	/**
+	 * 운영/관리용 수동 트리거. 외부 API 호출·크롤링·LLM 과금을 유발하므로 ADMIN 만 허용한다.
+	 * 컨트롤러의 {@code @PreAuthorize} 와 이중으로 막아, 새 관리 엔드포인트가 추가될 때
+	 * 어노테이션을 빠뜨려도 경로 규칙으로 걸리도록 한다.
+	 */
+	private static final String[] ADMIN_ENDPOINTS = {
+			"/api/v1/scholarships/sync",
+			"/api/v1/scholarships/collect/**",
+			"/api/v1/scholarships/conditions/**",
+			"/api/v1/universities/sync"
+	};
+
 	private final JwtProvider jwtProvider;
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
@@ -50,6 +64,7 @@ public class SecurityConfig {
 				.sessionManagement(session ->
 						session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
+						.requestMatchers(ADMIN_ENDPOINTS).hasRole("ADMIN")
 						.requestMatchers(PUBLIC_ENDPOINTS).permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(handler ->

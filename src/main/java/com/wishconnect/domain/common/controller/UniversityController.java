@@ -7,6 +7,7 @@ import com.wishconnect.domain.common.service.UniversitySearchService;
 import com.wishconnect.global.common.ApiResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,7 +34,11 @@ public class UniversityController {
 		return ApiResponse.ok(universitySearchService.search(keyword));
 	}
 
-	/** 학교·전공 마스터 데이터를 외부 학사정보에서 동기화한다(운영/개발용 수동 트리거). */
+	/**
+	 * 학교·전공 마스터 데이터를 외부 학사정보에서 동기화한다(운영용 수동 트리거).
+	 * 외부 공공데이터 API 를 대량 호출하므로 ADMIN 만 실행할 수 있다.
+	 */
+	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping("/sync")
 	public ApiResponse<AcademicInfoSyncResponse> syncAcademicInfo() {
 		return ApiResponse.ok(academicInfoSyncService.sync());

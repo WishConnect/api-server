@@ -19,16 +19,32 @@ class JwtProviderTest {
 	void createAndValidateAccessToken() {
 		UUID userId = UUID.randomUUID();
 
-		String token = jwtProvider.createAccessToken(userId);
+		String token = jwtProvider.createAccessToken(userId, "USER");
 
 		assertThat(jwtProvider.validateToken(token)).isTrue();
 		assertThat(jwtProvider.getUserId(token)).isEqualTo(userId);
 	}
 
 	@Test
+	@DisplayName("Access Token 에 담은 권한을 그대로 복원한다")
+	void carriesRoleClaim() {
+		String token = jwtProvider.createAccessToken(UUID.randomUUID(), "ADMIN");
+
+		assertThat(jwtProvider.getRole(token)).isEqualTo("ADMIN");
+	}
+
+	@Test
+	@DisplayName("Refresh Token 에는 권한을 담지 않는다")
+	void refreshTokenHasNoRole() {
+		String token = jwtProvider.createRefreshToken(UUID.randomUUID());
+
+		assertThat(jwtProvider.getRole(token)).isNull();
+	}
+
+	@Test
 	@DisplayName("위변조된 토큰은 무효다")
 	void tamperedTokenIsInvalid() {
-		String token = jwtProvider.createAccessToken(UUID.randomUUID());
+		String token = jwtProvider.createAccessToken(UUID.randomUUID(), "USER");
 
 		assertThat(jwtProvider.validateToken(token + "tampered")).isFalse();
 	}
@@ -38,7 +54,7 @@ class JwtProviderTest {
 	void tokenSignedWithOtherSecretIsInvalid() {
 		JwtProvider other = new JwtProvider(
 				new JwtProperties("another-secret-key-that-is-also-long-enough-0123456789", VALIDITY, VALIDITY));
-		String token = other.createAccessToken(UUID.randomUUID());
+		String token = other.createAccessToken(UUID.randomUUID(), "USER");
 
 		assertThat(jwtProvider.validateToken(token)).isFalse();
 	}
@@ -48,7 +64,7 @@ class JwtProviderTest {
 	void expiredTokenIsInvalid() {
 		JwtProvider expiringProvider =
 				new JwtProvider(new JwtProperties(SECRET, -1_000L, -1_000L));
-		String token = expiringProvider.createAccessToken(UUID.randomUUID());
+		String token = expiringProvider.createAccessToken(UUID.randomUUID(), "USER");
 
 		assertThat(jwtProvider.validateToken(token)).isFalse();
 	}

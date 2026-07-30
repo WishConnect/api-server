@@ -87,7 +87,7 @@ public class AuthService {
 		emailVerificationService.clearVerified(request.email());
 
 		log.info("[Auth] 기본 회원가입 완료 (userId={})", user.getId());
-		TokenPair tokens = issueTokens(user.getId());
+		TokenPair tokens = issueTokens(user);
 		return new SignupResponse(user.getId(), tokens.accessToken(), tokens.refreshToken());
 	}
 
@@ -105,18 +105,18 @@ public class AuthService {
 			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
 
-		TokenPair tokens = issueTokens(user.getId());
+		TokenPair tokens = issueTokens(user);
 		return LoginResponse.of(user, tokens.accessToken(), tokens.refreshToken());
 	}
 
 	/** 카카오 소셜로그인: code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
 	@Transactional
-	public KakaoLoginResponse kakaoLogin(String code) {
+	public KakaoLoginResponse kakaoLogin(String code, String redirectUri) {
 		if (!StringUtils.hasText(code)) {
 			throw new CustomException(ErrorCode.INVALID_KAKAO_CODE);
 		}
 
-		KakaoTokenResponse token = kakaoApiClient.getToken(code);
+		KakaoTokenResponse token = kakaoApiClient.getToken(code, redirectUri);
 		KakaoUserResponse kakaoUser = kakaoApiClient.getUserInfo(token.accessToken());
 		Long kakaoId = kakaoUser.id();
 
@@ -127,17 +127,17 @@ public class AuthService {
 			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
 
-		TokenPair tokens = issueTokens(user.getId());
+		TokenPair tokens = issueTokens(user);
 		return KakaoLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
 	}
 
 	/** 구글 소셜로그인: code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
 	@Transactional
-	public SocialLoginResponse googleLogin(String code) {
+	public SocialLoginResponse googleLogin(String code, String redirectUri) {
 		if (!StringUtils.hasText(code)) {
 			throw new CustomException(ErrorCode.INVALID_GOOGLE_CODE);
 		}
-		GoogleTokenResponse token = googleApiClient.getToken(code);
+		GoogleTokenResponse token = googleApiClient.getToken(code, redirectUri);
 		GoogleUserResponse googleUser = googleApiClient.getUserInfo(token.accessToken());
 
 		return socialLogin(LoginType.GOOGLE, googleUser.sub(), googleUser.email(), googleUser.name(), "google");
@@ -171,7 +171,7 @@ public class AuthService {
 			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
 
-		TokenPair tokens = issueTokens(user.getId());
+		TokenPair tokens = issueTokens(user);
 		return SocialLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
 	}
 
@@ -203,7 +203,7 @@ public class AuthService {
 			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
 
-		TokenPair tokens = issueTokens(userId);
+		TokenPair tokens = issueTokens(user);
 		return new TokenResponse(tokens.accessToken(), tokens.refreshToken());
 	}
 
@@ -284,8 +284,9 @@ public class AuthService {
 	}
 
 	/** Access/Refresh 토큰을 발급하고 Refresh Token 을 Redis 에 저장한다. */
-	private TokenPair issueTokens(UUID userId) {
-		String accessToken = jwtProvider.createAccessToken(userId);
+	private TokenPair issueTokens(User user) {
+		UUID userId = user.getId();
+		String accessToken = jwtProvider.createAccessToken(userId, user.getRole().name());
 		String refreshToken = jwtProvider.createRefreshToken(userId);
 		refreshTokenService.save(userId, refreshToken);
 		return new TokenPair(accessToken, refreshToken);

@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.service;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSearchResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
@@ -47,6 +48,10 @@ public class ScholarshipService {
             throw new CustomException(ErrorCode.LOGIN_REQUIRED);
         }
 
+        // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
+        // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
+        ScholarshipType categoryType = parseCategory(category);
+
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
 
@@ -56,13 +61,13 @@ public class ScholarshipService {
         if (scrappedOnly) {
             // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
             scholarshipPage = (keyword == null || keyword.isBlank())
-                    ? scholarshipRepository.findScrappedByUser(userId, category, pageable)
-                    : scholarshipRepository.searchScrappedByUserAndKeyword(userId, keyword, category, pageable);
+                    ? scholarshipRepository.findScrappedByUser(userId, categoryType, pageable)
+                    : scholarshipRepository.searchScrappedByUserAndKeyword(userId, keyword, categoryType, pageable);
 
         } else if (keyword == null || keyword.isBlank()) {
-            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(category, pageable);
+            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, pageable);
         } else {
-            scholarshipPage = scholarshipRepository.searchByKeyword(keyword, category, pageable);
+            scholarshipPage = scholarshipRepository.searchByKeyword(keyword, categoryType, pageable);
         }
 
         // 4.유저의 스크랩 여부 확인
@@ -157,6 +162,18 @@ public class ScholarshipService {
         return start.toLocalDate() + " ~ " + end.toLocalDate();
     }
 
+
+    /** category 파라미터를 ScholarshipType 으로 변환한다. 비어 있으면 전체(null), 잘못된 값이면 400. */
+    private ScholarshipType parseCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return null;
+        }
+        try {
+            return ScholarshipType.valueOf(category.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new CustomException(ErrorCode.INVALID_CATEGORY);
+        }
+    }
 
     private Pageable createPageable(int page, int size, String sort) {
         Sort sortOrder = switch (sort) {

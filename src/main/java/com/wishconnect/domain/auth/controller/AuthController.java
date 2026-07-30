@@ -49,13 +49,13 @@ public class AuthController {
 	/** 카카오 인가코드로 로그인한다. 미가입 사용자면 자동 가입 후 토큰을 발급한다. */
 	@PostMapping("/kakao/login")
 	public ApiResponse<KakaoLoginResponse> kakaoLogin(@RequestBody KakaoLoginRequest request) {
-		return ApiResponse.ok(authService.kakaoLogin(request.code()));
+		return ApiResponse.ok(authService.kakaoLogin(request.code(), request.redirectUri()));
 	}
 
 	/** 구글 인가코드로 로그인한다. 미가입 사용자면 자동 가입 후 토큰을 발급한다. */
 	@PostMapping("/google/login")
 	public ApiResponse<SocialLoginResponse> googleLogin(@RequestBody GoogleLoginRequest request) {
-		return ApiResponse.ok(authService.googleLogin(request.code()));
+		return ApiResponse.ok(authService.googleLogin(request.code(), request.redirectUri()));
 	}
 
 	/** 네이버 인가코드로 로그인한다. 미가입 사용자면 자동 가입 후 토큰을 발급한다. */

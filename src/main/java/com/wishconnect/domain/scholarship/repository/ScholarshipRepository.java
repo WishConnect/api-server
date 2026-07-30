@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.repository;
 
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,7 +30,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			"AND s.deletedAt IS NULL " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findAllWithoutKeyword(
-			@Param("category") String category,
+			@Param("category") ScholarshipType category,
 			Pageable pageable
 	);
 
@@ -42,7 +43,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchByKeyword(
 			@Param("keyword") String keyword,
-			@Param("category") String category,
+			@Param("category") ScholarshipType category,
 			Pageable pageable
 	);
 
@@ -53,7 +54,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findScrappedByUser(
 			@Param("userId") UUID userId,
-			@Param("category") String category,
+			@Param("category") ScholarshipType category,
 			Pageable pageable
 	);
 
@@ -67,7 +68,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	Page<Scholarship> searchScrappedByUserAndKeyword(
 			@Param("userId") UUID userId,
 			@Param("keyword") String keyword,
-			@Param("category") String category,
+			@Param("category") ScholarshipType category,
 			Pageable pageable
 	);
 
