@@ -8,14 +8,20 @@ import java.util.List;
 
 /**
  * 맞춤 추천 목록(메인) 응답. 노션 명세(GET /api/v1/scholarships/curated) 구조.
- * featured = 마감임박 대표 카드, campusScholarships = 교내(INTERNAL),
- * otherScholarships = 그 외 추천(조건 미충족 분류 포함, eligible=false).
+ *
+ * <ul>
+ *   <li>{@code featured} — 마감임박 히어로 배너. 피그마가 dot 캐러셀이라 <b>배열</b>이다(최대 5개).</li>
+ *   <li>{@code campusScholarships} — 교내(INTERNAL) 중 <b>사용자 소속 학교</b> 것만.</li>
+ *   <li>{@code otherScholarships} — 지원 가능한 그 외 추천. 페이지네이션 대상.</li>
+ *   <li>{@code ineligibleScholarships} — 조건 미충족. 피그마상 별도 섹션이라 분리했다(전체 반환).</li>
+ * </ul>
  */
 public record CuratedScholarshipResponse(
-		ScholarshipCard featured,
+		List<ScholarshipCard> featured,
 		int profileCompletionRate,
 		List<ScholarshipCard> campusScholarships,
 		List<ScholarshipCard> otherScholarships,
+		List<ScholarshipCard> ineligibleScholarships,
 		Pagination pagination
 ) {
 

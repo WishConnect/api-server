@@ -163,7 +163,7 @@ class AuthControllerTest {
 		@Test
 		@DisplayName("성공 시 200과 isNewUser/loginType 을 반환한다")
 		void success() throws Exception {
-			given(authService.kakaoLogin(any())).willReturn(
+			given(authService.kakaoLogin(any(), any())).willReturn(
 					new KakaoLoginResponse("access", "refresh", true,
 							new KakaoLoginResponse.UserInfo(UUID.randomUUID(), "카카오닉", LoginType.KAKAO, false)));
 
@@ -177,7 +177,7 @@ class AuthControllerTest {
 		@Test
 		@DisplayName("유효하지 않은 인가코드 시 400 INVALID_KAKAO_CODE")
 		void invalidCode() throws Exception {
-			given(authService.kakaoLogin(any())).willThrow(new CustomException(ErrorCode.INVALID_KAKAO_CODE));
+			given(authService.kakaoLogin(any(), any())).willThrow(new CustomException(ErrorCode.INVALID_KAKAO_CODE));
 
 			mockMvc.perform(post("/api/v1/auth/kakao/login")
 							.contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -188,7 +188,7 @@ class AuthControllerTest {
 		@Test
 		@DisplayName("카카오 사용자 정보 조회 실패 시 502 KAKAO_USER_INFO_FAILED")
 		void userInfoFailed() throws Exception {
-			given(authService.kakaoLogin(any()))
+			given(authService.kakaoLogin(any(), any()))
 					.willThrow(new CustomException(ErrorCode.KAKAO_USER_INFO_FAILED));
 
 			mockMvc.perform(post("/api/v1/auth/kakao/login")

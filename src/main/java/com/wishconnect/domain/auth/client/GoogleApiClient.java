@@ -28,13 +28,23 @@ public class GoogleApiClient {
 		this.restClient = restClientBuilder.build();
 	}
 
-	public GoogleTokenResponse getToken(String code) {
+	/**
+	 * 인가코드로 구글 access_token 을 발급받는다.
+	 *
+	 * @param redirectUri 프론트가 인가코드를 받을 때 사용한 값. 비우면 설정 기본값을 쓴다.
+	 */
+	public GoogleTokenResponse getToken(String code, String redirectUri) {
+		String resolvedRedirectUri = properties.resolveRedirectUri(redirectUri);
+		if (resolvedRedirectUri == null) {
+			log.warn("[Google] 허용되지 않은 redirectUri 요청");
+			throw new CustomException(ErrorCode.INVALID_REDIRECT_URI);
+		}
 		log.info("[Google] 토큰 발급 요청 시작");
 		MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
 		form.add("grant_type", "authorization_code");
 		form.add("client_id", properties.clientId());
 		form.add("client_secret", properties.clientSecret());
-		form.add("redirect_uri", properties.redirectUri());
+		form.add("redirect_uri", resolvedRedirectUri);
 		form.add("code", code);
 		try {
 			GoogleTokenResponse response = restClient.post()

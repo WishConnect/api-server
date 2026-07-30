@@ -30,13 +30,23 @@ public class KakaoApiClient {
 		this.restClient = restClientBuilder.build();
 	}
 
-	/** 인가코드로 카카오 access_token 을 발급받는다. */
-	public KakaoTokenResponse getToken(String code) {
+	/**
+	 * 인가코드로 카카오 access_token 을 발급받는다.
+	 *
+	 * @param redirectUri 프론트가 인가코드를 받을 때 사용한 값. 비우면 설정 기본값을 쓴다.
+	 *                    카카오는 이 값이 인가 시점과 다르면 교환을 거부한다(KOE006).
+	 */
+	public KakaoTokenResponse getToken(String code, String redirectUri) {
+		String resolvedRedirectUri = properties.resolveRedirectUri(redirectUri);
+		if (resolvedRedirectUri == null) {
+			log.warn("[Kakao] 허용되지 않은 redirectUri 요청");
+			throw new CustomException(ErrorCode.INVALID_REDIRECT_URI);
+		}
 		log.info("[Kakao] 토큰 발급 요청 시작");
 		MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
 		form.add("grant_type", "authorization_code");
 		form.add("client_id", properties.clientId());
-		form.add("redirect_uri", properties.redirectUri());
+		form.add("redirect_uri", resolvedRedirectUri);
 		form.add("code", code);
 		if (StringUtils.hasText(properties.clientSecret())) {
 			form.add("client_secret", properties.clientSecret());

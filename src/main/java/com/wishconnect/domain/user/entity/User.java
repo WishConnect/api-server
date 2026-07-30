@@ -59,6 +59,11 @@ public class User extends BaseEntity {
 	@Column(nullable = false)
 	private boolean onboardingCompleted;
 
+	/** 권한. 가입 경로로는 항상 USER 이며, ADMIN 은 DB 에서 직접 부여한다. */
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private UserRole role;
+
 	@Column
 	private LocalDateTime deletedAt;
 
@@ -73,6 +78,7 @@ public class User extends BaseEntity {
 		this.kakaoId = kakaoId;
 		this.providerId = providerId;
 		this.onboardingCompleted = onboardingCompleted;
+		this.role = UserRole.USER;
 	}
 
 	/** 기본(이메일/비밀번호) 회원 생성. password 는 해시된 값이어야 한다. */

@@ -1,6 +1,7 @@
 package com.wishconnect.global.jwt;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class JwtProvider {
 
+	private static final String ROLE_CLAIM = "role";
+
 	private final SecretKey key;
 	private final long accessTokenValidity;
 	private final long refreshTokenValidity;
@@ -28,23 +31,40 @@ public class JwtProvider {
 		this.refreshTokenValidity = properties.refreshTokenValidity();
 	}
 
-	public String createAccessToken(UUID userId) {
-		return createToken(userId, accessTokenValidity);
+	/**
+	 * Access Token 발급. 권한 판정을 매 요청 DB 조회 없이 하기 위해 role 을 클레임에 담는다.
+	 *
+	 * @param role {@code UserRole} 이름(예: USER/ADMIN). global 이 domain 에 의존하지 않도록 문자열로 받는다.
+	 */
+	public String createAccessToken(UUID userId, String role) {
+		return createToken(userId, accessTokenValidity, role);
 	}
 
+	/** Refresh Token 은 재발급 용도라 권한을 담지 않는다. */
 	public String createRefreshToken(UUID userId) {
-		return createToken(userId, refreshTokenValidity);
+		return createToken(userId, refreshTokenValidity, null);
 	}
 
-	private String createToken(UUID userId, long validityMillis) {
+	private String createToken(UUID userId, long validityMillis, String role) {
 		Date now = new Date();
 		Date expiry = new Date(now.getTime() + validityMillis);
-		return Jwts.builder()
+		JwtBuilder builder = Jwts.builder()
 				.subject(userId.toString())
 				.issuedAt(now)
-				.expiration(expiry)
-				.signWith(key, Jwts.SIG.HS256)
-				.compact();
+				.expiration(expiry);
+		if (role != null) {
+			builder.claim(ROLE_CLAIM, role);
+		}
+		return builder.signWith(key, Jwts.SIG.HS256).compact();
+	}
+
+	/**
+	 * Access Token 의 권한 이름. role 클레임이 도입되기 전 발급된 토큰에는 값이 없으므로
+	 * 그 경우 {@code null} 을 돌려주고, 호출측이 일반 사용자로 취급한다.
+	 */
+	public String getRole(String token) {
+		Object role = parseClaims(token).get(ROLE_CLAIM);
+		return role == null ? null : role.toString();
 	}
 
 	/** 서명/만료가 유효하면 true. */
