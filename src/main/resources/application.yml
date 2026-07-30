@@ -53,11 +53,15 @@ jwt:
 kakao:
   token-uri: https://kauth.kakao.com/oauth/token
   user-info-uri: https://kapi.kakao.com/v2/user/me
+  # 프론트가 요청 바디로 보낼 수 있는 redirect_uri 허용목록(콤마 구분).
+  # 설정된 redirect-uri 는 자동 허용되므로, 여기엔 로컬 개발용만 둔다.
+  allowed-redirect-uris: ${KAKAO_ALLOWED_REDIRECT_URIS:http://localhost:3000/auth/kakao/callback}
 
 # 구글 OAuth 공통(비민감) 엔드포인트
 google:
   token-uri: https://oauth2.googleapis.com/token
   user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+  allowed-redirect-uris: ${GOOGLE_ALLOWED_REDIRECT_URIS:http://localhost:3000/auth/google/callback}
 
 # 네이버 OAuth 공통(비민감) 엔드포인트
 naver:

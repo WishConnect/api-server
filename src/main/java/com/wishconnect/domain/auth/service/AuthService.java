@@ -111,12 +111,12 @@ public class AuthService {
 
 	/** 카카오 소셜로그인: code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
 	@Transactional
-	public KakaoLoginResponse kakaoLogin(String code) {
+	public KakaoLoginResponse kakaoLogin(String code, String redirectUri) {
 		if (!StringUtils.hasText(code)) {
 			throw new CustomException(ErrorCode.INVALID_KAKAO_CODE);
 		}
 
-		KakaoTokenResponse token = kakaoApiClient.getToken(code);
+		KakaoTokenResponse token = kakaoApiClient.getToken(code, redirectUri);
 		KakaoUserResponse kakaoUser = kakaoApiClient.getUserInfo(token.accessToken());
 		Long kakaoId = kakaoUser.id();
 
@@ -133,11 +133,11 @@ public class AuthService {
 
 	/** 구글 소셜로그인: code 교환 → 사용자 조회 → 기존 로그인 / 신규 자동가입. */
 	@Transactional
-	public SocialLoginResponse googleLogin(String code) {
+	public SocialLoginResponse googleLogin(String code, String redirectUri) {
 		if (!StringUtils.hasText(code)) {
 			throw new CustomException(ErrorCode.INVALID_GOOGLE_CODE);
 		}
-		GoogleTokenResponse token = googleApiClient.getToken(code);
+		GoogleTokenResponse token = googleApiClient.getToken(code, redirectUri);
 		GoogleUserResponse googleUser = googleApiClient.getUserInfo(token.accessToken());
 
 		return socialLogin(LoginType.GOOGLE, googleUser.sub(), googleUser.email(), googleUser.name(), "google");

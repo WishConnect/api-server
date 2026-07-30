@@ -239,7 +239,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("기존 회원이면 로그인하고 isNewUser=false")
 		void existingUser() {
-			given(kakaoApiClient.getToken("code"))
+			given(kakaoApiClient.getToken("code", null))
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(111L, "k@kakao.com", "카카오닉"));
@@ -247,7 +247,7 @@ class AuthServiceTest {
 			given(userRepository.findByKakaoId(111L)).willReturn(Optional.of(existing));
 			stubTokenIssue();
 
-			KakaoLoginResponse response = authService.kakaoLogin("code");
+			KakaoLoginResponse response = authService.kakaoLogin("code", null);
 
 			assertThat(response.isNewUser()).isFalse();
 			assertThat(response.user().loginType()).isEqualTo(LoginType.KAKAO);
@@ -257,7 +257,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("신규면 자동가입하고 isNewUser=true")
 		void newUser() {
-			given(kakaoApiClient.getToken("code"))
+			given(kakaoApiClient.getToken("code", null))
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(222L, "new@kakao.com", "신규닉"));
@@ -266,7 +266,7 @@ class AuthServiceTest {
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
 
-			KakaoLoginResponse response = authService.kakaoLogin("code");
+			KakaoLoginResponse response = authService.kakaoLogin("code", null);
 
 			assertThat(response.isNewUser()).isTrue();
 			assertThat(response.user().name()).isEqualTo("신규닉");
@@ -276,7 +276,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 미수신 시 대체 이메일로 가입한다")
 		void fallbackEmail() {
-			given(kakaoApiClient.getToken("code"))
+			given(kakaoApiClient.getToken("code", null))
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(333L, null, "닉네임"));
@@ -285,7 +285,7 @@ class AuthServiceTest {
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
 
-			authService.kakaoLogin("code");
+			authService.kakaoLogin("code", null);
 
 			org.mockito.ArgumentCaptor<User> captor = org.mockito.ArgumentCaptor.forClass(User.class);
 			verify(userRepository).save(captor.capture());
@@ -295,7 +295,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("code 가 비어있으면 INVALID_KAKAO_CODE")
 		void blankCode() {
-			assertThatThrownBy(() -> authService.kakaoLogin("  "))
+			assertThatThrownBy(() -> authService.kakaoLogin("  ", null))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_KAKAO_CODE);
 		}
@@ -312,7 +312,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("기존 회원이면 로그인, isNewUser=false")
 		void existingUser() {
-			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getToken("code", null)).willReturn(token());
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-123", "g@google.com", "구글이름"));
 			User existing = userWithId(User.createSocial(LoginType.GOOGLE, "sub-123", "g@google.com", "구글이름"));
@@ -320,7 +320,7 @@ class AuthServiceTest {
 					.willReturn(Optional.of(existing));
 			stubTokenIssue();
 
-			SocialLoginResponse response = authService.googleLogin("code");
+			SocialLoginResponse response = authService.googleLogin("code", null);
 
 			assertThat(response.isNewUser()).isFalse();
 			assertThat(response.user().loginType()).isEqualTo(LoginType.GOOGLE);
@@ -330,7 +330,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("신규면 자동가입, isNewUser=true")
 		void newUser() {
-			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getToken("code", null)).willReturn(token());
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-999", "new@google.com", "신규구글"));
 			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-999"))
@@ -339,7 +339,7 @@ class AuthServiceTest {
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
 
-			SocialLoginResponse response = authService.googleLogin("code");
+			SocialLoginResponse response = authService.googleLogin("code", null);
 
 			assertThat(response.isNewUser()).isTrue();
 			assertThat(response.user().name()).isEqualTo("신규구글");
@@ -348,7 +348,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 미수신 시 대체 이메일로 가입")
 		void fallbackEmail() {
-			given(googleApiClient.getToken("code")).willReturn(token());
+			given(googleApiClient.getToken("code", null)).willReturn(token());
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-777", null, "구글"));
 			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-777"))
@@ -357,7 +357,7 @@ class AuthServiceTest {
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
 
-			authService.googleLogin("code");
+			authService.googleLogin("code", null);
 
 			org.mockito.ArgumentCaptor<User> captor = org.mockito.ArgumentCaptor.forClass(User.class);
 			verify(userRepository).save(captor.capture());
@@ -367,7 +367,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("code 비어있으면 INVALID_GOOGLE_CODE")
 		void blankCode() {
-			assertThatThrownBy(() -> authService.googleLogin(" "))
+			assertThatThrownBy(() -> authService.googleLogin(" ", null))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.INVALID_GOOGLE_CODE);
 		}
