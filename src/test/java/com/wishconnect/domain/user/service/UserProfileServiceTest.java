@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.common.entity.Major;
+import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
 import com.wishconnect.domain.common.repository.RegionRepository;
@@ -90,15 +92,17 @@ class UserProfileServiceTest {
 	@DisplayName("학적 정보는 ERD 컬럼 타입에 맞게 문자열 학년과 dualMajor enum으로 저장한다")
 	void saveAcademic() {
 		School school = School.builder().name("건국대학교").build();
-		Major major = Major.builder().name("컴퓨터공학").category("공학").build();
+		Major major = Major.builder().name("컴퓨터공학").category(MajorCategory.ENGINEERING).build();
 		given(schoolRepository.findFirstByName("건국대학교")).willReturn(Optional.empty());
 		given(schoolRepository.save(any(School.class))).willReturn(school);
+		given(majorRepository.findFirstByNameAndCategory("컴퓨터공학", MajorCategory.ENGINEERING))
+				.willReturn(Optional.empty());
 		given(majorRepository.findFirstByName("컴퓨터공학")).willReturn(Optional.empty());
 		given(majorRepository.save(any(Major.class))).willReturn(major);
 
 		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
 				"건국대학교",
-				"공학",
+				"공학계열",
 				"컴퓨터공학",
 				"ENROLLED",
 				"3학년 1학기",
@@ -112,6 +116,61 @@ class UserProfileServiceTest {
 		assertThat(profile.getGrade()).isEqualTo("3학년 1학기");
 		assertThat(profile.getSecondMajorType()).isEqualTo(SecondMajorType.DOUBLE);
 		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_2");
+	}
+
+	@Test
+	@DisplayName("6종에 없는 전공 계열은 INVALID_MAJOR_CATEGORY로 막는다")
+	void saveAcademic_rejectsUnknownMajorCategory() {
+		assertThatThrownBy(() -> userProfileService.saveAcademic(userId, academicRequest("공학")))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_MAJOR_CATEGORY);
+	}
+
+	@Test
+	@DisplayName("전공명이 이미 있어도 계열이 다르면 요청 계열을 버리지 않는다")
+	void saveAcademic_keepsRequestedCategoryWhenMasterDiffers() {
+		Major masterMajor = Major.builder().name("컴퓨터공학").category(MajorCategory.ENGINEERING).build();
+		Major createdMajor = Major.builder().name("컴퓨터공학").category(MajorCategory.NATURAL_SCIENCE).build();
+		given(schoolRepository.findFirstByName("건국대학교")).willReturn(Optional.empty());
+		given(schoolRepository.save(any(School.class))).willReturn(School.builder().name("건국대학교").build());
+		given(majorRepository.findFirstByNameAndCategory("컴퓨터공학", MajorCategory.NATURAL_SCIENCE))
+				.willReturn(Optional.empty());
+		given(majorRepository.findFirstByName("컴퓨터공학")).willReturn(Optional.of(masterMajor));
+		given(majorRepository.save(any(Major.class))).willReturn(createdMajor);
+
+		userProfileService.saveAcademic(userId, academicRequest("자연과학계열"));
+
+		assertThat(profile.getMajor().getCategory()).isEqualTo(MajorCategory.NATURAL_SCIENCE);
+	}
+
+	@Test
+	@DisplayName("계열이 비어 있던 기존 전공은 요청 계열로 채우고 새로 만들지 않는다")
+	void saveAcademic_fillsMissingCategoryOnExistingMajor() {
+		Major legacyMajor = Major.builder().name("컴퓨터공학").build();
+		given(schoolRepository.findFirstByName("건국대학교")).willReturn(Optional.empty());
+		given(schoolRepository.save(any(School.class))).willReturn(School.builder().name("건국대학교").build());
+		given(majorRepository.findFirstByNameAndCategory("컴퓨터공학", MajorCategory.ENGINEERING))
+				.willReturn(Optional.empty());
+		given(majorRepository.findFirstByName("컴퓨터공학")).willReturn(Optional.of(legacyMajor));
+
+		userProfileService.saveAcademic(userId, academicRequest("공학계열"));
+
+		assertThat(profile.getMajor()).isSameAs(legacyMajor);
+		assertThat(legacyMajor.getCategory()).isEqualTo(MajorCategory.ENGINEERING);
+		verify(majorRepository, never()).save(any(Major.class));
+	}
+
+	private ProfileAcademicRequest academicRequest(String majorCategory) {
+		return new ProfileAcademicRequest(
+				"건국대학교",
+				majorCategory,
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				"DOUBLE"
+		);
 	}
 
 	@Test

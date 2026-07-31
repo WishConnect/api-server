@@ -5,6 +5,7 @@ import com.wishconnect.domain.common.client.AcademicInfoApiClient.MajorItem;
 import com.wishconnect.domain.common.client.AcademicInfoApiClient.SchoolItem;
 import com.wishconnect.domain.common.dto.AcademicInfoSyncResponse;
 import com.wishconnect.domain.common.entity.Major;
+import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
@@ -70,7 +71,7 @@ public class AcademicInfoSyncService {
 			}
 			majorRepository.save(Major.builder()
 					.name(name)
-					.category(normalize(item.category()))
+					.category(MajorCategory.from(item.category()))
 					.build());
 			saved++;
 		}
