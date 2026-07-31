@@ -2,6 +2,7 @@ package com.wishconnect.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -46,6 +47,8 @@ class PasswordResetServiceTest {
 	private MailService mailService;
 	@Mock
 	private PasswordEncoder passwordEncoder;
+	@Mock
+	private RefreshTokenService refreshTokenService;
 
 	private PasswordResetService service;
 
@@ -53,7 +56,7 @@ class PasswordResetServiceTest {
 	void setUp() {
 		given(redisTemplate.opsForValue()).willReturn(valueOps);
 		service = new PasswordResetService(userRepository, redisTemplate, mailService, passwordEncoder,
-				new EmailVerificationProperties(300, 1800, 60));
+				refreshTokenService, new EmailVerificationProperties(300, 1800, 60));
 	}
 
 	private static User localUser() {
@@ -110,6 +113,19 @@ class PasswordResetServiceTest {
 
 		assertThat(user.getPassword()).isEqualTo("newEncoded");
 		verify(redisTemplate).delete(CODE_KEY);
+		// 계정 탈취 시 공격자 세션이 살아있지 않도록 기존 Refresh Token 을 지운다.
+		verify(refreshTokenService).delete(user.getId());
+	}
+
+	@Test
+	@DisplayName("재설정 실패 시에는 기존 세션을 건드리지 않는다")
+	void resetPassword_failureKeepsSession() {
+		given(valueOps.get(CODE_KEY)).willReturn("111111");
+
+		assertThatThrownBy(() -> service.resetPassword(EMAIL, "222222", "NewPass1!"))
+				.isInstanceOf(CustomException.class);
+
+		verify(refreshTokenService, never()).delete(any());
 	}
 
 	@Test
