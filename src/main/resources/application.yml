@@ -22,6 +22,11 @@ spring:
           auth: true
           starttls:
             enable: true
+  jackson:
+    mapper:
+      # 요청 JSON 의 enum 값 대소문자 관대 처리 (예: "draft" == "DRAFT")
+      # 명세서가 소문자 값을 사용하는데 Java enum 은 대문자라 FE 연동 시 400 방지 목적
+      accept-case-insensitive-enums: true
 
 springdoc:
   # 문서를 끄려면 배포 환경변수에 SWAGGER_ENABLED=false 만 주면 된다(운영 노출 차단용 스위치).
