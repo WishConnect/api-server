@@ -274,22 +274,50 @@ class AuthServiceTest {
 		}
 
 		@Test
-		@DisplayName("이메일 미수신 시 대체 이메일로 가입한다")
-		void fallbackEmail() {
+		@DisplayName("이메일 미수신 시 자리표시자로 가입하지 않고 KAKAO_EMAIL_REQUIRED 로 막는다")
+		void rejectsSignupWithoutEmail() {
 			given(kakaoApiClient.getToken("code", null))
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(333L, null, "닉네임"));
 			given(userRepository.findByKakaoId(333L)).willReturn(Optional.empty());
-			given(userRepository.save(any(User.class)))
-					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+
+			assertThatThrownBy(() -> authService.kakaoLogin("code", null))
+					.isInstanceOf(CustomException.class)
+					.extracting("errorCode").isEqualTo(ErrorCode.KAKAO_EMAIL_REQUIRED);
+			verify(userRepository, never()).save(any(User.class));
+		}
+
+		@Test
+		@DisplayName("기존 회원의 자리표시자 이메일은 재로그인 시 실제 이메일로 교체된다")
+		void backfillsPlaceholderEmail() {
+			given(kakaoApiClient.getToken("code", null))
+					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
+			given(kakaoApiClient.getUserInfo("kakao-access"))
+					.willReturn(kakaoUser(444L, "real@kakao.com", "닉네임"));
+			User existing = userWithId(User.createKakao(444L, "kakao_444@wishconnect.kr", "닉네임"));
+			given(userRepository.findByKakaoId(444L)).willReturn(Optional.of(existing));
 			stubTokenIssue();
 
 			authService.kakaoLogin("code", null);
 
-			org.mockito.ArgumentCaptor<User> captor = org.mockito.ArgumentCaptor.forClass(User.class);
-			verify(userRepository).save(captor.capture());
-			assertThat(captor.getValue().getEmail()).isEqualTo("kakao_333@wishconnect.kr");
+			assertThat(existing.getEmail()).isEqualTo("real@kakao.com");
+		}
+
+		@Test
+		@DisplayName("이미 실제 이메일을 가진 기존 회원의 이메일은 건드리지 않는다")
+		void keepsRealEmail() {
+			given(kakaoApiClient.getToken("code", null))
+					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
+			given(kakaoApiClient.getUserInfo("kakao-access"))
+					.willReturn(kakaoUser(555L, "provider@kakao.com", "닉네임"));
+			User existing = userWithId(User.createKakao(555L, "mine@gmail.com", "닉네임"));
+			given(userRepository.findByKakaoId(555L)).willReturn(Optional.of(existing));
+			stubTokenIssue();
+
+			authService.kakaoLogin("code", null);
+
+			assertThat(existing.getEmail()).isEqualTo("mine@gmail.com");
 		}
 
 		@Test

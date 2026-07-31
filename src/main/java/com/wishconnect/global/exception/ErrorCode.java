@@ -30,6 +30,8 @@ public enum ErrorCode {
 	INVALID_KAKAO_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
 	KAKAO_TOKEN_FAILED(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 토큰입니다."),
 	KAKAO_USER_INFO_FAILED(HttpStatus.BAD_GATEWAY, "카카오 사용자 정보를 가져오지 못했습니다."),
+	/** 비즈 앱 전환으로 이메일이 필수 동의항목이 됐다. 못 받으면 알림 메일이 안 나가므로 가입을 막는다. */
+	KAKAO_EMAIL_REQUIRED(HttpStatus.BAD_REQUEST, "카카오 계정 이메일 제공에 동의해야 가입할 수 있습니다."),
 
 	// 구글 소셜로그인
 	INVALID_GOOGLE_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
