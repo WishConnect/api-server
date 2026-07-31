@@ -33,6 +33,7 @@ public class PasswordResetService {
 	private final StringRedisTemplate redisTemplate;
 	private final MailService mailService;
 	private final PasswordEncoder passwordEncoder;
+	private final RefreshTokenService refreshTokenService;
 	private final EmailVerificationProperties properties;
 	private final SecureRandom random = new SecureRandom();
 
@@ -75,7 +76,11 @@ public class PasswordResetService {
 
 		user.changePassword(passwordEncoder.encode(newPassword));
 		redisTemplate.delete(CODE_KEY + email);
-		log.info("[PasswordReset] 비밀번호 변경 완료 userId={}", user.getId());
+		// 재설정은 계정을 되찾는 절차라 기존 세션을 남겨두면 안 된다.
+		// (탈취범이 이미 로그인해 있으면 비밀번호를 바꿔도 그 세션이 계속 살아있다)
+		// Access Token 은 상태가 없어 만료(30분)까지는 유효하고, 재발급만 여기서 막는다.
+		refreshTokenService.delete(user.getId());
+		log.info("[PasswordReset] 비밀번호 변경 완료, Refresh Token 무효화 userId={}", user.getId());
 	}
 
 	private String generateCode() {

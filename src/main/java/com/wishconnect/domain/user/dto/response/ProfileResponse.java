@@ -1,5 +1,6 @@
 package com.wishconnect.domain.user.dto.response;
 
+import com.wishconnect.domain.common.entity.MajorCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,8 +36,8 @@ public record ProfileResponse(
 	public record Academic(
 			@Schema(description = "학교명", example = "건국대학교")
 			String university,
-			@Schema(description = "전공 분류", example = "공학")
-			String majorCategory,
+			@Schema(description = "전공 계열", example = "공학계열")
+			MajorCategory majorCategory,
 			@Schema(description = "전공명", example = "컴퓨터공학")
 			String majorName,
 			@Schema(description = "재학 상태", example = "ENROLLED")
