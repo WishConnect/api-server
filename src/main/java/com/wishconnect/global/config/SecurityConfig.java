@@ -48,6 +48,9 @@ public class SecurityConfig {
 			"/api/v1/scholarships/sync",
 			"/api/v1/scholarships/collect/**",
 			"/api/v1/scholarships/conditions/**",
+			"/api/v1/scholarships/manual/**",
+			"/api/v1/scholarships/reports",
+			"/api/v1/scholarships/reports/*",
 			"/api/v1/universities/sync",
 			"/api/v1/universities/sync/**"
 	};
