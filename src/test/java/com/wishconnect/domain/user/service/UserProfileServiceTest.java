@@ -115,6 +115,51 @@ class UserProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("복수전공/부전공 값은 DOUBLE, MINOR, null만 허용한다")
+	void saveAcademicAcceptsDualMajorEnumValues() {
+		School school = School.builder().name("건국대학교").build();
+		Major major = Major.builder().name("컴퓨터공학").category("공학").build();
+		given(schoolRepository.findFirstByName("건국대학교")).willReturn(Optional.of(school));
+		given(majorRepository.findFirstByName("컴퓨터공학")).willReturn(Optional.of(major));
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				"DOUBLE"
+		));
+		assertThat(profile.getSecondMajorType()).isEqualTo(SecondMajorType.DOUBLE);
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				"MINOR"
+		));
+		assertThat(profile.getSecondMajorType()).isEqualTo(SecondMajorType.MINOR);
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				null
+		));
+		assertThat(profile.getSecondMajorType()).isNull();
+	}
+
+	@Test
 	@DisplayName("STEP3 완료 전 complete 요청은 ONBOARDING_INCOMPLETE로 실패한다")
 	void completeBeforeHousehold() {
 		assertThatThrownBy(() -> userProfileService.complete(userId))
