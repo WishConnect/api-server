@@ -119,6 +119,52 @@ class UserProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("복수전공/부전공 값은 DOUBLE, MINOR, null만 허용한다")
+	void saveAcademicAcceptsDualMajorEnumValues() {
+		School school = School.builder().name("건국대학교").build();
+		Major major = Major.builder().name("컴퓨터공학").category(MajorCategory.ENGINEERING).build();
+		given(schoolRepository.findFirstByName("건국대학교")).willReturn(Optional.of(school));
+		given(majorRepository.findFirstByNameAndCategory("컴퓨터공학", MajorCategory.ENGINEERING))
+				.willReturn(Optional.of(major));
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학계열",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				"DOUBLE"
+		));
+		assertThat(profile.getSecondMajorType()).isEqualTo(SecondMajorType.DOUBLE);
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학계열",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				"MINOR"
+		));
+		assertThat(profile.getSecondMajorType()).isEqualTo(SecondMajorType.MINOR);
+
+		userProfileService.saveAcademic(userId, new ProfileAcademicRequest(
+				"건국대학교",
+				"공학계열",
+				"컴퓨터공학",
+				"ENROLLED",
+				"3학년 1학기",
+				new BigDecimal("3.80"),
+				new BigDecimal("3.60"),
+				null
+		));
+		assertThat(profile.getSecondMajorType()).isNull();
+	}
+
+	@Test
 	@DisplayName("6종에 없는 전공 계열은 INVALID_MAJOR_CATEGORY로 막는다")
 	void saveAcademic_rejectsUnknownMajorCategory() {
 		assertThatThrownBy(() -> userProfileService.saveAcademic(userId, academicRequest("공학")))

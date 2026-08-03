@@ -283,8 +283,10 @@ public class UserProfileService {
 		if (!StringUtils.hasText(value) || "null".equalsIgnoreCase(value.trim())) {
 			return null;
 		}
-		return switch (value.trim()) {
-			case "DOUBLE", "DOUBLE_MAJOR" -> SecondMajorType.DOUBLE;
+		String normalized = value.trim()
+				.toUpperCase();
+		return switch (normalized) {
+			case "DOUBLE" -> SecondMajorType.DOUBLE;
 			case "MINOR" -> SecondMajorType.MINOR;
 			default -> throw new CustomException(ErrorCode.INVALID_INPUT);
 		};
