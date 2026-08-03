@@ -28,6 +28,14 @@ spring:
       # 명세서가 소문자 값을 사용하는데 Java enum 은 대문자라 FE 연동 시 400 방지 목적
       accept-case-insensitive-enums: true
 
+# nginx 리버스 프록시가 붙인 X-Forwarded-* 를 반영해 요청의 scheme/host/port 를 복원한다.
+# 없으면 Spring 이 자기 주소를 http://localhost:8080 으로 인식해, Swagger UI(https://api.wish-connect.com)에서
+# 보낸 same-origin POST/PATCH 를 교차출처로 오판하고 CORS 403 을 낸다.
+# (Origin 헤더는 non-safe 메서드면 same-origin 요청에도 붙기 때문)
+# 로컬은 프록시가 없어 해당 헤더가 오지 않으므로 동작에 영향 없다.
+server:
+  forward-headers-strategy: framework
+
 springdoc:
   # 문서를 끄려면 배포 환경변수에 SWAGGER_ENABLED=false 만 주면 된다(운영 노출 차단용 스위치).
   api-docs:

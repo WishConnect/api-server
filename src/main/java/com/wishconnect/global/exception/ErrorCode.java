@@ -20,6 +20,8 @@ public enum ErrorCode {
 	DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
 	INVALID_PASSWORD_FORMAT(HttpStatus.BAD_REQUEST, "비밀번호 형식이 올바르지 않습니다."),
 	AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해주세요."),
+	/** 온보딩 STEP2 전공 계열. 대학알리미 대계열 6종만 허용한다. */
+	INVALID_MAJOR_CATEGORY(HttpStatus.BAD_REQUEST, "지원하지 않는 전공 계열입니다."),
 	LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 일치하지 않습니다."),
 	/** 소셜 3사 공통: 프론트가 보낸 redirectUri 가 서버 허용목록에 없을 때. */
 	INVALID_REDIRECT_URI(HttpStatus.BAD_REQUEST, "허용되지 않은 redirectUri 입니다."),
@@ -28,6 +30,8 @@ public enum ErrorCode {
 	INVALID_KAKAO_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
 	KAKAO_TOKEN_FAILED(HttpStatus.UNAUTHORIZED, "유효하지 않은 소셜 로그인 토큰입니다."),
 	KAKAO_USER_INFO_FAILED(HttpStatus.BAD_GATEWAY, "카카오 사용자 정보를 가져오지 못했습니다."),
+	/** 비즈 앱 전환으로 이메일이 필수 동의항목이 됐다. 못 받으면 알림 메일이 안 나가므로 가입을 막는다. */
+	KAKAO_EMAIL_REQUIRED(HttpStatus.BAD_REQUEST, "카카오 계정 이메일 제공에 동의해야 가입할 수 있습니다."),
 
 	// 구글 소셜로그인
 	INVALID_GOOGLE_CODE(HttpStatus.BAD_REQUEST, "인가 코드가 존재하지 않습니다. 다시 시도해주세요."),
