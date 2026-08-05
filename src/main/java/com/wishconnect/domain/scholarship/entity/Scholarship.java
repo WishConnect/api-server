@@ -147,10 +147,17 @@ public class Scholarship extends BaseEntity {
 		this.primarySource = primarySource;
 		this.dedupKey = dedupKey;
 		this.homepageUrl = homepageUrl;
+		this.active = true;
+		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
 	}
 
 	public void updateActive(boolean active) {
 		this.active = active;
+	}
+
+	public void softDelete() {
+		this.active = false;
+		this.deletedAt = LocalDateTime.now();
 	}
 }

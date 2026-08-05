@@ -155,7 +155,7 @@ public class ScholarshipSyncService {
 		}
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
 		scholarshipConditionRepository.deleteByScholarship(scholarship);
-		scholarshipRepository.delete(scholarship);
+		scholarship.softDelete();
 	}
 
 	private void replaceDocuments(Scholarship scholarship, JsonNode item) {

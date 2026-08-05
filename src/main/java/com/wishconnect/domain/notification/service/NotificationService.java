@@ -103,6 +103,9 @@ public class NotificationService {
 	 */
 	@Transactional
 	public void createRecommendationNotification(User user, Scholarship scholarship) {
+		if (!isDispatchable(scholarship)) {
+			return;
+		}
 		if (dispatchLogRepository.existsByUser_IdAndScholarship_IdAndType(
 				user.getId(), scholarship.getId(), NotificationType.RECOMMENDATION)) {
 			return;
@@ -118,6 +121,9 @@ public class NotificationService {
 
 	@Transactional
 	public void createDeadlineNotification(User user, Scholarship scholarship, long dDay) {
+		if (!isDispatchable(scholarship)) {
+			return;
+		}
 		String title = dDay == 0 ? "오늘 마감" : "마감 임박";
 		String content = dDay == 0
 				? "오늘 마감인 장학금이 있어요. 지원을 확인해보세요."
@@ -151,6 +157,9 @@ public class NotificationService {
 
 	private void createScholarshipNotificationIfAllowed(User user, Scholarship scholarship, NotificationType type,
 			String title, String content) {
+		if (!isDispatchable(scholarship)) {
+			return;
+		}
 		NotificationSetting setting = getOrCreateSetting(user.getId());
 		if (!setting.isEnabled(type)) {
 			return;
@@ -195,6 +204,10 @@ public class NotificationService {
 				.type(type)
 				.sentDate(LocalDate.now())
 				.build());
+	}
+
+	private boolean isDispatchable(Scholarship scholarship) {
+		return scholarship != null && scholarship.isActive() && scholarship.getDeletedAt() == null;
 	}
 
 	private NotificationType parseType(String type) {
