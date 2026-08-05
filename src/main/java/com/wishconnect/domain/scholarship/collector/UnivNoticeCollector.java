@@ -8,10 +8,12 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
+import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +21,9 @@ import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,16 +50,33 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UnivNoticeCollector {
 
-	/** "2026. 7. 28. ~ 8. 19." / "2026. 7. 28. ~ 2026. 8. 19." / 제목 괄호 "(7. 28. ~ 8. 19.)" */
-	private static final Pattern PERIOD = Pattern.compile(
-			"(?:(20\\d{2})\\s*[.년]\\s*)?(\\d{1,2})\\s*[.월]\\s*(\\d{1,2})\\s*\\.?\\s*~\\s*"
-					+ "(?:(20\\d{2})\\s*[.년]\\s*)?(\\d{1,2})\\s*[.월]\\s*(\\d{1,2})");
+	/**
+	 * "2026. 7. 28. ~ 8. 19." / "2026-07-01 ~ 2026-07-31" /
+	 * "8.3.월 10시~8.10.월 15시"처럼 시작일과 종료일이 모두 있는 표기.
+	 */
+	private static final Pattern PERIOD_RANGE = Pattern.compile(
+			"(?:(20\\d{2})\\s*(?:[.년/-])\\s*)?(\\d{1,2})\\s*(?:[.월/-])\\s*(\\d{1,2})\\s*(?:일)?\\s*\\.?\\s*"
+					+ "(?:\\([^)]*\\))?[^~]{0,30}~\\s*"
+					+ "(?:(20\\d{2})\\s*(?:[.년/-])\\s*)?(\\d{1,2})\\s*(?:[.월/-])\\s*(\\d{1,2})\\s*(?:일)?\\s*\\.?\\s*"
+					+ "(?:\\([^)]*\\))?\\s*(?:\\d{1,2}\\s*(?:시|:)\\s*\\d{0,2})?");
+	/** "~4/16(목) 17시까지" / "2026년 8월 10일까지"처럼 종료일만 있는 표기. */
+	private static final Pattern PERIOD_DEADLINE = Pattern.compile(
+			"(?:~\\s*)?(?:(20\\d{2})\\s*(?:[.년/-])\\s*)?(\\d{1,2})\\s*(?:[.월/-])\\s*(\\d{1,2})\\s*(?:일)?\\s*\\.?\\s*"
+					+ "(?:\\([^)]*\\))?\\s*(?:\\d{1,2}\\s*(?:시|:)\\s*\\d{0,2})?\\s*(?:까지|마감|기한)");
+	private static final Pattern DOCUMENT_SECTION = Pattern.compile(
+			"(?:제출\\s*서류|구비\\s*서류|제출서류|신청\\s*방법\\s*및\\s*제출서류)\\s*[:：]?\\s*(.{0,600})");
+	private static final Pattern SECTION_BOUNDARY = Pattern.compile(
+			"(?:\\d{1,2}\\s*[.)]\\s*)?(?:신청\\s*기한|신청\\s*기간|장학\\s*금액|문의|문의처|유의\\s*사항|합격자|선발|지원\\s*자격)");
+	private static final Pattern ESSAY_DOCUMENT = Pattern.compile(
+			"(자기\\s*소개서|자소서|학업\\s*계획서|전인적\\s*성장\\s*계획서|에세이|essay)",
+			Pattern.CASE_INSENSITIVE);
 	private static final int TIMEOUT_MS = 10_000;
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
+	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final UnivNoticeProperties univNoticeProperties;
 	private final ImageStorageService imageStorageService;
 
@@ -85,11 +106,15 @@ public class UnivNoticeCollector {
 	public CollectResultResponse collect(Site site, int pages) {
 		Pattern articleLink = Pattern.compile(site.effectiveLinkPattern());
 		String baseUrl = baseUrlOf(site.listUrl());
+		int maxArticles = site.maxArticles() == null ? Integer.MAX_VALUE : Math.max(site.maxArticles(), 0);
 		int fetched = 0;
 		int saved = 0;
 		int skipped = 0;
 		for (int page = 1; page <= Math.max(pages, 1); page++) {
 			for (String articleId : fetchArticleIds(site, articleLink, page)) {
+				if (fetched >= maxArticles) {
+					break;
+				}
 				fetched++;
 				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), site.sourceIdOf(articleId))) {
 					continue;
@@ -104,6 +129,9 @@ public class UnivNoticeCollector {
 					log.warn("[UnivCollector] {} 공지 수집 실패 articleId={} : {}",
 							site.code(), articleId, e.getMessage());
 				}
+			}
+			if (fetched >= maxArticles) {
+				break;
 			}
 		}
 		log.info("[UnivCollector] {} 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}",
@@ -180,6 +208,7 @@ public class UnivNoticeCollector {
 		rawScholarshipRepository.save(raw);
 		if (isNewScholarship) {
 			storeConditions(scholarship, title + "\n" + bodyText);
+			storeDocuments(scholarship, bodyText);
 			storePoster(site, doc, scholarship, title);
 		}
 		return true;
@@ -205,6 +234,28 @@ public class UnivNoticeCollector {
 		}
 	}
 
+	/**
+	 * 대학 공지 본문에서 제출서류 섹션이 보이면 서류명을 저장한다.
+	 * 학교마다 문서 양식이 달라 완벽한 구조화는 어렵기 때문에, 명확한 서류명 후보만 보수적으로 남긴다.
+	 */
+	private void storeDocuments(Scholarship scholarship, String text) {
+		List<String> documentNames = extractDocumentNames(text);
+		if (documentNames.isEmpty()) {
+			return;
+		}
+		List<ScholarshipDocument> documents = new ArrayList<>();
+		for (int i = 0; i < documentNames.size(); i++) {
+			String name = documentNames.get(i);
+			documents.add(ScholarshipDocument.builder()
+					.scholarship(scholarship)
+					.name(name)
+					.essay(ESSAY_DOCUMENT.matcher(name).find())
+					.displayOrder(i)
+					.build());
+		}
+		scholarshipDocumentRepository.saveAll(documents);
+	}
+
 	/** 본문 인라인 이미지 → 이미지 첨부 순으로 포스터 후보를 찾아 S3에 저장한다(실패해도 수집 계속). */
 	private void storePoster(Site site, Document doc, Scholarship scholarship, String title) {
 		String posterUrl = findPosterUrl(doc);
@@ -217,7 +268,8 @@ public class UnivNoticeCollector {
 	}
 
 	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
-	private static final Pattern NON_POSTER = Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet");
+	private static final Pattern NON_POSTER =
+			Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet|og_thumbnail|ssu_ogimage|favicon|sns|share|/resources/images/");
 
 	/** 상세 본문 텍스트. bodySelector 지정 시 그 영역만, 없으면 body 전체. */
 	static String extractBody(Document doc, String bodySelector) {
@@ -283,19 +335,75 @@ public class UnivNoticeCollector {
 				return src;
 			}
 		}
-		for (Element img : doc.select(".artclView img[src], .view-con img[src], article img[src], img[src]")) {
+		for (Element img : doc.select(
+				".board_view .view_cont img[src], .artclView img[src], .view-con img[src], "
+						+ ".view_cont img[src], .article-view img[src], .content img[src], .contents img[src], "
+						+ ".bg-white img[src], .entry-content img[src], article img[src], main img[src]")) {
 			String src = img.attr("abs:src");
 			if (!src.isBlank() && IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
 				return src;
 			}
 		}
-		for (Element link : doc.select("a[href*=download.do]")) {
+		for (Element link : doc.select(
+				".board_view .view_cont a[href*=download], .artclView a[href*=download], .view-con a[href*=download], "
+						+ ".view_cont a[href*=download], .article-view a[href*=download], .content a[href*=download], "
+						+ ".contents a[href*=download], .bg-white a[href*=download], .entry-content a[href*=download], "
+						+ "article a[href*=download], main a[href*=download]")) {
 			String name = link.text();
 			if (IMAGE_EXT.matcher(name.strip()).find()) {
 				return link.attr("abs:href");
 			}
 		}
 		return null;
+	}
+
+	/** 제출서류/구비서류 섹션에서 서류명 후보를 추출한다. */
+	static List<String> extractDocumentNames(String text) {
+		if (text == null || text.isBlank()) {
+			return List.of();
+		}
+		Matcher sectionMatcher = DOCUMENT_SECTION.matcher(text.replaceAll("\\s+", " ").trim());
+		if (!sectionMatcher.find()) {
+			return List.of();
+		}
+		String section = sectionMatcher.group(1);
+		Matcher boundary = SECTION_BOUNDARY.matcher(section);
+		if (boundary.find()) {
+			section = section.substring(0, boundary.start());
+		}
+
+		LinkedHashSet<String> names = new LinkedHashSet<>();
+		for (String token : section.split("(?:[①②③④⑤⑥⑦⑧⑨⑩]|\\d{1,2}\\s*[.)]|[,/]|\\s+-\\s+|▶|▪|◾|○)")) {
+			String name = cleanDocumentName(token);
+			if (isDocumentName(name)) {
+				names.add(name);
+			}
+			if (names.size() >= 12) {
+				break;
+			}
+		}
+		return List.copyOf(names);
+	}
+
+	private static String cleanDocumentName(String value) {
+		return value
+				.strip()
+				.replaceAll("^(?:제출\\s*서류|구비\\s*서류|제출서류)\\s*[:：]?\\s*", "")
+				.replaceAll("\\([^)]*해당[^)]*\\)", "")
+				.replaceAll("최근\\s*\\d+\\s*개?월\\s*이내\\s*발급\\s*서류.*", "")
+				.replaceAll("※.*", "")
+				.replaceAll("\\s+", " ")
+				.trim();
+	}
+
+	private static boolean isDocumentName(String value) {
+		if (value.length() < 2 || value.length() > 80) {
+			return false;
+		}
+		if (value.contains("신청") && !value.contains("신청서"))
+			return false;
+
+		return value.matches(".*(신청서|동의서|증명서|확인서|추천서|계획서|소개서|자소서|성적표|성적증명|재학증명|가족관계|주민등록|통장|사본|보고서|평가서|서약서).*");
 	}
 
 	private String baseUrlOf(String listUrl) {
@@ -353,24 +461,59 @@ public class UnivNoticeCollector {
 
 	/** 텍스트에서 신청기간을 추출한다. 연도가 생략된 쪽은 앞선 연도(없으면 defaultYear)를 따른다. */
 	static Period parsePeriod(String text, int defaultYear) {
-		Matcher m = PERIOD.matcher(text);
-		if (!m.find()) {
-			return null;
-		}
+		Matcher m = PERIOD_RANGE.matcher(text);
 		try {
-			int startYear = m.group(1) != null ? Integer.parseInt(m.group(1)) : defaultYear;
-			LocalDate start = LocalDate.of(startYear,
-					Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
-			int endYear = m.group(4) != null ? Integer.parseInt(m.group(4)) : startYear;
-			LocalDate end = LocalDate.of(endYear,
-					Integer.parseInt(m.group(5)), Integer.parseInt(m.group(6)));
-			if (end.isBefore(start)) {
-				end = end.plusYears(1);
+			if (m.find()) {
+				int startYear = m.group(1) != null ? Integer.parseInt(m.group(1)) : defaultYear;
+				LocalDate start = LocalDate.of(startYear,
+						Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+				int endYear = m.group(4) != null ? Integer.parseInt(m.group(4)) : startYear;
+				LocalDate end = LocalDate.of(endYear,
+						Integer.parseInt(m.group(5)), Integer.parseInt(m.group(6)));
+				if (end.isBefore(start)) {
+					end = end.plusYears(1);
+				}
+				return new Period(start.atStartOfDay(), end.atTime(parseLastTimeOrEndOfDay(m.group())));
 			}
-			return new Period(start.atStartOfDay(), end.atTime(LocalTime.of(23, 59, 59)));
+
+			m = PERIOD_DEADLINE.matcher(text);
+			if (m.find()) {
+				int endYear = m.group(1) != null ? Integer.parseInt(m.group(1)) : defaultYear;
+				LocalDate end = LocalDate.of(endYear,
+						Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+				return new Period(null, end.atTime(parseDeadlineTime(m.group())));
+			}
 		} catch (Exception e) {
 			return null;
 		}
+		return null;
+	}
+
+	private static LocalTime parseDeadlineTime(String matchedText) {
+		Matcher time = Pattern.compile("(\\d{1,2})\\s*(?:시|:)\\s*(\\d{0,2})").matcher(matchedText);
+		if (time.find()) {
+			int hour = Integer.parseInt(time.group(1));
+			String minuteText = time.group(2);
+			int minute = minuteText == null || minuteText.isBlank() ? 0 : Integer.parseInt(minuteText);
+			if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+				return LocalTime.of(hour, minute, 59);
+			}
+		}
+		return LocalTime.of(23, 59, 59);
+	}
+
+	private static LocalTime parseLastTimeOrEndOfDay(String matchedText) {
+		Matcher time = Pattern.compile("(\\d{1,2})\\s*(?:시|:)\\s*(\\d{0,2})").matcher(matchedText);
+		LocalTime parsed = null;
+		while (time.find()) {
+			int hour = Integer.parseInt(time.group(1));
+			String minuteText = time.group(2);
+			int minute = minuteText == null || minuteText.isBlank() ? 0 : Integer.parseInt(minuteText);
+			if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+				parsed = LocalTime.of(hour, minute, 59);
+			}
+		}
+		return parsed == null ? LocalTime.of(23, 59, 59) : parsed;
 	}
 
 	private static String sha256(String value) {

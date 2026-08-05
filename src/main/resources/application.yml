@@ -102,32 +102,38 @@ scholarship:
           source: KONKUK_NOTICE   # 기존 수집분과의 멱등 호환을 위해 유지
           list-url: https://www.konkuk.ac.kr/konkuk/2239/subview.do
           article-path: /bbs/konkuk/235/
+          max-articles: 10
         - code: hallym
           provider: 한림대학교
           source: UNIV_HALLYM
           list-url: https://www.hallym.ac.kr/hallym/1135/subview.do
           article-path: /bbs/hallym/156/
+          max-articles: 10
         - code: yonsei
           provider: 연세대학교
           source: UNIV_YONSEI
           # 학사·일반 공지가 섞인 통합 게시판이라 장학 분류(findClSeq=257)만 수집한다.
           list-url: https://www.yonsei.ac.kr/bbs/sc/58/artclList.do?findClSeq=257
           article-path: /bbs/sc/58/
+          max-articles: 10
         - code: hufs
           provider: 한국외국어대학교
           source: UNIV_HUFS
           list-url: https://www.hufs.ac.kr/bbs/hufs/2182/artclList.do
           article-path: /bbs/hufs/2182/
+          max-articles: 10
         - code: inu
           provider: 인천대학교
           source: UNIV_INU
           list-url: https://life.inu.ac.kr/bbs/inu/249/artclList.do
           article-path: /bbs/inu/249/
+          max-articles: 10
         - code: swu
           provider: 서울여자대학교
           source: UNIV_SWU
           list-url: https://www.swu.ac.kr/bbs/swu/57/artclList.do
           article-path: /bbs/swu/57/
+          max-articles: 10
         # 쿼리파라미터 계열(artclView 아님). 같은 페이지에 다른 게시판(학사공지 등) 링크도 있어
         # 목록 자기 게시판의 상대링크(?mode=view...)만 잡도록 ^ 로 고정한다.
         - code: sejong
@@ -136,6 +142,7 @@ scholarship:
           list-url: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=list
           link-pattern: '^\?mode=view&articleNo=(\d+)'
           detail-template: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=view&articleNo={id}
+          max-articles: 10
         # Tier B: JS 함수형 링크(fnView(날짜, 순번) 복합키). link-pattern 그룹2까지 사용 → {id}/{id2} 치환.
         - code: uos
           provider: 서울시립대학교
@@ -147,6 +154,52 @@ scholarship:
           # 테이블형 스킨: 제목은 fontBold td, 본문은 hwp 에디터 영역
           title-selector: "td.fontBold"
           body-selector: ".hwp_editor_board_content, .notice_tb_view_contents"
+          max-articles: 10
+        # goDetail(글번호) 함수형 링크. 상세 페이지는 /article/JANGHAKNOTICE/detail/{id}.
+        - code: dongguk
+          provider: 동국대학교
+          source: UNIV_DONGGUK
+          list-url: https://www.dongguk.edu/article/JANGHAKNOTICE/list
+          link-pattern: "goDetail\\((\\d+)\\)"
+          detail-template: https://www.dongguk.edu/article/JANGHAKNOTICE/detail/{id}
+          list-param: pageIndex
+          title-selector: ".board_view .tit p"
+          body-selector: ".board_view .view_cont"
+          max-articles: 10
+        # 국민대 장학공지 게시판. href 안의 글번호를 추출한다.
+        - code: kookmin
+          provider: 국민대학교
+          source: UNIV_KOOKMIN
+          list-url: https://kookmin.ac.kr/user/kmuNews/notice/7/index.do
+          link-pattern: "/user/kmuNews/notice/7/(\\d+)/view\\.do"
+          detail-template: https://kookmin.ac.kr/user/kmuNews/notice/7/{id}/view.do
+          list-param: currentPageNo
+          title-selector: ".board_view .view_tit"
+          body-selector: ".board_view .view_cont"
+          max-articles: 10
+        # 홍익대 공지센터. articleNo 기반 view 링크를 추출한다.
+        - code: hongik
+          provider: 홍익대학교
+          source: UNIV_HONGIK
+          # 대학공지의 장학 카테고리(srCategoryId=24)만 수집한다.
+          list-url: https://www.hongik.ac.kr/kr/education/notice-undergrad.do?mode=list&srCategoryId=24&srSearchKey=article_title
+          link-pattern: "^((?:/kr/(?:education/notice-undergrad|newscenter/notice)\\.do)?\\?mode=view&articleNo=\\d+[^\"'\\s]*)"
+          detail-template:
+          list-param: article.offset
+          title-selector: ".board_view .view_tit, .view_tit, .title, .article-title, h3"
+          body-selector: ".board_view .view_cont, .view_cont, .article-view, .content, .contents"
+          max-articles: 10
+        # 숭실대 SSU:catch 장학 카테고리. WordPress slug 를 상세 식별자로 사용한다.
+        - code: ssu
+          provider: 숭실대학교
+          source: UNIV_SSU
+          list-url: https://scatch.ssu.ac.kr/%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD/?category=%EC%9E%A5%ED%95%99
+          link-pattern: "^(https://scatch\\.ssu\\.ac\\.kr/[^\"'\\s]*[?&]slug=[^\"'\\s&]+[^\"'\\s]*)"
+          detail-template:
+          list-param: paged
+          title-selector: ".bg-white h1, h1"
+          body-selector: ".bg-white, .entry-content"
+          max-articles: 10
 
 # 대학알리미/공공데이터 학교·학과 마스터 동기화 (온보딩 STEP2 학교·전공 검색의 원천 데이터).
 # service-key 는 반드시 환경변수로 주입한다(저장소에 커밋 금지). 미주입 시 동기화만 실패하고 앱 기동에는 영향 없다.

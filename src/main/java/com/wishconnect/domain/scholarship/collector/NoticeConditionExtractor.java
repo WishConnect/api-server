@@ -2,9 +2,9 @@ package com.wishconnect.domain.scholarship.collector;
 
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,28 +26,37 @@ public final class NoticeConditionExtractor {
 	private static final int MAX_SNIPPET_LENGTH = 300;
 	/** 본문 앞부분에 자격 요건이 몰려 있어, 지나치게 뒤쪽(첨부·문의처 등)은 보지 않는다. */
 	private static final int MAX_SCAN_LENGTH = 4000;
+	/** 같은 조건이 반복 공지/목록 텍스트에 중복 등장할 때 저장 폭주를 막는다. */
+	private static final int MAX_RESULT_COUNT = 12;
 
-	/** 소득분위/학자금 지원구간. 예: "소득 8분위 이하", "학자금 지원구간 4구간 이내" */
+	/** 소득분위/학자금 지원구간. 예: "소득 8분위 이하", "소득분위 0~3분위", "학자금 지원구간 4구간 이내" */
 	private static final Pattern INCOME = Pattern.compile(
-			"(소득|가구|학자금\\s*지원)[^.\\n]{0,20}\\d{1,2}\\s*(분위|구간)");
+			"(소득|가구|학자금\\s*지원)[^.\\n]{0,35}\\d{1,2}\\s*(?:~|-|부터|이상)?\\s*\\d{0,2}\\s*(분위|구간)");
 
 	/** 성적 기준. 예: "직전학기 평점평균 3.0 이상", "성적 80점 이상" */
 	private static final Pattern ACADEMIC = Pattern.compile(
-			"(평점|성적|학점|백분위)[^.\\n]{0,20}\\d[.,]?\\d*\\s*(점)?\\s*이상");
+			"(평점|평균평점|성적|백분위)[^.\\n]{0,20}\\d[.,]?\\d*\\s*(점)?\\s*이상");
 
 	/** 학년/학기 기준. 예: "2학년 이상 재학생", "대학 3학기~7학기" */
 	private static final Pattern GRADE = Pattern.compile(
-			"\\d\\s*(학년|학기)[^.\\n]{0,10}(이상|이내|이하|~|-|부터)|\\d\\s*(학년|학기)\\s*(재학생|재학)");
+			"\\d\\s*학년[^.\\n]{0,12}(이상|이내|이하|~|-|부터|까지|재학생|재학)|"
+					+ "(?:대학\\s*)?\\d\\s*학기\\s*(?:이상|이내|이하|~|-|부터|까지)[^.\\n]{0,12}|"
+					+ "(?<!\\d)[1-9]\\s*(?:~|-)\\s*[1-9]\\s*(학년|학기)|신입생");
 
 	/** 거주지 요건. 예: "부산광역시에 거주하는", "전라북도 출신" */
 	private static final Pattern REGION = Pattern.compile(
 			"(특별시|광역시|특별자치시|특별자치도|[가-힣]{2,4}(도|시|군|구))[^.\\n]{0,15}(거주|출신|소재)");
 
-	private static final Map<ConditionType, Pattern> PATTERNS = new EnumMap<>(Map.of(
-			ConditionType.INCOME_CRITERIA, INCOME,
-			ConditionType.ACADEMIC_CRITERIA, ACADEMIC,
-			ConditionType.GRADE_LEVEL, GRADE,
-			ConditionType.REGION_RESIDENCY, REGION));
+	/** 특수 자격. 예: 한부모 가정, 가족 간병, 불교동아리, 대회 입상, 봉사활동 등 */
+	private static final Pattern SPECIFIC = Pattern.compile(
+			"(한부모|장애|다문화|차상위|기초생활|간병|부양|동아리|불교|봉사|입상|수상|자격증|국가유공|독립유공)");
+
+	/** 제한/제외 조건. 예: 타 장학 중복수혜 불가, 휴학생 제외 */
+	private static final Pattern RESTRICTION = Pattern.compile(
+			"(중복\\s*수혜|이중\\s*수혜|중복\\s*지원|수혜\\s*불가|지원\\s*불가|제외|탈락|취소|휴학생)");
+
+	/** 추천 필요 여부. 예: 지도교수 추천, 학교장 추천서 */
+	private static final Pattern RECOMMENDATION = Pattern.compile("(추천서|추천\\s*필요|지도교수.*추천|학교장.*추천)");
 
 	/**
 	 * 자격 요건이 아니라 지급·결과 안내에 붙는 문장을 걸러낸다.
@@ -60,7 +69,7 @@ public final class NoticeConditionExtractor {
 
 	/**
 	 * @param bodyText 공지 본문 텍스트
-	 * @return 조건 유형별로 최대 1건씩 추출한 원문 문장. 조건이 없으면 빈 목록.
+	 * @return 조건 후보 원문 문장. 조건이 없으면 빈 목록.
 	 */
 	public static List<Extracted> extract(String bodyText) {
 		if (bodyText == null || bodyText.isBlank()) {
@@ -69,25 +78,51 @@ public final class NoticeConditionExtractor {
 		String scanned = bodyText.length() > MAX_SCAN_LENGTH
 				? bodyText.substring(0, MAX_SCAN_LENGTH) : bodyText;
 
-		Map<ConditionType, String> found = new EnumMap<>(ConditionType.class);
-		for (String sentence : splitSentences(scanned)) {
+		List<Extracted> result = new ArrayList<>();
+		Set<String> dedup = new HashSet<>();
+		for (String sentence : splitSentences(normalizeMarkers(scanned))) {
 			if (NON_REQUIREMENT.matcher(sentence).find()) {
 				continue;
 			}
-			for (Map.Entry<ConditionType, Pattern> entry : PATTERNS.entrySet()) {
-				if (found.containsKey(entry.getKey())) {
-					continue;
-				}
-				Matcher matcher = entry.getValue().matcher(sentence);
-				if (matcher.find()) {
-					found.put(entry.getKey(), trim(sentence));
-				}
+			boolean restricted = addIfMatch(result, dedup, ConditionType.RESTRICTION, RESTRICTION, sentence);
+			addIfMatch(result, dedup, ConditionType.INCOME_CRITERIA, INCOME, sentence);
+			addIfMatch(result, dedup, ConditionType.ACADEMIC_CRITERIA, ACADEMIC, sentence);
+			if (!restricted && !hasType(result, ConditionType.GRADE_LEVEL)) {
+				addIfMatch(result, dedup, ConditionType.GRADE_LEVEL, GRADE, sentence);
+			}
+			addIfMatch(result, dedup, ConditionType.REGION_RESIDENCY, REGION, sentence);
+			addIfMatch(result, dedup, ConditionType.SPECIFIC_QUALIFICATION, SPECIFIC, sentence);
+			addIfMatch(result, dedup, ConditionType.RECOMMENDATION_REQUIRED, RECOMMENDATION, sentence);
+			if (result.size() >= MAX_RESULT_COUNT) {
+				break;
 			}
 		}
-
-		List<Extracted> result = new ArrayList<>();
-		found.forEach((type, snippet) -> result.add(new Extracted(type, snippet)));
 		return result;
+	}
+
+	private static boolean addIfMatch(List<Extracted> result, Set<String> dedup, ConditionType type,
+			Pattern pattern, String sentence) {
+		Matcher matcher = pattern.matcher(sentence);
+		if (!matcher.find()) {
+			return false;
+		}
+		String snippet = trim(sentence);
+		String key = type.name() + "|" + snippet;
+		if (dedup.add(key)) {
+			result.add(new Extracted(type, snippet));
+		}
+		return true;
+	}
+
+	private static boolean hasType(List<Extracted> result, ConditionType type) {
+		return result.stream().anyMatch(extracted -> extracted.type() == type);
+	}
+
+	private static String normalizeMarkers(String text) {
+		return text
+				.replaceAll("\\s+([①②③④⑤⑥⑦⑧⑨⑩])\\s*", "\n$1 ")
+				.replaceAll("\\s+(\\d{1,2}\\.)\\s+(?=[가-힣A-Za-z])", "\n$1 ")
+				.replaceAll("\\s+([-–])\\s+(?=[가-힣A-Za-z])", "\n- ");
 	}
 
 	private static List<String> splitSentences(String text) {

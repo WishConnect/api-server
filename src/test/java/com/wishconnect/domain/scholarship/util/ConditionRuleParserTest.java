@@ -14,6 +14,8 @@ class ConditionRuleParserTest {
 	void parsesIncome() {
 		assertThat(ConditionRuleParser.parse(ConditionType.INCOME_CRITERIA, "소득 8분위 이하"))
 				.hasValue(new ConditionRuleParser.Extracted(ConditionOperator.LTE, 8, null));
+		assertThat(ConditionRuleParser.parse(ConditionType.INCOME_CRITERIA, "소득분위 0~3분위인 학생"))
+				.hasValue(new ConditionRuleParser.Extracted(ConditionOperator.LTE, 3, null));
 		assertThat(ConditionRuleParser.parse(ConditionType.INCOME_CRITERIA, "학자금지원 5구간 이내인 자"))
 				.hasValue(new ConditionRuleParser.Extracted(ConditionOperator.LTE, 5, null));
 		assertThat(ConditionRuleParser.parse(ConditionType.INCOME_CRITERIA, "기초생활수급자 및 차상위계층"))
