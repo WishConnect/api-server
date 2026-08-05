@@ -4,13 +4,19 @@
 [Unit]
 Description=WishConnect Spring Boot Application
 After=network.target
+# 재시작 폭주 방지: 300초 안에 5회 실패하면 더 시도하지 않고 정지한다.
+# (systemd 229+ 부터 StartLimit* 는 [Service] 가 아니라 [Unit] 섹션이다. [Service] 에 두면 무시된다)
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 User=ubuntu
 WorkingDirectory=/home/ubuntu/app
 # 민감정보(DB 비번, JWT secret, 소셜 키 등)는 이 파일에서 주입 (root:600, git 미포함)
 EnvironmentFile=/etc/wishconnect/wishconnect.env
-ExecStart=/usr/bin/java -jar /home/ubuntu/app/app.jar --spring.profiles.active=prod
+# 힙 상한 고정: -Xmx 가 없으면 JVM 이 물리메모리의 25% 를 자동 상한으로 잡아
+# 인스턴스 크기가 바뀔 때마다 사용량이 따라 늘어난다(t3.micro 256MB -> t3.small 478MB).
+ExecStart=/usr/bin/java -Xms512m -Xmx1g -jar /home/ubuntu/app/app.jar --spring.profiles.active=prod
 SuccessExitStatus=143
 Restart=on-failure
 RestartSec=5
