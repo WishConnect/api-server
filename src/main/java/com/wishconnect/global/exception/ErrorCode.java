@@ -54,6 +54,10 @@ public enum ErrorCode {
 
 	// 장학금/지원서
 	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),
+	/** 수기 등록·수정에서 마감이 시작보다 앞설 때. 모집 상태 계산이 뒤틀리므로 입력 단계에서 막는다. */
+	INVALID_APPLICATION_PERIOD(HttpStatus.BAD_REQUEST, "모집 종료일이 시작일보다 빠를 수 없습니다."),
+	REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 신고입니다."),
+	REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 접수된 신고가 처리 중입니다."),
 	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
 	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
 	ONBOARDING_INCOMPLETE(HttpStatus.BAD_REQUEST, "이전 단계를 먼저 완료해주세요."),

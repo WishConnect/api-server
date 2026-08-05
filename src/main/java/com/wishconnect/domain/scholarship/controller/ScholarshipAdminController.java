@@ -3,18 +3,33 @@ package com.wishconnect.domain.scholarship.controller;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
+import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
+import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
+import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import com.wishconnect.global.common.ApiResponse;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,6 +53,8 @@ public class ScholarshipAdminController {
 	private final ScholarshipSyncService scholarshipSyncService;
 	private final UnivNoticeCollector univNoticeCollector;
 	private final ConditionExtractionService conditionExtractionService;
+	private final ScholarshipManualService scholarshipManualService;
+	private final ScholarshipReportService scholarshipReportService;
 
 	@Operation(summary = "공공데이터 수동 동기화",
 			description = "한국장학재단 학자금지원정보를 수동으로 동기화한다. (ADMIN 전용)")
@@ -61,5 +78,49 @@ public class ScholarshipAdminController {
 	@PostMapping("/conditions/extract")
 	public ApiResponse<ConditionExtractionResponse> extractConditions() {
 		return ApiResponse.ok(conditionExtractionService.extract());
+	}
+
+	@Operation(summary = "장학금 수기 등록",
+			description = "주최사 제보 등 수집이 놓친 공고를 직접 등록한다. "
+					+ "동기화 배치가 덮어쓰지 않도록 별도 출처(MANUAL)로 저장된다. (ADMIN 전용)")
+	@PostMapping("/manual")
+	public ResponseEntity<ApiResponse<ScholarshipManualResponse>> createManual(
+			@Valid @RequestBody ScholarshipManualRequest.Create request) {
+		return ResponseEntity.status(201).body(ApiResponse.ok(scholarshipManualService.create(request)));
+	}
+
+	@Operation(summary = "장학금 직접 수정",
+			description = "보낸 필드만 반영한다(부분 수정). 수집분·수기분 모두 대상. (ADMIN 전용)")
+	@PatchMapping("/manual/{scholarshipId}")
+	public ApiResponse<ScholarshipManualResponse> updateManual(
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody ScholarshipManualRequest request) {
+		return ApiResponse.ok(scholarshipManualService.update(scholarshipId, request));
+	}
+
+	@Operation(summary = "장학금 내리기",
+			description = "오등록으로 확인된 장학금을 목록에서 내린다(soft delete). (ADMIN 전용)")
+	@DeleteMapping("/manual/{scholarshipId}")
+	public ApiResponse<Void> deleteManual(@PathVariable Long scholarshipId) {
+		scholarshipManualService.delete(scholarshipId);
+		return ApiResponse.ok();
+	}
+
+	@Operation(summary = "오등록 신고 목록",
+			description = "status 미지정 시 전체를 최신순으로 준다. (ADMIN 전용)")
+	@GetMapping("/reports")
+	public ApiResponse<Page<ScholarshipReportResponse>> reports(
+			@RequestParam(required = false) ReportStatus status,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipReportService.findAll(status, pageable));
+	}
+
+	@Operation(summary = "오등록 신고 처리",
+			description = "신고 상태만 바꾼다. 데이터 수정은 /manual/{id} 로 한다. (ADMIN 전용)")
+	@PatchMapping("/reports/{reportId}")
+	public ApiResponse<ScholarshipReportResponse> resolveReport(
+			@PathVariable Long reportId,
+			@Valid @RequestBody ReportResolveRequest request) {
+		return ApiResponse.ok(scholarshipReportService.resolve(reportId, request));
 	}
 }

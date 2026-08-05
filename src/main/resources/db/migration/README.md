@@ -31,4 +31,5 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 
 | 파일 | 내용 | 운영 적용 |
 |---|---|---|
-| `V20260729_01__add_role_to_users.sql` | `users.role` 컬럼 추가 (관리자 권한) | ⬜ 미적용 |
+| `V20260729_01__add_role_to_users.sql` | `users.role` 컬럼 추가 (관리자 권한) | ✅ 2026-07-29 |
+| `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ⬜ 미적용 |
