@@ -48,8 +48,12 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class AuthService {
 
-	private static final String KAKAO_EMAIL_FORMAT = "kakao_%d@wishconnect.kr";
 	private static final String SOCIAL_EMAIL_FORMAT = "%s_%s@wishconnect.kr"; // prefix, providerId
+	/**
+	 * 소셜 로그인에서 이메일을 못 받았을 때 채워 넣던 자리표시자 주소의 도메인.
+	 * 실제 수신함이 아니라 알림 메일이 발송되지 않으므로, 실제 이메일을 받으면 교체 대상이다.
+	 */
+	private static final String PLACEHOLDER_EMAIL_DOMAIN = "@wishconnect.kr";
 	private static final Set<AgreementType> REQUIRED_AGREEMENTS = EnumSet.of(
 			AgreementType.TERMS, AgreementType.PRIVACY, AgreementType.THIRD_PARTY, AgreementType.AGE_14);
 
@@ -126,6 +130,11 @@ public class AuthService {
 		if (user.isDeleted()) {
 			throw new CustomException(ErrorCode.LOGIN_FAILED);
 		}
+		// 비즈 앱 전환 전에 가입한 회원은 자리표시자 이메일을 갖고 있어 알림 메일을 받을 수 없다.
+		// 이제 카카오가 실제 이메일을 내려주므로 다시 로그인할 때 채워 넣는다.
+		if (!isNewUser) {
+			backfillPlaceholderEmail(user, kakaoUser.email());
+		}
 
 		TokenPair tokens = issueTokens(user);
 		return KakaoLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
@@ -173,6 +182,22 @@ public class AuthService {
 
 		TokenPair tokens = issueTokens(user);
 		return SocialLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
+	}
+
+	/**
+	 * 자리표시자 이메일을 실제 이메일로 교체한다.
+	 * 이미 실제 주소가 들어 있으면 건드리지 않는다(사용자가 마이페이지에서 바꿨을 수 있다).
+	 */
+	private void backfillPlaceholderEmail(User user, String providerEmail) {
+		if (!StringUtils.hasText(providerEmail) || !isPlaceholderEmail(user.getEmail())) {
+			return;
+		}
+		user.changeEmail(providerEmail);
+		log.info("[Auth] 자리표시자 이메일을 실제 이메일로 교체 (userId={})", user.getId());
+	}
+
+	private boolean isPlaceholderEmail(String email) {
+		return email != null && email.endsWith(PLACEHOLDER_EMAIL_DOMAIN);
 	}
 
 	private User registerSocialUser(LoginType loginType, String providerId,
@@ -273,11 +298,21 @@ public class AuthService {
 		userAgreementRepository.saveAll(entities);
 	}
 
+	/**
+	 * 카카오 신규 가입. 비즈 앱 전환으로 이메일이 필수 동의항목이 되어 실제 주소를 받을 수 있다.
+	 *
+	 * <p>예전에는 이메일이 없으면 {@code kakao_{id}@wishconnect.kr} 같은 자리표시자를 넣었는데,
+	 * 그 주소로는 인증·알림 메일이 나가지 않아 계정이 사실상 연락 두절 상태가 됐다.
+	 * 그래서 이메일을 못 받으면 자리표시자로 덮지 않고 가입을 막는다.
+	 * (필수 동의항목이어도 카카오 계정에 이메일이 없거나 미인증이면 값이 비어 올 수 있다)
+	 */
 	private User registerKakaoUser(KakaoUserResponse kakaoUser) {
 		Long kakaoId = kakaoUser.id();
-		String email = StringUtils.hasText(kakaoUser.email())
-				? kakaoUser.email()
-				: String.format(KAKAO_EMAIL_FORMAT, kakaoId);
+		if (!StringUtils.hasText(kakaoUser.email())) {
+			log.warn("[Auth] 카카오 이메일 미제공으로 가입 중단 (kakaoId={})", kakaoId);
+			throw new CustomException(ErrorCode.KAKAO_EMAIL_REQUIRED);
+		}
+		String email = kakaoUser.email();
 		User user = userRepository.save(User.createKakao(kakaoId, email, kakaoUser.nickname()));
 		log.info("[Auth] 카카오 신규 회원 자동가입 (userId={}, kakaoId={})", user.getId(), kakaoId);
 		return user;

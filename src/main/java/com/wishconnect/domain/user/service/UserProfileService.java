@@ -1,6 +1,7 @@
 package com.wishconnect.domain.user.service;
 
 import com.wishconnect.domain.common.entity.Major;
+import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
@@ -38,6 +39,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -49,6 +51,7 @@ import org.springframework.util.StringUtils;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserProfileService {
 
 	private static final Pattern FIRST_NUMBER = Pattern.compile("(\\d+)");
@@ -188,14 +191,37 @@ public class UserProfileService {
 				.orElseGet(() -> schoolRepository.save(School.builder().name(normalized).build()));
 	}
 
+	/**
+	 * 요청한 (전공명, 계열) 조합의 전공을 찾거나 만든다.
+	 *
+	 * <p>이전에는 전공명만으로 조회해, 이름이 이미 있으면 요청의 계열을 조용히 버렸다.
+	 * 계열은 추천 매칭에 쓰이는 값이라 사용자가 고른 값이 반영돼야 한다. 따라서
+	 * (이름+계열) 조합을 먼저 찾고, 계열이 비어 있던 기존 행이면 그 값을 채운다.
+	 * 이름은 같은데 계열이 다르면 사용자가 고른 계열로 새 행을 만들되 경고 로그를 남긴다.
+	 */
 	private Major getOrCreateMajor(String name, String category) {
 		String normalizedName = normalizeRequired(name);
-		String normalizedCategory = normalizeRequired(category);
-		return majorRepository.findFirstByName(normalizedName)
-				.orElseGet(() -> majorRepository.save(Major.builder()
-						.name(normalizedName)
-						.category(normalizedCategory)
-						.build()));
+		MajorCategory majorCategory = MajorCategory.fromRequired(category);
+
+		Major exactMatch = majorRepository.findFirstByNameAndCategory(normalizedName, majorCategory)
+				.orElse(null);
+		if (exactMatch != null) {
+			return exactMatch;
+		}
+
+		Major sameName = majorRepository.findFirstByName(normalizedName).orElse(null);
+		if (sameName != null && sameName.getCategory() == null) {
+			sameName.fillCategoryIfAbsent(majorCategory);
+			return sameName;
+		}
+		if (sameName != null) {
+			log.warn("Major category mismatch. name={}, master={}, requested={}",
+					normalizedName, sameName.getCategory(), majorCategory);
+		}
+		return majorRepository.save(Major.builder()
+				.name(normalizedName)
+				.category(majorCategory)
+				.build());
 	}
 
 	private void replaceFamilyTypes(User user, List<String> names, FamilyCategory category) {
@@ -257,8 +283,10 @@ public class UserProfileService {
 		if (!StringUtils.hasText(value) || "null".equalsIgnoreCase(value.trim())) {
 			return null;
 		}
-		return switch (value.trim()) {
-			case "DOUBLE", "DOUBLE_MAJOR" -> SecondMajorType.DOUBLE;
+		String normalized = value.trim()
+				.toUpperCase();
+		return switch (normalized) {
+			case "DOUBLE" -> SecondMajorType.DOUBLE;
 			case "MINOR" -> SecondMajorType.MINOR;
 			default -> throw new CustomException(ErrorCode.INVALID_INPUT);
 		};

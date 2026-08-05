@@ -16,6 +16,9 @@ public final class ConditionRuleParser {
 	/** 소득: "8분위 이하/이내/미만", "학자금지원 5구간 이내" */
 	private static final Pattern INCOME_LTE =
 			Pattern.compile("(\\d{1,2})\\s*(?:분위|구간)\\s*(?:이하|이내|미만)");
+	/** 소득 범위: "0~3분위", "1-4구간" → 상한값 이하로 해석 */
+	private static final Pattern INCOME_RANGE =
+			Pattern.compile("\\d{1,2}\\s*(?:~|-)\\s*(\\d{1,2})\\s*(?:분위|구간)");
 
 	/** 성적: "2.75 이상", "평점 3.0이상" (소수점 형태만 — 정수 단독은 학점수와 혼동되므로 제외) */
 	private static final Pattern GPA_GTE =
@@ -52,6 +55,13 @@ public final class ConditionRuleParser {
 	}
 
 	private static Optional<Extracted> parseIncome(String text) {
+		Matcher range = INCOME_RANGE.matcher(text);
+		if (range.find()) {
+			int level = Integer.parseInt(range.group(1));
+			if (level >= 1 && level <= 10) {
+				return Optional.of(new Extracted(ConditionOperator.LTE, level, null));
+			}
+		}
 		Matcher m = INCOME_LTE.matcher(text);
 		if (m.find()) {
 			int level = Integer.parseInt(m.group(1));
