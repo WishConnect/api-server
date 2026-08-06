@@ -1,6 +1,8 @@
 package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
+import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
@@ -10,6 +12,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
@@ -19,6 +22,7 @@ import com.wishconnect.global.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -55,6 +59,24 @@ public class ScholarshipAdminController {
 	private final ConditionExtractionService conditionExtractionService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipReportService scholarshipReportService;
+	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
+
+	@Operation(summary = "데이터 현황 요약",
+			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
+					+ "채움률이 오르는지로 효과를 확인한다. (ADMIN 전용)")
+	@GetMapping("/admin/overview")
+	public ApiResponse<AdminOverviewResponse> adminOverview() {
+		return ApiResponse.ok(scholarshipAdminOverviewService.overview());
+	}
+
+	@Operation(summary = "최근 수집 장학금 목록",
+			description = "최근에 들어온 순서로 파싱 결과를 훑어본다. source 로 출처를 좁힐 수 있다. (ADMIN 전용)")
+	@GetMapping("/admin/recent")
+	public ApiResponse<List<AdminScholarshipRow>> adminRecent(
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) Integer size) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.recent(source, size));
+	}
 
 	@Operation(summary = "공공데이터 수동 동기화",
 			description = "한국장학재단 학자금지원정보를 수동으로 동기화한다. (ADMIN 전용)")

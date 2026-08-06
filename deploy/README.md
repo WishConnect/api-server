@@ -41,6 +41,34 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 `swappiness` 기본값 60 은 여유가 있어도 적극적으로 스왑을 써서 평상시 응답이 느려진다.
 10 으로 낮춰 진짜 몰릴 때만 쓰이게 한다.
 
+## 🔒 관리자 콘솔 접근 제한 (필수)
+
+관리자 화면은 `https://api.wish-connect.com/admin/` 에 있다.
+**화면 파일 자체는 공개**(브라우저가 토큰 없이 첫 요청을 보내므로)이고 데이터는 전부 ADMIN 전용
+API 로만 오지만, 화면을 아무나 열 수 있는 상태로 두지 않는다. **Nginx 에서 IP 로 막는다.**
+
+`/etc/nginx/sites-available/` 의 서버 블록에 아래를 추가하고 `sudo nginx -t && sudo systemctl reload nginx`:
+
+```nginx
+location /admin/ {
+    allow 1.2.3.4;      # 관리자 고정 IP (여러 개면 줄 추가)
+    deny all;
+    proxy_pass http://localhost:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+이 블록은 **화면만** 막는다. API 경로(`/api/v1/scholarships/admin/**`)는 그대로 두어도
+`SecurityConfig.ADMIN_ENDPOINTS` + 컨트롤러의 `@PreAuthorize("hasRole('ADMIN')")` 로 이중 차단된다.
+
+**아직 안 된 것 (외부에 열기 전 필수)**
+- 관리자 계정 **2FA** — 현재 없다. 토큰만 새면 바로 뚫린다
+- **감사 로그** — 누가 언제 무엇을 수정·삭제했는지 남지 않는다
+- 고정 IP 가 없으면 IP allowlist 대신 VPN 이나 SSH 터널(`ssh -L 8080:localhost:8080`)로 접근할 것
+
 ## 확인
 
 ```bash

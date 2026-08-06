@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<!--
+  WishConnect 운영 관리 화면 (개발자용)
+
+  프론트 배포 없이 백엔드만으로 쓰기 위해 정적 파일 1장으로 만들었다.
+  데이터는 전부 ADMIN 전용 REST API 에서 fetch 로 가져오므로 이 파일에는 비밀이 없다.
+  실질적인 접근 통제는 Nginx IP allowlist 로 한다(deploy/README.md).
+
+  토큰은 sessionStorage 에 둔다. 탭을 닫으면 사라지고, localStorage 와 달리 다른 탭과 공유되지 않는다.
+-->
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex, nofollow">
+	<title>WishConnect 운영 콘솔</title>
+	<style>
+		:root {
+			--bg: #0f1115; --panel: #171a21; --line: #262b36;
+			--fg: #e6e8ee; --muted: #8b93a7; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+		}
+		@media (prefers-color-scheme: light) {
+			:root {
+				--bg: #f6f7f9; --panel: #fff; --line: #e2e5ea;
+				--fg: #1b1f27; --muted: #666e7e; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+			}
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0; padding: 24px; background: var(--bg); color: var(--fg);
+			font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+		}
+		h1 { font-size: 18px; margin: 0 0 4px; }
+		h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+		.sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+		.panel {
+			background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+			padding: 16px; margin-bottom: 16px;
+		}
+		.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+		input, select, button {
+			font: inherit; padding: 7px 10px; border-radius: 7px;
+			border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+		}
+		button { cursor: pointer; }
+		button.primary { background: #2f6feb; border-color: #2f6feb; color: #fff; }
+		button:disabled { opacity: .5; cursor: not-allowed; }
+		.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+		.stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+		.stat .k { color: var(--muted); font-size: 11px; }
+		.stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+		.scroll { overflow-x: auto; }
+		table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+		th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+		th { color: var(--muted); font-weight: 600; font-size: 12px; }
+		td.title { white-space: normal; min-width: 240px; }
+		.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+		.muted { color: var(--muted); }
+		.bar { display: inline-block; width: 46px; height: 6px; background: var(--line); border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+		.bar > i { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
+		.msg { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 12px; display: none; }
+		.msg.show { display: block; }
+		.msg.error { border-color: var(--bad); color: var(--bad); }
+		code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+	</style>
+</head>
+<body>
+
+<h1>WishConnect 운영 콘솔</h1>
+<div class="sub">수집 파이프라인 상태 확인용. 데이터는 ADMIN 전용 API 로만 조회합니다.</div>
+
+<div id="msg" class="msg"></div>
+
+<div class="panel" id="authPanel">
+	<h2>인증</h2>
+	<div class="row">
+		<input id="token" type="password" placeholder="ADMIN accessToken 붙여넣기" style="flex:1; min-width:260px;">
+		<button class="primary" id="saveToken">저장</button>
+		<button id="clearToken">지우기</button>
+	</div>
+	<div class="sub" style="margin:8px 0 0;">
+		토큰은 이 탭의 sessionStorage 에만 저장됩니다. 탭을 닫으면 사라집니다.
+		발급: <code>POST /api/v1/auth/login</code>
+	</div>
+</div>
+
+<div class="panel">
+	<div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+		<h2 style="margin:0;">데이터 현황</h2>
+		<button id="refresh">새로고침</button>
+	</div>
+	<div class="stats" id="stats"><span class="muted">토큰을 저장하면 불러옵니다.</span></div>
+	<div style="margin-top:16px;" class="scroll">
+		<table id="qualityTable" hidden>
+			<thead>
+			<tr>
+				<th>출처</th><th>건수</th><th>요약</th><th>금액</th><th>링크</th><th>포스터</th>
+			</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+	</div>
+</div>
+
+<div class="panel">
+	<div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+		<h2 style="margin:0;">최근 수집 장학금</h2>
+		<div class="row">
+			<select id="sourceFilter"><option value="">전체 출처</option></select>
+			<select id="sizeSelect">
+				<option value="50">50건</option>
+				<option value="100">100건</option>
+				<option value="200">200건</option>
+			</select>
+		</div>
+	</div>
+	<div class="scroll">
+		<table id="recentTable">
+			<thead>
+			<tr>
+				<th>ID</th><th>제목</th><th>기관</th><th>출처</th><th>상태</th>
+				<th>마감</th><th>요약</th><th>금액</th><th>링크</th><th>포스터</th>
+			</tr>
+			</thead>
+			<tbody><tr><td colspan="10" class="muted">토큰을 저장하면 불러옵니다.</td></tr></tbody>
+		</table>
+	</div>
+</div>
+
+<script>
+	const $ = (id) => document.getElementById(id);
+	const TOKEN_KEY = 'wc_admin_token';
+
+	const getToken = () => sessionStorage.getItem(TOKEN_KEY) || '';
+	const showMsg = (text, isError) => {
+		const el = $('msg');
+		el.textContent = text;
+		el.className = 'msg show' + (isError ? ' error' : '');
+		if (!isError) setTimeout(() => el.className = 'msg', 3000);
+	};
+
+	async function api(path) {
+		const token = getToken();
+		if (!token) throw new Error('토큰이 없습니다. 먼저 저장하세요.');
+		const res = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+		if (res.status === 401) throw new Error('401 — 토큰이 만료됐거나 잘못됐습니다.');
+		if (res.status === 403) throw new Error('403 — ADMIN 권한이 없는 계정입니다.');
+		const body = await res.json().catch(() => null);
+		if (!res.ok || !body || body.success === false) {
+			throw new Error((body && body.message) || ('요청 실패 (HTTP ' + res.status + ')'));
+		}
+		return body.data;
+	}
+
+	const yn = (v) => v ? '<span class="ok">O</span>' : '<span class="bad">X</span>';
+	const dt = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : '<span class="muted">-</span>';
+	const esc = (v) => (v == null ? '' : String(v).replace(/[&<>"]/g, (c) =>
+		({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
+
+	function rate(withCount, total) {
+		const pct = total === 0 ? 0 : Math.round(withCount * 100 / total);
+		const color = pct >= 80 ? 'var(--ok)' : (pct >= 40 ? 'var(--warn)' : 'var(--bad)');
+		return '<span class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></span>'
+			+ pct + '% <span class="muted">(' + withCount + ')</span>';
+	}
+
+	async function loadOverview() {
+		const d = await api('/api/v1/scholarships/admin/overview');
+
+		$('stats').innerHTML = [
+			['오늘 신규', d.scholarship.createdToday],
+			['장학금 전체', d.scholarship.total],
+			['노출 중', d.scholarship.active],
+			['내려감(soft)', d.scholarship.softDeleted],
+			['모집중', d.scholarship.open],
+			['예정', d.scholarship.upcoming],
+			['마감', d.scholarship.closed],
+			['원본 PARSED', d.raw.parsed],
+			['원본 SKIPPED', d.raw.skipped],
+			['원본 FAILED', d.raw.failed]
+		].map(([k, v]) =>
+			'<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'
+		).join('');
+
+		const tbody = $('qualityTable').querySelector('tbody');
+		tbody.innerHTML = d.sourceQuality.map((s) =>
+			'<tr><td>' + esc(s.source) + '</td><td>' + s.total + '</td>'
+			+ '<td>' + rate(s.withSummary, s.total) + '</td>'
+			+ '<td>' + rate(s.withAmount, s.total) + '</td>'
+			+ '<td>' + rate(s.withHomepageUrl, s.total) + '</td>'
+			+ '<td>' + rate(s.withPoster, s.total) + '</td></tr>'
+		).join('');
+		$('qualityTable').hidden = false;
+
+		const filter = $('sourceFilter');
+		if (filter.options.length <= 1) {
+			d.sourceQuality.forEach((s) => filter.add(new Option(s.source, s.source)));
+		}
+
+		showMsg('마지막 동기화: ' + (d.scholarship.lastSyncedAt || '기록 없음'));
+	}
+
+	async function loadRecent() {
+		const source = $('sourceFilter').value;
+		const size = $('sizeSelect').value;
+		const rows = await api('/api/v1/scholarships/admin/recent?size=' + size
+			+ (source ? '&source=' + encodeURIComponent(source) : ''));
+
+		const tbody = $('recentTable').querySelector('tbody');
+		if (!rows.length) {
+			tbody.innerHTML = '<tr><td colspan="10" class="muted">데이터가 없습니다.</td></tr>';
+			return;
+		}
+		tbody.innerHTML = rows.map((r) =>
+			'<tr' + (r.softDeleted ? ' style="opacity:.45"' : '') + '>'
+			+ '<td>' + r.scholarshipId + '</td>'
+			+ '<td class="title">' + esc(r.title) + (r.softDeleted ? ' <span class="muted">(내려감)</span>' : '') + '</td>'
+			+ '<td>' + esc(r.provider) + '</td>'
+			+ '<td>' + esc(r.source) + '</td>'
+			+ '<td>' + esc(r.recruitmentStatus) + '</td>'
+			+ '<td>' + dt(r.applicationEndAt) + '</td>'
+			+ '<td>' + yn(r.hasSummary) + '</td>'
+			+ '<td>' + yn(r.hasAmount) + '</td>'
+			+ '<td>' + yn(r.hasHomepageUrl) + '</td>'
+			+ '<td>' + yn(r.hasPoster) + '</td></tr>'
+		).join('');
+	}
+
+	async function loadAll() {
+		try {
+			await loadOverview();
+			await loadRecent();
+		} catch (e) {
+			showMsg(e.message, true);
+		}
+	}
+
+	$('saveToken').onclick = () => {
+		const v = $('token').value.trim();
+		if (!v) return showMsg('토큰을 입력하세요.', true);
+		sessionStorage.setItem(TOKEN_KEY, v);
+		$('token').value = '';
+		loadAll();
+	};
+	$('clearToken').onclick = () => {
+		sessionStorage.removeItem(TOKEN_KEY);
+		showMsg('토큰을 지웠습니다.');
+	};
+	$('refresh').onclick = loadAll;
+	$('sourceFilter').onchange = () => loadRecent().catch((e) => showMsg(e.message, true));
+	$('sizeSelect').onchange = () => loadRecent().catch((e) => showMsg(e.message, true));
+
+	if (getToken()) loadAll();
+</script>
+
+</body>
+</html>
