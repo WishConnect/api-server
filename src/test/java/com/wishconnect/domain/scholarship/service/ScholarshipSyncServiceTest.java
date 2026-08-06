@@ -190,6 +190,28 @@ class ScholarshipSyncServiceTest {
 		assertThat(previous.isDeleted()).isTrue();
 	}
 
+	/**
+	 * 물리 삭제 시절에는 행이 사라졌다가 새로 생겨 자연히 되살아났다. 소프트 삭제로 바꾼 뒤에는
+	 * updateFromApi 에서 deletedAt 을 풀어주지 않으면 다시 들어온 공고가 영원히 노출되지 않는다.
+	 */
+	@Test
+	@DisplayName("소프트 삭제된 공고가 동기화 피드에 다시 들어오면 되살아난다")
+	void softDeletedScholarshipIsRevivedOnResync() {
+		Scholarship revived = scholarship(1L);
+		revived.softDelete();
+		assertThat(revived.isDeleted()).isTrue();
+
+		revived.updateFromApi(
+				"미래인재 장학금", "위시커넥트", "요약", "설명", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().minusDays(1), LocalDateTime.now().plusDays(10),
+				com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN,
+				10, 1_000_000L, "KOSAF_SCHOLARSHIP", "dedup", "https://example.com");
+		revived.updateActive(true);
+
+		assertThat(revived.isDeleted()).isFalse();
+		assertThat(revived.isActive()).isTrue();
+	}
+
 	@Test
 	@DisplayName("이전 공고가 아직 다른 raw 에 물려 있으면 건드리지 않는다")
 	void previousScholarshipStillReferencedIsKept() {
