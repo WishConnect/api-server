@@ -10,5 +10,8 @@ public enum LlmModel {
 	INTERVIEW,
 
 	/** STEP2 자기소개서 초안 생성 (기본: claude-sonnet-5) */
-	DRAFT
+	DRAFT,
+
+	/** 인사이트 콘텐츠 요약/분류 (기본: claude-haiku-4-5) */
+	SUMMARY
 }

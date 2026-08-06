@@ -15,6 +15,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record LlmProperties(
 		String interviewModel,
 		String draftModel,
+		String summaryModel,
 		Integer maxTokens
 ) {
 
@@ -24,6 +25,9 @@ public record LlmProperties(
 		}
 		if (draftModel == null || draftModel.isBlank()) {
 			draftModel = "claude-sonnet-5";
+		}
+		if (summaryModel == null || summaryModel.isBlank()) {
+			summaryModel = "claude-haiku-4-5";
 		}
 		if (maxTokens == null || maxTokens <= 0) {
 			maxTokens = 4096;
