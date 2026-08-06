@@ -32,3 +32,4 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | 파일 | 내용 | 운영 적용 |
 |---|---|---|
 | `V20260729_01__add_role_to_users.sql` | `users.role` 컬럼 추가 (관리자 권한) | ⬜ 미적용 |
+| `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장, 카테고리 마스터 데이터 삽입 | ✅ 적용됨 (2026-08-06) |
