@@ -41,7 +41,8 @@ public interface InsightRepository extends JpaRepository<Insight, Long> {
     @Query("SELECT i FROM InsightTag it JOIN it.insight i " +
             "WHERE it.tag.name = :tagName " +
             "AND (:categoryName IS NULL OR i.category.name = :categoryName) " +
-            "AND (:source IS NULL OR i.source = :source)")
+            "AND (:source IS NULL OR i.source = :source) " +
+            "ORDER BY i.publishedAt DESC")
     Page<Insight> findAllByTag(
             @Param("tagName") String tagName,
             @Param("categoryName") String categoryName,
@@ -53,4 +54,45 @@ public interface InsightRepository extends JpaRepository<Insight, Long> {
     @Query("SELECT it.insight.id, it.tag.name FROM InsightTag it " +
             "WHERE it.insight.id IN :insightIds")
     List<Object[]> findTagsByInsightIds(@Param("insightIds") List<Long> insightIds);
+
+    // 기본 조회 (카테고리/소스 필터만, 태그/키워드 없음)
+    @Query("SELECT i FROM Insight i " +
+            "WHERE (:categoryId IS NULL OR i.category.id = :categoryId) " +
+            "AND (:source IS NULL OR i.source = :source)")
+    Page<Insight> findAllWithFilter(
+            @Param("categoryId") Long categoryId,
+            @Param("source") String source,
+            Pageable pageable
+    );
+
+    // 키워드 검색 포함
+    @Query("SELECT i FROM Insight i " +
+            "WHERE (:categoryId IS NULL OR i.category.id = :categoryId) " +
+            "AND (:source IS NULL OR i.source = :source) " +
+            "AND (i.title LIKE CONCAT('%', :keyword, '%') " +
+            "     OR i.content LIKE CONCAT('%', :keyword, '%'))")
+    Page<Insight> searchByKeyword(
+            @Param("categoryId") Long categoryId,
+            @Param("source") String source,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
+
+
+    // 태그 + 키워드 둘 다 있는 경우
+    @Query("SELECT i FROM InsightTag it JOIN it.insight i " +
+            "WHERE it.tag.name = :tagName " +
+            "AND (:categoryId IS NULL OR i.category.id = :categoryId) " +
+            "AND (:source IS NULL OR i.source = :source) " +
+            "AND (i.title LIKE CONCAT('%', :keyword, '%') " +
+            "     OR i.content LIKE CONCAT('%', :keyword, '%'))")
+    Page<Insight> searchByTagAndKeyword(
+            @Param("tagName") String tagName,
+            @Param("categoryId") Long categoryId,
+            @Param("source") String source,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
+
+
 }

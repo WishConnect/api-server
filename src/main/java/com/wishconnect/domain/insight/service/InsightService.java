@@ -8,17 +8,16 @@ import com.wishconnect.domain.insight.entity.InsightSource;
 import com.wishconnect.domain.insight.repository.InsightRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -35,31 +34,32 @@ public class InsightService {
         String categoryName = validateAndResolveCategory(category);
         InsightSource sourceEnum = validateAndResolveSource(source);
 
-        // 2. 정렬
-        Pageable pageable = createPageable(page - 1, size, sort);
-
-        // 3. 조회 (태그 유무로 분기)
+        // 2. 조회 (태그 유무로 분기)
         Page<Insight> insightPage;
         if (tag != null && !tag.isBlank()) {
-            insightPage = insightRepository.findAllByTag(tag, categoryName, sourceEnum, pageable);
+            // 태그 필터는 JPQL의 ORDER BY를 그대로 쓰기 위해 Sort 없는 Pageable 사용
+            Pageable pageableWithoutSort = PageRequest.of(page - 1, size);
+            insightPage = insightRepository.findAllByTag(tag, categoryName, sourceEnum, pageableWithoutSort);
         } else if (keyword != null && !keyword.isBlank()) {
+            Pageable pageable = createPageable(page - 1, size, sort);
             insightPage = insightRepository.searchWithFilter(categoryName, sourceEnum, keyword, pageable);
         } else {
+            Pageable pageable = createPageable(page - 1, size, sort);
             insightPage = insightRepository.findAllWithFilter(categoryName, sourceEnum, pageable);
         }
 
-        // 4. 태그 정보 일괄 조회 (N+1 방지)
+        // 3. 태그 정보 일괄 조회 (N+1 방지)
         List<Long> insightIds = insightPage.getContent().stream()
                 .map(Insight::getId)
                 .toList();
         Map<Long, List<String>> tagsByInsightId = getTagsByInsightIds(insightIds);
 
-        // 5. DTO 변환
+        // 4. DTO 변환
         List<InsightArticleResponse> articles = insightPage.getContent().stream()
                 .map(i -> toArticleResponse(i, tagsByInsightId.getOrDefault(i.getId(), List.of())))
                 .toList();
 
-        // 6. 페이지네이션
+        // 5. 페이지네이션
         InsightResponse.PaginationDto pagination = new InsightResponse.PaginationDto(
                 page, size,
                 (int) insightPage.getTotalElements(),
@@ -119,7 +119,7 @@ public class InsightService {
                 insight.getTitle(),
                 insight.getContent(),
                 insight.getOriginalUrl(),
-                tags
+                tags.stream().map(t -> "#" + t).toList()
         );
     }
 }
