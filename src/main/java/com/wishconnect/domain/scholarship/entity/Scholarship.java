@@ -147,6 +147,11 @@ public class Scholarship extends BaseEntity {
 		this.primarySource = primarySource;
 		this.dedupKey = dedupKey;
 		this.homepageUrl = homepageUrl;
+		// 동기화 피드에 다시 들어왔다는 것은 살아 있는 공고라는 뜻이므로 소프트 삭제를 해제한다.
+		// 물리 삭제 시절에는 행이 사라졌다가 새로 생겨 자연히 되살아났는데,
+		// 소프트 삭제로 바꾼 뒤에는 여기서 풀어주지 않으면 deletedAt 이 남아 영원히 노출되지 않는다.
+		// (조회 쿼리가 전부 deletedAt IS NULL 로 거른다)
+		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
 	}
 

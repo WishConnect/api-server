@@ -118,7 +118,7 @@ public class ScholarshipSyncService {
 
 		rawScholarship.updateRawData(sourceUrl, rawJson);
 		if (scholarshipMapper.isClosed(item.payload())) {
-			deleteExistingParsedData(rawScholarship.getScholarship());
+			deactivateParsedData(rawScholarship.getScholarship());
 			rawScholarship.markSkipped("모집종료일이 지난 장학금입니다.");
 			rawScholarshipRepository.save(rawScholarship);
 			return;
@@ -133,29 +133,47 @@ public class ScholarshipSyncService {
 		);
 		rawScholarship.markParsed(scholarship);
 		rawScholarshipRepository.save(rawScholarship);
-		deletePreviousParsedDataIfUnused(previouslyLinkedScholarship, scholarship);
+		deactivatePreviousParsedDataIfUnused(previouslyLinkedScholarship, scholarship);
 		replaceDocuments(scholarship, item.payload());
 		replaceConditions(scholarship, item.payload());
 	}
 
-	private void deletePreviousParsedDataIfUnused(Scholarship previousScholarship, Scholarship currentScholarship) {
+	private void deactivatePreviousParsedDataIfUnused(Scholarship previousScholarship, Scholarship currentScholarship) {
 		if (previousScholarship == null || Objects.equals(previousScholarship.getId(), currentScholarship.getId())) {
 			return;
 		}
 
 		rawScholarshipRepository.flush();
 		if (rawScholarshipRepository.countByScholarship(previousScholarship) == 0) {
-			deleteExistingParsedData(previousScholarship);
+			deactivateParsedData(previousScholarship);
 		}
 	}
 
-	private void deleteExistingParsedData(Scholarship scholarship) {
+	/*
+	목록에서 내려야 하는 장학금을 처리합니다. 행 자체는 남기고 소프트 삭제만 합니다.
+
+	예전에는 scholarshipRepository.delete() 로 물리 삭제했는데, scholarship 을 참조하는 FK 가
+	9개 테이블(essay, scrap, notification_dispatch_log, scholarship_recommendation,
+	scholarship_report 등)에 있고 전부 ON DELETE NO ACTION 이라 삭제가 실패했습니다.
+	그러면 saveItem 트랜잭션 전체가 롤백돼 **그 공고가 아예 저장되지 않았습니다**
+	(운영 로그 기준 FK 위반 792건, 그로 인한 저장 실패 198건).
+
+	설령 FK 가 없어 삭제가 성공했더라도 사용자의 스크랩·자소서까지 함께 지워졌을 것이므로
+	물리 삭제 자체가 잘못된 설계였습니다. 조회 쿼리는 이미 전부
+	deletedAt IS NULL / active = true 로 걸러내므로 소프트 삭제만으로 목록에서 사라집니다.
+
+	하위 데이터(document·condition)는 재수집으로 대체되는 파생 데이터라 그대로 삭제합니다.
+	특히 condition 을 남기면 ConditionExtractionService 가 내려간 장학금까지 LLM 추출 대상으로
+	잡아 비용이 새어나갑니다.
+	 */
+	private void deactivateParsedData(Scholarship scholarship) {
 		if (scholarship == null) {
 			return;
 		}
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
 		scholarshipConditionRepository.deleteByScholarship(scholarship);
-		scholarshipRepository.delete(scholarship);
+		scholarship.softDelete();
+		scholarshipRepository.save(scholarship);
 	}
 
 	private void replaceDocuments(Scholarship scholarship, JsonNode item) {
