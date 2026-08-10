@@ -229,6 +229,23 @@ class UserProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("소득분위를 모르겠어요로 선택하면 null로 저장한다")
+	void saveHousehold_acceptsUnknownIncomeLevel() {
+		userProfileService.saveHousehold(userId, new ProfileHouseholdRequest(
+				"모르겠어요",
+				4L,
+				List.of(),
+				List.of(),
+				List.of()
+		));
+
+		assertThat(profile.getIncomeLevel()).isNull();
+		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_3");
+		verify(userFamilyTypeRepository).deleteByUser(user);
+		verify(userInterestRepository).deleteByUser(user);
+	}
+
+	@Test
 	@DisplayName("STEP3 완료 후 complete 요청은 온보딩 완료 상태로 변경한다")
 	void completeAfterHousehold() {
 		userProfileService.saveHousehold(userId, new ProfileHouseholdRequest(

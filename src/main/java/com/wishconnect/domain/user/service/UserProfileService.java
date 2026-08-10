@@ -293,11 +293,22 @@ public class UserProfileService {
 	}
 
 	private Integer parseIncomeLevel(String value) {
-		Matcher matcher = FIRST_NUMBER.matcher(normalizeRequired(value));
+		String normalized = normalizeRequired(value);
+		if (isUnknownIncomeLevel(normalized)) {
+			return null;
+		}
+		Matcher matcher = FIRST_NUMBER.matcher(normalized);
 		if (!matcher.find()) {
 			throw new CustomException(ErrorCode.INVALID_INPUT);
 		}
 		return Integer.parseInt(matcher.group(1));
+	}
+
+	private boolean isUnknownIncomeLevel(String value) {
+		return switch (value.trim().toUpperCase()) {
+			case "모르겠어요", "모름", "UNKNOWN", "UNKNOWN_INCOME" -> true;
+			default -> false;
+		};
 	}
 
 	private String parseBirthYear(String value) {
