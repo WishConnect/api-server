@@ -41,6 +41,41 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 `swappiness` 기본값 60 은 여유가 있어도 적극적으로 스왑을 써서 평상시 응답이 느려진다.
 10 으로 낮춰 진짜 몰릴 때만 쓰이게 한다.
 
+## 🔒 관리자 콘솔 접근 (SSH 터널)
+
+관리자 화면(`/admin/`)은 **인터넷에서 열리지 않는다.** Nginx 에서 막고, 볼 때만 SSH 터널로 붙는다.
+
+고정 IP 가 필요 없고, 새 비밀번호나 새 서비스도 없다. 서버 접속에 쓰는 `.pem` 키가 곧 열쇠다.
+
+### Nginx (한 번만 설정)
+
+```nginx
+# 관리자 화면은 공개하지 않는다. 접근은 SSH 터널로만.
+location /admin/ { deny all; }
+```
+
+`sudo nginx -t && sudo systemctl reload nginx`
+
+이 블록은 **화면만** 막는다. API 경로(`/api/v1/scholarships/admin/**`)는
+`SecurityConfig.ADMIN_ENDPOINTS` + 컨트롤러의 `@PreAuthorize("hasRole('ADMIN')")` 로 이중 차단된다.
+
+### 볼 때마다
+
+```bash
+ssh -N -L 18080:localhost:8080 -i ~/경로/wishconnect-key.pem ubuntu@15.165.86.126
+```
+
+띄워둔 채 브라우저에서 **http://localhost:18080/admin/** 접속.
+터널은 Nginx 를 거치지 않고 8080 에 직접 붙으므로 위 `deny all` 에 걸리지 않는다.
+
+ADMIN accessToken 은 화면 상단에 붙여넣는다(발급: `POST /api/v1/auth/login`).
+토큰은 그 탭의 sessionStorage 에만 남고 탭을 닫으면 사라진다.
+
+**아직 안 된 것 (접근 범위를 넓히기 전 필수)**
+- 관리자 계정 **2FA** — 현재 없다. 토큰만 새면 바로 뚫린다
+- **감사 로그** — 누가 언제 무엇을 수정·삭제했는지 남지 않는다
+- 폰에서도 봐야 하면 Cloudflare Tunnel + Access(무료) 를 검토할 것
+
 ## 확인
 
 ```bash

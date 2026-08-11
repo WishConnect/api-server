@@ -42,6 +42,7 @@ public class ScholarshipSyncScheduler {
 				log.info("[SyncBatch] 마감 지난 공고 {}건 CLOSED 처리", closedCount);
 			}
 			long beforeCount = scholarshipRepository.count();
+            //한국장학재단에서 받아오는 부분
 			ScholarshipSyncResponse result = scholarshipSyncService.sync();
 			long newCount = scholarshipRepository.count() - beforeCount;
 			log.info("[SyncBatch] 동기화 완료 fetched={} saved={} failed={} 신규정제={}",
