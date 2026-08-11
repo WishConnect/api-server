@@ -41,33 +41,40 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 `swappiness` 기본값 60 은 여유가 있어도 적극적으로 스왑을 써서 평상시 응답이 느려진다.
 10 으로 낮춰 진짜 몰릴 때만 쓰이게 한다.
 
-## 🔒 관리자 콘솔 접근 제한 (필수)
+## 🔒 관리자 콘솔 접근 (SSH 터널)
 
-관리자 화면은 `https://api.wish-connect.com/admin/` 에 있다.
-**화면 파일 자체는 공개**(브라우저가 토큰 없이 첫 요청을 보내므로)이고 데이터는 전부 ADMIN 전용
-API 로만 오지만, 화면을 아무나 열 수 있는 상태로 두지 않는다. **Nginx 에서 IP 로 막는다.**
+관리자 화면(`/admin/`)은 **인터넷에서 열리지 않는다.** Nginx 에서 막고, 볼 때만 SSH 터널로 붙는다.
 
-`/etc/nginx/sites-available/` 의 서버 블록에 아래를 추가하고 `sudo nginx -t && sudo systemctl reload nginx`:
+고정 IP 가 필요 없고, 새 비밀번호나 새 서비스도 없다. 서버 접속에 쓰는 `.pem` 키가 곧 열쇠다.
+
+### Nginx (한 번만 설정)
 
 ```nginx
-location /admin/ {
-    allow 1.2.3.4;      # 관리자 고정 IP (여러 개면 줄 추가)
-    deny all;
-    proxy_pass http://localhost:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
+# 관리자 화면은 공개하지 않는다. 접근은 SSH 터널로만.
+location /admin/ { deny all; }
 ```
 
-이 블록은 **화면만** 막는다. API 경로(`/api/v1/scholarships/admin/**`)는 그대로 두어도
+`sudo nginx -t && sudo systemctl reload nginx`
+
+이 블록은 **화면만** 막는다. API 경로(`/api/v1/scholarships/admin/**`)는
 `SecurityConfig.ADMIN_ENDPOINTS` + 컨트롤러의 `@PreAuthorize("hasRole('ADMIN')")` 로 이중 차단된다.
 
-**아직 안 된 것 (외부에 열기 전 필수)**
+### 볼 때마다
+
+```bash
+ssh -N -L 18080:localhost:8080 -i ~/경로/wishconnect-key.pem ubuntu@15.165.86.126
+```
+
+띄워둔 채 브라우저에서 **http://localhost:18080/admin/** 접속.
+터널은 Nginx 를 거치지 않고 8080 에 직접 붙으므로 위 `deny all` 에 걸리지 않는다.
+
+ADMIN accessToken 은 화면 상단에 붙여넣는다(발급: `POST /api/v1/auth/login`).
+토큰은 그 탭의 sessionStorage 에만 남고 탭을 닫으면 사라진다.
+
+**아직 안 된 것 (접근 범위를 넓히기 전 필수)**
 - 관리자 계정 **2FA** — 현재 없다. 토큰만 새면 바로 뚫린다
 - **감사 로그** — 누가 언제 무엇을 수정·삭제했는지 남지 않는다
-- 고정 IP 가 없으면 IP allowlist 대신 VPN 이나 SSH 터널(`ssh -L 8080:localhost:8080`)로 접근할 것
+- 폰에서도 봐야 하면 Cloudflare Tunnel + Access(무료) 를 검토할 것
 
 ## 확인
 
