@@ -50,7 +50,8 @@ public class SecurityConfig {
 			"/api/v1/scholarships/collect/**",
 			"/api/v1/scholarships/conditions/**",
 			"/api/v1/universities/sync",
-			"/api/v1/universities/sync/**"
+			"/api/v1/universities/sync/**",
+			"/api/v1/insights/sync"
 	};
 
 	private final JwtProvider jwtProvider;

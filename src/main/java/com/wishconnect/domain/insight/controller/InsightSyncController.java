@@ -4,6 +4,7 @@ import com.wishconnect.domain.insight.service.InsightCollectService;
 import com.wishconnect.global.common.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 public class InsightSyncController {
     private final InsightCollectService insightCollectService;
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ApiResponse<Integer> collect(@RequestParam String keyword) {
         int count = insightCollectService.collectByKeyword(keyword);
