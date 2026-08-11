@@ -5,6 +5,7 @@ import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -112,5 +113,67 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			  and s.applicationEndAt < :now
 			""")
 	int closeExpired(@Param("now") LocalDateTime now);
+
+	// --- 관리자 화면 집계 -------------------------------------------------
+	// 소프트 삭제분은 품질 지표에서 뺀다(이미 목록에서 내려간 공고라 고칠 대상이 아니다).
+
+	/**
+	 * 출처별 파싱 품질. 공공 API 와 대학 크롤링은 결함이 정반대라 출처를 나눠 봐야
+	 * 어디를 고쳐야 하는지 드러난다.
+	 */
+	@Query("""
+			select s.primarySource as source,
+			       count(s) as total,
+			       sum(case when s.summary is not null and s.summary <> '' then 1 else 0 end) as withSummary,
+			       sum(case when s.amount is not null then 1 else 0 end) as withAmount,
+			       sum(case when s.homepageUrl is not null and s.homepageUrl <> '' then 1 else 0 end) as withHomepageUrl
+			from Scholarship s
+			where s.deletedAt is null
+			group by s.primarySource
+			order by count(s) desc
+			""")
+	List<ScholarshipSourceAggregate> aggregateQualityBySource();
+
+	long countByDeletedAtIsNotNull();
+
+	long countByActiveTrueAndDeletedAtIsNull();
+
+	long countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus recruitmentStatus);
+
+	long countByCreatedAtGreaterThanEqual(LocalDateTime from);
+
+	@Query("select max(s.lastSyncedAt) from Scholarship s")
+	LocalDateTime findLastSyncedAt();
+
+	/**
+	 * 포스터가 붙은 장학금을 출처별로 센다. Image 는 엔티티 연관이 없어 조인이 안 되므로
+	 * 포스터를 가진 id 집합을 넘겨 받는다. 호출 전에 비어 있지 않은지 확인할 것(IN () 은 문법 오류).
+	 */
+	@Query("""
+			select s.primarySource as source, count(s) as total
+			from Scholarship s
+			where s.deletedAt is null and s.id in :ids
+			group by s.primarySource
+			""")
+	List<Object[]> countBySourceForIds(@Param("ids") Collection<Long> ids);
+
+	/**
+	 * 엑셀 내보내기 대상. 내려간 공고(soft delete)는 고칠 대상이 아니라 뺀다.
+	 * 출처끼리 모여야 팀원별로 나눠 맡기기 쉬워 출처 우선으로 정렬한다.
+	 */
+	@Query("""
+			select s from Scholarship s
+			where s.deletedAt is null
+			order by s.primarySource asc, s.id asc
+			""")
+	List<Scholarship> findAllForExcelExport();
+
+	/** 관리자 목록. 최근에 들어온 순서로 본다. 출처 필터는 null 이면 전체. */
+	@Query("""
+			select s from Scholarship s
+			where (:source is null or s.primarySource = :source)
+			order by s.createdAt desc, s.id desc
+			""")
+	List<Scholarship> findRecentForAdmin(@Param("source") String source, Pageable pageable);
 
 }

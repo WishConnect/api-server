@@ -72,6 +72,17 @@ public enum ErrorCode {
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 
+	// 관리자 엑셀 일괄 편집
+	EXCEL_FILE_REQUIRED(HttpStatus.BAD_REQUEST, "엑셀 파일을 첨부해주세요."),
+	EXCEL_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "파일이 너무 큽니다. 1MB 이하로 올려주세요."),
+	EXCEL_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "xlsx 형식만 업로드할 수 있습니다."),
+	EXCEL_PARSE_FAILED(HttpStatus.BAD_REQUEST, "엑셀 파일을 읽지 못했습니다. 내보내기 받은 양식인지 확인해주세요."),
+	EXCEL_TOO_MANY_ROWS(HttpStatus.BAD_REQUEST, "한 번에 처리할 수 있는 행 수를 초과했습니다."),
+	/** 내보내기 파일에는 ID 가 채워져 있다. 비어 있으면 사람이 새로 추가한 행이다. */
+	EXCEL_ROW_ID_REQUIRED(HttpStatus.BAD_REQUEST, "ID 가 비어 있습니다. 신규 등록은 수기 등록 기능을 이용해주세요."),
+	EXCEL_INVALID_NUMBER(HttpStatus.BAD_REQUEST, "숫자 칸에 숫자가 아닌 값이 있습니다."),
+	EXCEL_INVALID_DATE(HttpStatus.BAD_REQUEST, "날짜 형식이 올바르지 않습니다. (yyyy-MM-dd HH:mm)"),
+
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
 	EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),

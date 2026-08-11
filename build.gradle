@@ -26,12 +26,18 @@ ext {
 	springdocVersion = '2.6.0'
 	therapiVersion = '0.15.0'
 	anthropicSdkVersion = '2.34.0'
+	poiVersion = '5.3.0'
 }
 
 dependencies {
 	// Spring Boot starters
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.jsoup:jsoup:1.17.2' // 교내 장학공지 크롤링(HTML 파싱)
+	// 관리자 콘솔의 장학금 일괄 편집(엑셀 내보내기·업로드).
+	// CSV 를 쓰면 윈도우 엑셀이 CP949 로 저장해 한글이 깨지고, 쉼표가 든 제목에서 열이 밀린다.
+	// 여러 명이 편집하는 파일이라 인코딩 사고가 없는 xlsx 로 간다.
+	// 메모리 주의: t3.small(-Xmx1g)이라 업로드 크기·행수 상한을 반드시 건다(ScholarshipExcelService).
+	implementation "org.apache.poi:poi-ooxml:${poiVersion}"
 	implementation platform('software.amazon.awssdk:bom:2.29.35')
 	implementation 'software.amazon.awssdk:s3' // 장학공지 포스터 이미지 저장
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
