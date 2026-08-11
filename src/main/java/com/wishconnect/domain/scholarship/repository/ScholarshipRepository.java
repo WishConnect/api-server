@@ -114,6 +114,23 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			""")
 	int closeExpired(@Param("now") LocalDateTime now);
 
+	/**
+	 * 홈 달력용: 모집 시작일 <b>또는</b> 마감일이 해당 기간에 걸리는 공고.
+	 *
+	 * <p>추천용 조회({@link #findAllOpenForRecommendation})와 달리 OPEN 으로 좁히지 않는다.
+	 * 달력은 "곧 모집이 시작되는 공고"도 보여줘야 하는데 그건 아직 UPCOMING 이기 때문이다.
+	 * 마감이 지나 CLOSED 가 된 공고도 그 달 안이면 지난 일정으로 표시된다.
+	 */
+	@Query("""
+			select s from Scholarship s
+			where s.active = true
+			  and s.deletedAt is null
+			  and ((s.applicationStartAt >= :from and s.applicationStartAt < :to)
+			    or (s.applicationEndAt >= :from and s.applicationEndAt < :to))
+			""")
+	List<Scholarship> findScheduledBetween(@Param("from") LocalDateTime from,
+										   @Param("to") LocalDateTime to);
+
 	// --- 관리자 화면 집계 -------------------------------------------------
 	// 소프트 삭제분은 품질 지표에서 뺀다(이미 목록에서 내려간 공고라 고칠 대상이 아니다).
 

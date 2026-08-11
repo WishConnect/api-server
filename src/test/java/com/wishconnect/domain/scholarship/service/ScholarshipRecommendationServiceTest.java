@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 
 import com.wishconnect.domain.common.entity.School;
+import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
@@ -52,6 +53,10 @@ class ScholarshipRecommendationServiceTest {
 
 	@Mock
 	private ScrapRepository scrapRepository;
+
+	/** 홈 요약의 "작성 중인 지원서" 집계용. 기본 스텁이 0 을 돌려주므로 별도 지정은 필요 없다. */
+	@Mock
+	private EssayRepository essayRepository;
 
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
@@ -280,7 +285,7 @@ class ScholarshipRecommendationServiceTest {
 		assertThat(response.featured()).isEmpty();
 		assertThat(response.otherScholarships()).isEmpty();
 		assertThat(response.ineligibleScholarships()).isEmpty();
-		assertThat(summary).isEqualTo(new HomeSummaryResponse(0, 0, false));
+		assertThat(summary).isEqualTo(new HomeSummaryResponse(0, 0, 0, false));
 	}
 
 	/**
