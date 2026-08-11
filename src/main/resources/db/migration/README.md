@@ -31,5 +31,24 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 
 | 파일 | 내용 | 운영 적용 |
 |---|---|---|
-| `V20260729_01__add_role_to_users.sql` | `users.role` 컬럼 추가 (관리자 권한) | ⬜ 미적용 |
-| `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장, 카테고리 마스터 데이터 삽입 | ✅ 적용됨 (2026-08-06) |
+| `V20260729_01__add_role_to_users.sql` | `users.role` 컬럼 추가 (관리자 권한) | ✅ 2026-07-29 |
+| `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ✅ 2026-07-31 |
+| `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
+| `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
+> `V20260731_01` 은 2026-08-05 점검에서 **운영에 이미 반영되어 있음을 확인**했다(컬럼·인덱스 모두 일치).
+> 표기만 `미적용` 으로 남아 있던 것이라 정정한다. 앞으로는 적용 직후 이 표를 함께 갱신할 것.
+
+## 제약이 어긋나는 이유 (반복 주의)
+
+Hibernate `ddl-auto: update` 는 **컬럼·테이블만 추가할 뿐 기존 CHECK 제약을 고치지 않는다.**
+코드에서 enum 값을 바꿔도 DB 제약은 옛 값 그대로 남아, 실행 시점에
+`23514 violates check constraint` 로 500 이 난다. `validate` 는 제약 내용까지는 보지 않으므로
+**기동은 성공하는데 특정 API 만 계속 실패하는** 형태로 나타난다.
+
+enum 값을 추가·변경하는 PR 은 반드시 이 디렉터리에 `ALTER TABLE ... DROP/ADD CONSTRAINT` SQL 을 함께 올린다.
+현재 DB 제약을 확인하는 방법:
+
+```sql
+SELECT conrelid::regclass, conname, pg_get_constraintdef(oid)
+FROM pg_constraint WHERE contype = 'c' ORDER BY 1;
+```

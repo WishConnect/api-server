@@ -52,6 +52,21 @@ class NoticeConditionExtractorTest {
 	}
 
 	@Test
+	@DisplayName("모집 학기와 제한 문장을 학년 조건으로 오분류하지 않는다")
+	void doesNotExtractRecruitmentSemesterOrRestrictionAsGradeLevel() {
+		assertThat(typesOf("신청대상 - 2026-2학기 재학생")).doesNotContain(ConditionType.GRADE_LEVEL);
+		assertThat(typesOf("① 반드시, 합격한 당해 학기에 신청하여야 하며, 2026-2학기 휴학생 및 초과학기생은 신청 불가"))
+				.contains(ConditionType.RESTRICTION)
+				.doesNotContain(ConditionType.GRADE_LEVEL);
+	}
+
+	@Test
+	@DisplayName("취득학점 요건은 평점 조건으로 오분류하지 않는다")
+	void doesNotExtractCreditHourAsAcademicCriteria() {
+		assertThat(typesOf("직전학기 취득학점 15학점 이상")).doesNotContain(ConditionType.ACADEMIC_CRITERIA);
+	}
+
+	@Test
 	@DisplayName("거주지 요건을 REGION_RESIDENCY 로 추출한다")
 	void extractsRegion() {
 		assertThat(typesOf("부산광역시에 거주하는 대학생")).contains(ConditionType.REGION_RESIDENCY);
@@ -75,16 +90,14 @@ class NoticeConditionExtractorTest {
 	}
 
 	@Test
-	@DisplayName("유형별로 최대 1건만 만든다(같은 조건 문장이 반복돼도 중복 저장하지 않음)")
-	void keepsOnePerType() {
+	@DisplayName("같은 원문 조건이 반복되면 중복 저장하지 않는다")
+	void deduplicatesSameCondition() {
 		var result = NoticeConditionExtractor.extract("""
 				소득 8분위 이하
-				소득 9분위 이하
+				소득 8분위 이하
 				평점 3.0 이상
 				""");
 		assertThat(result).hasSize(2);
-		assertThat(typesOf("소득 8분위 이하\n소득 9분위 이하"))
-				.containsExactly(ConditionType.INCOME_CRITERIA);
 	}
 
 	@Test
@@ -95,5 +108,36 @@ class NoticeConditionExtractorTest {
 				.parse(income.type(), income.snippet());
 		assertThat(parsed).isPresent();
 		assertThat(parsed.get().valueInt()).isEqualTo(8);
+	}
+
+	@Test
+	@DisplayName("동국대 번호형 지원자격에서 소득·재학·특수자격·제한 조건을 추출한다")
+	void extractsDonggukNumberedQualificationSection() {
+		var result = NoticeConditionExtractor.extract("""
+				1. 장학명: 진담거사 지역미래불자육성장학
+				3. 장학금: 100만원(생활비성)
+				   ※타 불교계장학 이중수혜 불가
+				6. 지원 자격
+				   ① 급격한 가정 환경 변화 혹은 과도한 아르바이트로 학업 지속이 어려운 학생
+				   ② 2026학년도 2학기 재학생으로서 2026학년도 2학기 기준 소득분위 0~3분위인 학생
+				      또는 2026학년도 2학기 재학생으로서 '한부모 가정'의 학생, 가족을 간병하고 있는 학생
+				   ③ 불교동아리 부원이거나 가입 예정인 학생
+				8. 신청기한: ~7.21.(화) 23:59까지
+				""");
+
+		assertThat(result).extracting(NoticeConditionExtractor.Extracted::type)
+				.contains(
+						ConditionType.RESTRICTION,
+						ConditionType.INCOME_CRITERIA,
+						ConditionType.SPECIFIC_QUALIFICATION
+				);
+		assertThat(result).anySatisfy(e -> {
+			assertThat(e.type()).isEqualTo(ConditionType.INCOME_CRITERIA);
+			assertThat(e.snippet()).contains("0~3분위");
+		});
+		assertThat(result).anySatisfy(e -> {
+			assertThat(e.type()).isEqualTo(ConditionType.RESTRICTION);
+			assertThat(e.snippet()).contains("이중수혜 불가");
+		});
 	}
 }

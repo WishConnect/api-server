@@ -14,6 +14,10 @@ public enum ErrorCode {
 	INVALID_INPUT(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
 	UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
 	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
+	/** 매핑된 엔드포인트가 없는 경로. 리소스 하나가 없는 경우(~_NOT_FOUND)와 구분한다. */
+	ENDPOINT_NOT_FOUND(HttpStatus.NOT_FOUND, "요청하신 경로를 찾을 수 없습니다."),
+	/** 경로는 있으나 HTTP 메서드가 다른 경우(예: GET 전용 경로에 POST). */
+	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 메서드입니다."),
 	INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
 
 	// 회원가입 / 로그인
@@ -54,6 +58,10 @@ public enum ErrorCode {
 
 	// 장학금/지원서
 	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),
+	/** 수기 등록·수정에서 마감이 시작보다 앞설 때. 모집 상태 계산이 뒤틀리므로 입력 단계에서 막는다. */
+	INVALID_APPLICATION_PERIOD(HttpStatus.BAD_REQUEST, "모집 종료일이 시작일보다 빠를 수 없습니다."),
+	REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 신고입니다."),
+	REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 접수된 신고가 처리 중입니다."),
 	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
 	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
 	ONBOARDING_INCOMPLETE(HttpStatus.BAD_REQUEST, "이전 단계를 먼저 완료해주세요."),
@@ -63,6 +71,17 @@ public enum ErrorCode {
 	INTERVIEW_NOT_STARTED(HttpStatus.BAD_REQUEST, "사전 인터뷰가 시작되지 않아 초안을 생성할 수 없습니다."),
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
+
+	// 관리자 엑셀 일괄 편집
+	EXCEL_FILE_REQUIRED(HttpStatus.BAD_REQUEST, "엑셀 파일을 첨부해주세요."),
+	EXCEL_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "파일이 너무 큽니다. 1MB 이하로 올려주세요."),
+	EXCEL_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "xlsx 형식만 업로드할 수 있습니다."),
+	EXCEL_PARSE_FAILED(HttpStatus.BAD_REQUEST, "엑셀 파일을 읽지 못했습니다. 내보내기 받은 양식인지 확인해주세요."),
+	EXCEL_TOO_MANY_ROWS(HttpStatus.BAD_REQUEST, "한 번에 처리할 수 있는 행 수를 초과했습니다."),
+	/** 내보내기 파일에는 ID 가 채워져 있다. 비어 있으면 사람이 새로 추가한 행이다. */
+	EXCEL_ROW_ID_REQUIRED(HttpStatus.BAD_REQUEST, "ID 가 비어 있습니다. 신규 등록은 수기 등록 기능을 이용해주세요."),
+	EXCEL_INVALID_NUMBER(HttpStatus.BAD_REQUEST, "숫자 칸에 숫자가 아닌 값이 있습니다."),
+	EXCEL_INVALID_DATE(HttpStatus.BAD_REQUEST, "날짜 형식이 올바르지 않습니다. (yyyy-MM-dd HH:mm)"),
 
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),

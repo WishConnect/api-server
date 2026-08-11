@@ -37,7 +37,16 @@ public class SecurityConfig {
 			"/swagger-ui.html",
 			"/v3/api-docs/**",
 			"/api/v1/scholarships/search",
-			"/api/v1/insights/**"
+			/*
+			관리자 화면의 정적 파일(HTML/JS)만 공개한다. 데이터는 전부 ADMIN 전용 API 로만 오므로
+			이 파일 자체에는 비밀이 없다. 브라우저가 토큰 없이 첫 요청을 보내기 때문에 열어둔다.
+
+			⚠️ 실질적인 접근 통제는 Nginx IP allowlist 로 한다. deploy/README.md 참고.
+			 */
+			"/admin",
+			"/admin/**",
+			"/api/v1/scholarships/search",
+			"/api/v1/insights"
 	};
 
 	/**
@@ -46,9 +55,13 @@ public class SecurityConfig {
 	 * 어노테이션을 빠뜨려도 경로 규칙으로 걸리도록 한다.
 	 */
 	private static final String[] ADMIN_ENDPOINTS = {
+			"/api/v1/scholarships/admin/**",
 			"/api/v1/scholarships/sync",
 			"/api/v1/scholarships/collect/**",
 			"/api/v1/scholarships/conditions/**",
+			"/api/v1/scholarships/manual/**",
+			"/api/v1/scholarships/reports",
+			"/api/v1/scholarships/reports/*",
 			"/api/v1/universities/sync",
 			"/api/v1/universities/sync/**",
 			"/api/v1/insights/sync"

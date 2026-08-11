@@ -147,10 +147,130 @@ public class Scholarship extends BaseEntity {
 		this.primarySource = primarySource;
 		this.dedupKey = dedupKey;
 		this.homepageUrl = homepageUrl;
+		// 동기화 피드에 다시 들어왔다는 것은 살아 있는 공고라는 뜻이므로 소프트 삭제를 해제한다.
+		// 물리 삭제 시절에는 행이 사라졌다가 새로 생겨 자연히 되살아났는데,
+		// 소프트 삭제로 바꾼 뒤에는 여기서 풀어주지 않으면 deletedAt 이 남아 영원히 노출되지 않는다.
+		// (조회 쿼리가 전부 deletedAt IS NULL 로 거른다)
+		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
 	}
 
 	public void updateActive(boolean active) {
 		this.active = active;
+	}
+
+	/** 수기 등록분의 primary_source. 동기화 배치가 건드리지 않는 출처임을 구분한다. */
+	public static final String MANUAL_SOURCE = "MANUAL";
+
+	/**
+	 * 관리자가 직접 등록한 장학금.
+	 *
+	 * <p>{@code dedupKey} 는 공공데이터 응답으로 만드는 키와 절대 겹치지 않는 형식을 쓴다.
+	 * 겹치면 다음 동기화 때 {@link #updateFromApi} 로 덮여 수기 입력이 날아간다.
+	 * 사람이 확인하고 넣은 값이므로 {@code verified} 는 참으로 시작한다.
+	 */
+	public static Scholarship createManual(
+		String title,
+		String provider,
+		String summary,
+		String description,
+		ScholarshipType scholarshipType,
+		LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt,
+		Integer selectionCount,
+		Long amount,
+		String homepageUrl,
+		String dedupKey
+	) {
+		Scholarship scholarship = Scholarship.builder()
+			.title(title)
+			.provider(provider)
+			.summary(summary)
+			.description(description)
+			.scholarshipType(scholarshipType)
+			.applicationStartAt(applicationStartAt)
+			.applicationEndAt(applicationEndAt)
+			.recruitmentStatus(resolveStatus(applicationStartAt, applicationEndAt))
+			.selectionCount(selectionCount)
+			.amount(amount)
+			.primarySource(MANUAL_SOURCE)
+			.dedupKey(dedupKey)
+			.homepageUrl(homepageUrl)
+			.build();
+		scholarship.verified = true;
+		return scholarship;
+	}
+
+	/**
+	 * 관리자 직접 수정. null 인 필드는 기존 값을 유지해 부분 수정이 가능하다.
+	 * (오등록 신고가 들어온 항목의 한두 필드만 고치는 게 주 용도라 전체 교체는 오히려 위험하다)
+	 */
+	public void updateByAdmin(
+		String title,
+		String provider,
+		String summary,
+		String description,
+		ScholarshipType scholarshipType,
+		LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt,
+		Integer selectionCount,
+		Long amount,
+		String homepageUrl
+	) {
+		if (title != null) {
+			this.title = title;
+		}
+		if (provider != null) {
+			this.provider = provider;
+		}
+		if (summary != null) {
+			this.summary = summary;
+		}
+		if (description != null) {
+			this.description = description;
+		}
+		if (scholarshipType != null) {
+			this.scholarshipType = scholarshipType;
+		}
+		if (applicationStartAt != null) {
+			this.applicationStartAt = applicationStartAt;
+		}
+		if (applicationEndAt != null) {
+			this.applicationEndAt = applicationEndAt;
+		}
+		if (selectionCount != null) {
+			this.selectionCount = selectionCount;
+		}
+		if (amount != null) {
+			this.amount = amount;
+		}
+		if (homepageUrl != null) {
+			this.homepageUrl = homepageUrl;
+		}
+		this.recruitmentStatus = resolveStatus(this.applicationStartAt, this.applicationEndAt);
+		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+		// 사람이 확인해 고친 값이므로 검증된 것으로 표시한다.
+		this.verified = true;
+	}
+
+	/** 오등록으로 확인된 장학금을 목록에서 내린다. 이력 추적을 위해 행은 남긴다. */
+	public void softDelete() {
+		this.deletedAt = LocalDateTime.now();
+		this.active = false;
+	}
+
+	public boolean isDeleted() {
+		return deletedAt != null;
+	}
+
+	private static RecruitmentStatus resolveStatus(LocalDateTime startAt, LocalDateTime endAt) {
+		LocalDateTime now = LocalDateTime.now();
+		if (endAt != null && endAt.isBefore(now)) {
+			return RecruitmentStatus.CLOSED;
+		}
+		if (startAt != null && startAt.isAfter(now)) {
+			return RecruitmentStatus.UPCOMING;
+		}
+		return RecruitmentStatus.OPEN;
 	}
 }

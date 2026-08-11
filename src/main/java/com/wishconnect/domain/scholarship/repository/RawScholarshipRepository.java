@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.repository;
 
+import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import java.util.Optional;
@@ -17,4 +18,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 
 	/** 수집기 멱등 처리용: 같은 출처의 공지를 이미 수집했는지. */
 	boolean existsBySourceAndSourceId(String source, String sourceId);
+
+	/** 관리자 화면: 원본 수집 데이터의 파싱 상태 분포. */
+	long countByParseStatus(ParseStatus parseStatus);
 }

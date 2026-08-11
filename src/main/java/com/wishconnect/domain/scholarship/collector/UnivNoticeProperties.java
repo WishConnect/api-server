@@ -31,11 +31,12 @@ public record UnivNoticeProperties(List<Site> sites) {
 	 * @param listParam      페이지네이션 쿼리 파라미터명(기본 page)
 	 * @param titleSelector  (선택) 상세 페이지 제목 CSS 선택자. 지정 시 스킨 자동추출보다 우선.
 	 * @param bodySelector   (선택) 상세 페이지 본문 CSS 선택자. 지정 시 body 전체 대신 이 영역만 사용.
+	 * @param maxArticles    (선택) 이 사이트에서 한 번에 수집할 최대 공지 수. 없으면 제한 없음.
 	 */
 	public record Site(
 			String code, String provider, String source, String listUrl,
 			String articlePath, String linkPattern, String detailTemplate, String listParam,
-			String titleSelector, String bodySelector) {
+			String titleSelector, String bodySelector, Integer maxArticles) {
 
 		/** 목록에서 게시글 ID를 뽑는 정규식. 지정 없으면 articlePath 기반 artclView 패턴. */
 		public String effectiveLinkPattern() {
@@ -58,11 +59,26 @@ public record UnivNoticeProperties(List<Site> sites) {
 
 		/** raw_scholarship.source_id 로 저장할 안정적인 문자열(멱등성 키). 복합키는 '_' 결합. */
 		public String sourceIdOf(String articleId) {
-			return articleId.replace(ID_SEPARATOR, "_");
+			java.util.regex.Matcher articleNo = java.util.regex.Pattern.compile("articleNo=(\\d+)").matcher(articleId);
+			if (articleNo.find()) {
+				return articleNo.group(1);
+			}
+			java.util.regex.Matcher slug = java.util.regex.Pattern.compile("[?&]slug=([^&]+)").matcher(articleId);
+			String sourceId = slug.find() ? slug.group(1) : articleId.replace(ID_SEPARATOR, "_");
+			return sourceId.length() > 180 ? sha256(sourceId) : sourceId;
 		}
 
-		/** 상세 URL을 만든다. detailTemplate 우선({id},{id2} 치환), 없으면 artclView 규칙. */
+		/** 상세 URL을 만든다. articleId 가 실제 href 면 그대로 보정하고, 아니면 detailTemplate/artclView 규칙을 쓴다. */
 		public String detailUrl(String baseUrl, String articleId) {
+			if (articleId.startsWith("http://") || articleId.startsWith("https://")) {
+				return articleId;
+			}
+			if (articleId.startsWith("/")) {
+				return baseUrl + articleId;
+			}
+			if (articleId.startsWith("?")) {
+				return baseUrl + java.net.URI.create(listUrl).getPath() + articleId;
+			}
 			String[] parts = articleId.split(ID_SEPARATOR, -1);
 			if (StringUtils.hasText(detailTemplate)) {
 				String url = detailTemplate.replace("{id}", parts[0]);
@@ -77,8 +93,19 @@ public record UnivNoticeProperties(List<Site> sites) {
 		/** 목록에서 게시글 링크를 걸러낼 CSS 선택자 힌트(넓게 a[href] 후 정규식 필터). */
 		public String listPageUrl(int page) {
 			String param = StringUtils.hasText(listParam) ? listParam : "page";
+			int value = "article.offset".equals(param) ? Math.max(page - 1, 0) * 10 : page;
 			String sep = listUrl.contains("?") ? "&" : "?";
-			return listUrl + sep + param + "=" + page;
+			return listUrl + sep + param + "=" + value;
+		}
+	}
+
+	private static String sha256(String value) {
+		try {
+			java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+			return java.util.HexFormat.of().formatHex(
+					digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))).substring(0, 64);
+		} catch (Exception e) {
+			throw new IllegalStateException("SHA-256 사용 불가", e);
 		}
 	}
 
