@@ -157,6 +157,17 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			""")
 	List<Object[]> countBySourceForIds(@Param("ids") Collection<Long> ids);
 
+	/**
+	 * 엑셀 내보내기 대상. 내려간 공고(soft delete)는 고칠 대상이 아니라 뺀다.
+	 * 출처끼리 모여야 팀원별로 나눠 맡기기 쉬워 출처 우선으로 정렬한다.
+	 */
+	@Query("""
+			select s from Scholarship s
+			where s.deletedAt is null
+			order by s.primarySource asc, s.id asc
+			""")
+	List<Scholarship> findAllForExcelExport();
+
 	/** 관리자 목록. 최근에 들어온 순서로 본다. 출처 필터는 null 이면 전체. */
 	@Query("""
 			select s from Scholarship s

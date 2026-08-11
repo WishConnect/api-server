@@ -103,6 +103,21 @@
 </div>
 
 <div class="panel">
+	<h2>엑셀 일괄 편집</h2>
+	<div class="sub" style="margin:0 0 12px;">
+		내보내기 → 팀원들이 나눠 수정 → 취합본 업로드. <b>빈 칸은 변경하지 않습니다.</b>
+		ID 는 채워져 나가므로 건드리지 마세요.
+	</div>
+	<div class="row">
+		<button id="exportExcel">엑셀 내보내기</button>
+		<input type="file" id="excelFile" accept=".xlsx">
+		<button id="dryRun">검사만 (미리보기)</button>
+		<button class="primary" id="applyExcel" disabled>실제 반영</button>
+	</div>
+	<div id="importResult" style="margin-top:12px;"></div>
+</div>
+
+<div class="panel">
 	<div class="row" style="justify-content: space-between; margin-bottom: 12px;">
 		<h2 style="margin:0;">최근 수집 장학금</h2>
 		<div class="row">
@@ -234,6 +249,76 @@
 			showMsg(e.message, true);
 		}
 	}
+
+	// --- 엑셀 -------------------------------------------------------------
+
+	async function exportExcel() {
+		const token = getToken();
+		if (!token) return showMsg('토큰이 없습니다. 먼저 저장하세요.', true);
+		const res = await fetch('/api/v1/scholarships/admin/excel', {
+			headers: { Authorization: 'Bearer ' + token }
+		});
+		if (!res.ok) return showMsg('내보내기 실패 (HTTP ' + res.status + ')', true);
+
+		const blob = await res.blob();
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'scholarships-' + new Date().toISOString().slice(0, 10) + '.xlsx';
+		a.click();
+		URL.revokeObjectURL(url);
+		showMsg('내보내기 완료');
+	}
+
+	async function importExcel(dryRun) {
+		const token = getToken();
+		if (!token) return showMsg('토큰이 없습니다. 먼저 저장하세요.', true);
+		const file = $('excelFile').files[0];
+		if (!file) return showMsg('업로드할 xlsx 파일을 선택하세요.', true);
+
+		const form = new FormData();
+		form.append('file', file);
+
+		const res = await fetch('/api/v1/scholarships/admin/excel?dryRun=' + dryRun, {
+			method: 'POST',
+			headers: { Authorization: 'Bearer ' + token },
+			body: form
+		});
+		const body = await res.json().catch(() => null);
+		if (!res.ok || !body || body.success === false) {
+			$('importResult').innerHTML = '';
+			return showMsg((body && body.message) || ('업로드 실패 (HTTP ' + res.status + ')'), true);
+		}
+
+		const d = body.data;
+		const head = d.dryRun
+			? '<b>검사 결과</b> (아직 반영 안 됨)'
+			: '<b class="ok">반영 완료</b>';
+		let html = head + ' — 대상 ' + d.totalRows + '행 / 반영 대상 ' + d.appliedRows
+			+ '행 / 오류 ' + d.errorCount + '행';
+		if (d.errors && d.errors.length) {
+			html += '<div class="scroll" style="margin-top:8px;"><table><thead><tr>'
+				+ '<th>엑셀 행</th><th>사유</th></tr></thead><tbody>'
+				+ d.errors.map((e) => '<tr><td>' + e.rowNumber + '</td><td>' + esc(e.reason) + '</td></tr>').join('')
+				+ '</tbody></table></div>';
+		}
+		$('importResult').innerHTML = html;
+
+		// 검사에서 반영할 게 있고 오류가 없을 때만 실제 반영 버튼을 연다.
+		$('applyExcel').disabled = !(d.dryRun && d.appliedRows > 0 && d.errorCount === 0);
+		if (!d.dryRun) loadAll();
+	}
+
+	$('exportExcel').onclick = () => exportExcel().catch((e) => showMsg(e.message, true));
+	$('dryRun').onclick = () => importExcel(true).catch((e) => showMsg(e.message, true));
+	$('applyExcel').onclick = () => {
+		if (!confirm('엑셀 내용을 실제로 반영합니다. 되돌릴 수 없습니다. 진행할까요?')) return;
+		importExcel(false).catch((e) => showMsg(e.message, true));
+	};
+	$('excelFile').onchange = () => {
+		$('applyExcel').disabled = true;
+		$('importResult').innerHTML = '';
+	};
 
 	$('saveToken').onclick = () => {
 		const v = $('token').value.trim();
