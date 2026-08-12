@@ -72,7 +72,8 @@ public class AnswerService {
 	private AnswerActionResponse handleDraft(Essay essay, EssayQuestion question, EssayAnswer answer) {
 		List<AiInterview> history = aiInterviewRepository
 				.findByEssayQuestion_IdOrderByStepOrderAsc(question.getId());
-		if (history.isEmpty()) {
+		// 질문 일괄 생성 방식에서는 답변 전에도 이력이 존재한다. 답변이 1건도 없으면 초안 재료가 없는 셈.
+		if (history.stream().noneMatch(AiInterview::isAnswered)) {
 			throw new CustomException(ErrorCode.INTERVIEW_NOT_STARTED);
 		}
 

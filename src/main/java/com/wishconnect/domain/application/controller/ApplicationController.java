@@ -91,13 +91,15 @@ public class ApplicationController {
 	}
 
 	/**
-	 * ④ STEP1 사전 인터뷰 대화. 인터뷰 이력이 없으면 seed 질문 자동 생성(부트스트랩), 있으면
-	 * 요청의 stepOrder 위치에 답변 저장 후 다음 질문 생성. body 를 비운 채 호출하면 부트스트랩만
-	 * 수행된다.
+	 * ④ STEP1 사전 인터뷰. 인터뷰 이력이 없으면 문항별 사전 질문 5개를 한 번에 생성해 전부 반환하고,
+	 * 있으면 요청에 담긴 답변들을 저장한다. body 를 비운 채 호출하면 질문 생성(또는 현재 상태 조회)만
+	 * 수행된다. 응답에는 항상 질문 전체와 답변 상태가 함께 담긴다.
 	 */
-	@Operation(summary = "④ STEP1 사전 인터뷰 대화",
-			description = "인터뷰 이력이 없으면 seed 질문 자동 생성(부트스트랩: body 비워서 호출), "
-					+ "있으면 답변 저장 후 다음 질문 생성. LLM = Haiku 사용, 최대 5턴.")
+	@Operation(summary = "④ STEP1 사전 인터뷰 (질문 일괄 생성 / 답변 저장)",
+			description = "인터뷰 이력이 없으면 사전 질문 5개를 한 번에 생성해 전부 반환(body 비워서 호출), "
+					+ "있으면 answers 배열의 답변을 저장한다. 부분 제출·재제출(수정) 모두 허용하며, "
+					+ "1건 이상 답변하면 canGenerateDraft=true 로 ⑤ DRAFT 호출이 가능하다. "
+					+ "LLM = Haiku, 문항당 호출 1회.")
 	@PostMapping("/{applicationId}/questions/{questionId}/interview")
 	public ApiResponse<InterviewAdvanceResponse> advanceInterview(
 			@AuthenticationPrincipal String userId,
@@ -106,7 +108,7 @@ public class ApplicationController {
 			@RequestBody(required = false) InterviewAnswerRequest request) {
 		InterviewAnswerRequest safeRequest = request != null
 				? request
-				: new InterviewAnswerRequest(null, null);
+				: new InterviewAnswerRequest(null);
 		return ApiResponse.ok(
 				interviewService.advance(UUID.fromString(userId), applicationId, questionId, safeRequest));
 	}
