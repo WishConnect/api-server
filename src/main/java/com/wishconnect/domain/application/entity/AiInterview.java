@@ -44,10 +44,21 @@ public class AiInterview extends BaseEntity {
 	@Column(nullable = false)
 	private int stepOrder;
 
-	/** 사전 인터뷰에서 사용자의 답변을 기록. answerText 가 이미 채워져 있으면 아무 작업도 하지 않는다. */
-	public void recordAnswer(String answerText) {
-		if (this.answerText == null || this.answerText.isBlank()) {
-			this.answerText = answerText;
+	/**
+	 * 사전 인터뷰 답변을 기록한다.
+	 *
+	 * <p>질문을 한 번에 노출하고 부분 제출을 허용하는 방식이므로, 이미 답변한 항목도
+	 * 다시 제출하면 덮어쓴다(사용자의 답변 수정 지원). 빈 값은 기존 답변을 지우지 않도록 무시한다.
+	 */
+	public void writeAnswer(String answerText) {
+		if (answerText == null || answerText.isBlank()) {
+			return;
 		}
+		this.answerText = answerText;
+	}
+
+	/** 답변이 채워져 있는지 여부. */
+	public boolean isAnswered() {
+		return answerText != null && !answerText.isBlank();
 	}
 }

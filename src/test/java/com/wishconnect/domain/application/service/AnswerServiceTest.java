@@ -117,6 +117,24 @@ class AnswerServiceTest {
 	}
 
 	@Test
+	@DisplayName("DRAFT: 질문만 생성되고 답변이 하나도 없으면 INTERVIEW_NOT_STARTED 로 실패")
+	void draft_questionsWithoutAnswers_throws() {
+		stubLookup(essay(EssayStatus.NOT_STARTED), question(500), answer(false));
+		given(aiInterviewRepository.findByEssayQuestion_IdOrderByStepOrderAsc(QUESTION_ID))
+				.willReturn(List.of(
+						AiInterview.builder().questionText("질문0").stepOrder(0).build(),
+						AiInterview.builder().questionText("질문1").stepOrder(1).build()));
+
+		assertThatThrownBy(() -> answerService.handle(
+				USER_ID, APP_ID, QUESTION_ID,
+				new AnswerActionRequest(AnswerAction.DRAFT, null)))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INTERVIEW_NOT_STARTED);
+
+		verify(llmClient, never()).chat(any());
+	}
+
+	@Test
 	@DisplayName("DRAFT: 인터뷰 이력이 있으면 LLM 호출 후 answer 에 초안이 반영된다")
 	void draft_success() {
 		Essay essay = essay(EssayStatus.IN_PROGRESS);

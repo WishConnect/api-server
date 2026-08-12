@@ -69,6 +69,9 @@ public enum ErrorCode {
 	INVALID_INTERVIEW_STEP(HttpStatus.BAD_REQUEST, "현재 인터뷰 진행 상태와 맞지 않는 요청입니다."),
 	ANSWER_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 문항의 답변 레코드를 찾을 수 없습니다."),
 	INTERVIEW_NOT_STARTED(HttpStatus.BAD_REQUEST, "사전 인터뷰가 시작되지 않아 초안을 생성할 수 없습니다."),
+	/** LLM 이 사전 질문을 하나도 만들지 못한 경우. 재시도하면 대개 해소되므로 사용자에게 재시도를 안내한다. */
+	INTERVIEW_QUESTION_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE,
+			"사전 질문을 생성하지 못했습니다. 잠시 후 다시 시도해주세요."),
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 

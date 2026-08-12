@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * ③ 지원서 통합 상세 조회 응답의 문항별 항목.
  *
- * @param seedQuestion AI 인터뷰의 첫 질문 (stepOrder=0). 인터뷰 시작 전이면 null.
+ * @param seedQuestion 사전 질문 중 첫 번째 (stepOrder=0). 인터뷰 시작 전이면 null.
+ *                     질문을 일괄 생성하므로 전체 목록은 {@code interviews} 를 사용한다.
  * @param answer       현재 답변 상태. 지원서 생성 직후에도 빈 answer 는 존재하지만
  *                     엔티티 정합성이 깨진 예외적 경우에 한해 null 가능.
  */
