@@ -1,5 +1,7 @@
 package com.wishconnect.domain.scholarship.service;
 
+import com.wishconnect.domain.application.entity.EssayStatus;
+import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.Pagination;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
@@ -49,6 +51,8 @@ public class ScholarshipRecommendationService {
 	private static final int NEW_MATCHED_DAYS = 7;
 
 	private final ScholarshipRepository scholarshipRepository;
+	// 홈 요약의 "작성 중인 지원서" 칸. 도메인은 다르지만 집계 한 줄이라 별도 서비스를 두지 않는다.
+	private final EssayRepository essayRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UserProfileRepository userProfileRepository;
 	private final ScrapRepository scrapRepository;
@@ -164,7 +168,35 @@ public class ScholarshipRecommendationService {
 		long urgentDeadlineCount = eligibleList.stream()
 				.filter(s -> s.dDay() != null && s.dDay() >= 0 && s.dDay() <= DEADLINE_SOON_DAYS)
 				.count();
-		return new HomeSummaryResponse(newMatchedCount, urgentDeadlineCount, newMatchedCount > 0);
+		long writingApplicationCount =
+				essayRepository.countByUser_IdAndStatus(userId, EssayStatus.NOT_STARTED)
+						+ essayRepository.countByUser_IdAndStatus(userId, EssayStatus.IN_PROGRESS);
+		return new HomeSummaryResponse(
+				newMatchedCount, urgentDeadlineCount, writingApplicationCount, newMatchedCount > 0);
+	}
+
+	/**
+	 * 주어진 후보 중 사용자가 지원 가능한(불충족 조건이 하나도 없는) 장학금 id 집합.
+	 *
+	 * <p>달력처럼 후보를 밖에서 정해 오는 화면에서 쓴다. {@link #scoreOpenScholarships} 는 OPEN 만
+	 * 대상으로 잡아 아직 모집 시작 전(UPCOMING)인 공고가 빠지는데, 달력은 그걸 보여줘야 하므로
+	 * 후보를 인자로 받는 형태가 따로 필요하다.
+	 */
+	@Transactional(readOnly = true)
+	public Set<Long> filterEligibleIds(UUID userId, List<Scholarship> candidates) {
+		if (candidates.isEmpty()) {
+			return Set.of();
+		}
+		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+		Map<Long, List<ScholarshipCondition>> conditionsByScholarshipId =
+				scholarshipConditionRepository.findAllByScholarshipIn(candidates).stream()
+						.collect(Collectors.groupingBy(condition -> condition.getScholarship().getId()));
+
+		return candidates.stream()
+				.filter(scholarship -> score(scholarship,
+						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), profile).eligible())
+				.map(Scholarship::getId)
+				.collect(Collectors.toSet());
 	}
 
 	/** 상세 화면 등 다른 서비스에서 재사용: 특정 장학금에 대한 매칭 사유 목록. */

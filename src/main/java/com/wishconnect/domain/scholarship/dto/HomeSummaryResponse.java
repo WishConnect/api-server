@@ -8,6 +8,11 @@ package com.wishconnect.domain.scholarship.dto;
 public record HomeSummaryResponse(
 		long newMatchedCount,
 		long urgentDeadlineCount,
+		/**
+		 * 작성 중인 지원서 수. 시안의 "오늘의 장학금 소식" 카드 세 번째 칸이다.
+		 * NOT_STARTED(문항만 준비된 상태)와 IN_PROGRESS 를 합친다 — 사용자 눈에는 둘 다 "쓰다 만 것"이다.
+		 */
+		long writingApplicationCount,
 		boolean hasNewMatched
 ) {
 }
