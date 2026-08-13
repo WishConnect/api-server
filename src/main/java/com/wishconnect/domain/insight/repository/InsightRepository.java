@@ -55,15 +55,6 @@ public interface InsightRepository extends JpaRepository<Insight, Long> {
             "WHERE it.insight.id IN :insightIds")
     List<Object[]> findTagsByInsightIds(@Param("insightIds") List<Long> insightIds);
 
-    // 기본 조회 (카테고리/소스 필터만, 태그/키워드 없음)
-    @Query("SELECT i FROM Insight i " +
-            "WHERE (:categoryId IS NULL OR i.category.id = :categoryId) " +
-            "AND (:source IS NULL OR i.source = :source)")
-    Page<Insight> findAllWithFilter(
-            @Param("categoryId") Long categoryId,
-            @Param("source") String source,
-            Pageable pageable
-    );
 
     // 키워드 검색 포함
     @Query("SELECT i FROM Insight i " +

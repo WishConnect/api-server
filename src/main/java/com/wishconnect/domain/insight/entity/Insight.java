@@ -26,7 +26,7 @@ public class Insight extends BaseEntity {
 	@JoinColumn(name = "category_id")
 	private InsightCategory category;
 
-	@Column(nullable = false)
+	@Column(nullable = false, length = 500)
 	private String title;
 
 	@Column(columnDefinition = "TEXT")

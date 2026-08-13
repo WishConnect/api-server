@@ -49,9 +49,12 @@ google:
   redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google/callback}
 
 naver:
-  client-id: ${NAVER_CLIENT_ID:<NAVER_CLIENT_ID>}
-  client-secret: ${NAVER_CLIENT_SECRET:<NAVER_CLIENT_SECRET>}
-  redirect-uri: ${NAVER_REDIRECT_URI:http://localhost:8080/api/v1/auth/naver/callback}
+  client-id: your-naver-oauth-client-id
+  client-secret: your-naver-oauth-client-secret
+  redirect-uri: http://localhost:3000/auth/naver/callback
+  search:
+    client-id: your-naver-search-client-id
+    client-secret: your-naver-search-client-secret
 
 # 대학알리미/공공데이터 학교·학과 마스터 동기화
 academic-info:

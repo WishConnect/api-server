@@ -16,10 +16,10 @@ import java.util.List;
 @Component
 public class NaverSearchClient {
 
-    @Value("${naver.client-id}")
+    @Value("${naver.search.client-id}")
     private String clientId;
 
-    @Value("${naver.client-secret}")
+    @Value("${naver.search.client-secret}")
     private String clientSecret;
 
     private static final String BASE_URL = "https://naverapihub.apigw.ntruss.com";

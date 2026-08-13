@@ -4,6 +4,9 @@
 -- 배포용 RDS에 반영된 스키마 변경 및 마스터 데이터 기록.
 -- 절차 확립 전 작업으로 직접 실행 후 사후 기록합니다.
 
+-- UNIQUE 제약 추가 (ON CONFLICT가 동작하려면 필수)
+ALTER TABLE insight_category ADD CONSTRAINT uk_insight_category_name UNIQUE (name);
+
 -- 1. source 컬럼 추가 (크롤링 출처: NAVER_BLOG/TISTORY 등 구분용)
 ALTER TABLE insight ADD COLUMN IF NOT EXISTS source VARCHAR(20);
 
