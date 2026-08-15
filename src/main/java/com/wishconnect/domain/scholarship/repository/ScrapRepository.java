@@ -29,20 +29,7 @@ public interface ScrapRepository extends JpaRepository<Scrap, Long> {
 	List<Long> findScrappedScholarshipIds(@Param("userId") UUID userId,
 										  @Param("scholarshipIds") List<Long> scholarshipIds);
 
-	@Query("SELECT s FROM Scrap s WHERE s.user.id = :userId")
-	Page<Scrap> findAllByUserId(@Param("userId") UUID userId, Pageable pageable);
 
-	@Query("SELECT s FROM Scrap s " +
-			"WHERE s.user.id = :userId " +
-			"AND s.scholarship.title LIKE CONCAT('%', :keyword, '%')")
-	Page<Scrap> searchByUserIdAndKeyword(
-			@Param("userId") UUID userId,
-			@Param("keyword") String keyword,
-			Pageable pageable
-	);
-
-	@Query("SELECT DISTINCT s.scholarship.id FROM Scrap s WHERE s.user.id = :userId")
-	List<Long> findScholarshipIdsByUserId(@Param("userId") UUID userId);
 
 
 }

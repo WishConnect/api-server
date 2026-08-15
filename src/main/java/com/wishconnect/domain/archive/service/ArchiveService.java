@@ -1,25 +1,25 @@
 package com.wishconnect.domain.archive.service;
 
-import com.wishconnect.domain.application.entity.Essay;
 import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.archive.dto.ArchiveItemResponse;
 import com.wishconnect.domain.archive.dto.ArchiveResponse;
+import com.wishconnect.domain.archive.repository.ArchiveCountProjection;
+import com.wishconnect.domain.archive.repository.ArchiveQueryRepository;
+import com.wishconnect.domain.archive.repository.ArchiveRow;
 import com.wishconnect.domain.common.entity.Image;
 import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
-import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ArchiveService {
 
-    private final ScrapRepository scrapRepository;
-    private final EssayRepository essayRepository;
+    private final ArchiveQueryRepository archiveQueryRepository;
     private final ScholarshipRepository scholarshipRepository;
+    private final EssayRepository essayRepository;
     private final ImageRepository imageRepository;
     private final ImageStorageService imageStorageService;
 
@@ -44,72 +44,49 @@ public class ArchiveService {
             UUID userId, String status, String keyword, int page, int size
     ) {
         validateStatus(status);
+        validatePage(page);
 
-        // 1. 스크랩 ∪ 작성중인 자소서의 scholarshipId 합집합
-        //    (스크랩 없이도 자소서를 시작할 수 있으므로, 둘 중 하나라도 있으면 목록에 포함)
-        Set<Long> allScholarshipIds = new HashSet<>();
-        allScholarshipIds.addAll(scrapRepository.findScholarshipIdsByUserId(userId));
-        allScholarshipIds.addAll(essayRepository.findScholarshipIdsByUserId(userId));
+        String normalizedStatus = (status == null || "ALL".equals(status)) ? null : status;
+        String normalizedKeyword = (keyword == null || keyword.isBlank()) ? null : keyword;
 
-        if (allScholarshipIds.isEmpty()) {
-            return emptyResponse(page, size);
-        }
-
-        // 2. Scholarship 페이지네이션 조회
         Pageable pageable = PageRequest.of(page - 1, size);
-        List<Long> scholarshipIdList = allScholarshipIds.stream().toList();
+        Page<ArchiveRow> rowPage = archiveQueryRepository.findArchiveRows(
+                userId, normalizedStatus, normalizedKeyword, pageable
+        );
 
-        Page<Scholarship> scholarshipPage = (keyword == null || keyword.isBlank())
-                ? scholarshipRepository.findAllByIdIn(scholarshipIdList, pageable)
-                : scholarshipRepository.searchByIdInAndKeyword(scholarshipIdList, keyword, pageable);
-
-        List<Long> pageScholarshipIds = scholarshipPage.getContent().stream()
-                .map(Scholarship::getId)
+        List<Long> scholarshipIds = rowPage.getContent().stream()
+                .map(ArchiveRow::getScholarshipId)
+                .toList();
+        List<Long> essayIds = rowPage.getContent().stream()
+                .map(ArchiveRow::getEssayId)
+                .filter(Objects::nonNull)
                 .toList();
 
-        // 3. Essay 일괄 조회 (scholarshipId -> Essay)
-        List<Essay> essays = essayRepository.findAllByUser_IdAndScholarship_IdIn(userId, pageScholarshipIds);
-        Map<Long, Essay> essayByScholarshipId = essays.stream()
-                .collect(Collectors.toMap(e -> e.getScholarship().getId(), e -> e));
+        Map<Long, Scholarship> scholarshipById = scholarshipRepository.findAllById(scholarshipIds).stream()
+                .collect(Collectors.toMap(Scholarship::getId, s -> s));
 
-        // 4. 진행률 일괄 조회 (N+1 방지)
-        List<Long> essayIds = essays.stream().map(Essay::getId).toList();
         Map<Long, int[]> progressMap = getProgressMap(essayIds);
+        Map<Long, String> posterMap = getPosterMap(scholarshipIds);
 
-        // 5. 포스터 이미지 일괄 조회 (N+1 방지)
-        Map<Long, String> posterMap = getPosterMap(pageScholarshipIds);
-
-        // 6. 응답 변환
-        List<ArchiveItemResponse> allItems = scholarshipPage.getContent().stream()
-                .map(scholarship -> toItemResponse(
-                        scholarship,
-                        essayByScholarshipId.get(scholarship.getId()),
-                        progressMap,
-                        posterMap
-                ))
+        List<ArchiveItemResponse> items = rowPage.getContent().stream()
+                .map(row -> toItemResponse(row, scholarshipById.get(row.getScholarshipId()), progressMap, posterMap))
                 .toList();
 
-        // 7. status 필터링 (메모리 레벨, known issue)
-        List<ArchiveItemResponse> filteredItems = filterByStatus(allItems, status);
-
-        // 8. 상태별 카운트
-        ArchiveResponse.CountsDto counts = calculateCounts(allItems);
+        ArchiveCountProjection countProjection = archiveQueryRepository.countArchive(userId, normalizedKeyword);
+        ArchiveResponse.CountsDto counts = new ArchiveResponse.CountsDto(
+                countProjection.getAllCount(),
+                countProjection.getNotStartedCount(),
+                countProjection.getInProgressCount(),
+                countProjection.getCompletedCount()
+        );
 
         ArchiveResponse.PaginationDto pagination = new ArchiveResponse.PaginationDto(
                 page, size,
-                (int) scholarshipPage.getTotalElements(),
-                scholarshipPage.getTotalPages()
+                (int) rowPage.getTotalElements(),
+                rowPage.getTotalPages()
         );
 
-        return new ArchiveResponse(counts, filteredItems, pagination);
-    }
-
-    private ArchiveResponse emptyResponse(int page, int size) {
-        return new ArchiveResponse(
-                new ArchiveResponse.CountsDto(0, 0, 0, 0),
-                List.of(),
-                new ArchiveResponse.PaginationDto(page, size, 0, 0)
-        );
+        return new ArchiveResponse(counts, items, pagination);
     }
 
     private void validateStatus(String status) {
@@ -119,6 +96,12 @@ public class ArchiveService {
         List<String> valid = List.of("NOT_STARTED", "IN_PROGRESS", "COMPLETED");
         if (!valid.contains(status)) {
             throw new CustomException(ErrorCode.INVALID_ARCHIVE_STATUS);
+        }
+    }
+
+    private void validatePage(int page) {
+        if (page < 1) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
         }
     }
 
@@ -152,18 +135,16 @@ public class ArchiveService {
     }
 
     private ArchiveItemResponse toItemResponse(
-            Scholarship scholarship, Essay essay, Map<Long, int[]> progressMap, Map<Long, String> posterMap
+            ArchiveRow row, Scholarship scholarship, Map<Long, int[]> progressMap, Map<Long, String> posterMap
     ) {
         int dDay = calculateDDay(scholarship.getApplicationEndAt());
         String urgency = calculateUrgency(dDay);
-        String applicationStatus = essay != null ? essay.getStatus().name() : "NOT_STARTED";
-        ArchiveItemResponse.ProgressDto progress = calculateProgress(
-                progressMap, essay != null ? essay.getId() : null
-        );
+        String applicationStatus = row.getEssayStatus() != null ? row.getEssayStatus() : "NOT_STARTED";
+        ArchiveItemResponse.ProgressDto progress = calculateProgress(progressMap, row.getEssayId());
 
         return new ArchiveItemResponse(
                 scholarship.getId(),
-                essay != null ? essay.getId() : null,
+                row.getEssayId(),
                 scholarship.getTitle(),
                 List.of(),  // TODO: ScholarshipTag 매핑 테이블 부재로 임시 처리
                 scholarship.getApplicationEndAt(),
@@ -200,24 +181,5 @@ public class ArchiveService {
         int completed = counts[1];
         int percentage = total == 0 ? 0 : (completed * 100 / total);
         return new ArchiveItemResponse.ProgressDto(completed, total, percentage);
-    }
-
-    private List<ArchiveItemResponse> filterByStatus(
-            List<ArchiveItemResponse> items, String status
-    ) {
-        if (status == null || "ALL".equals(status)) {
-            return items;
-        }
-        return items.stream()
-                .filter(i -> status.equals(i.applicationStatus()))
-                .toList();
-    }
-
-    private ArchiveResponse.CountsDto calculateCounts(List<ArchiveItemResponse> items) {
-        long all = items.size();
-        long notStarted = items.stream().filter(i -> "NOT_STARTED".equals(i.applicationStatus())).count();
-        long inProgress = items.stream().filter(i -> "IN_PROGRESS".equals(i.applicationStatus())).count();
-        long completed = items.stream().filter(i -> "COMPLETED".equals(i.applicationStatus())).count();
-        return new ArchiveResponse.CountsDto(all, notStarted, inProgress, completed);
     }
 }

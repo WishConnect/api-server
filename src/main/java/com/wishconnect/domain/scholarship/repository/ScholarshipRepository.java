@@ -176,20 +176,5 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			""")
 	List<Scholarship> findRecentForAdmin(@Param("source") String source, Pageable pageable);
 
-	@Query("SELECT s FROM Scholarship s WHERE s.id IN :scholarshipIds AND s.deletedAt IS NULL")
-	Page<Scholarship> findAllByIdIn(
-			@Param("scholarshipIds") List<Long> scholarshipIds,
-			Pageable pageable
-	);
-
-	@Query("SELECT s FROM Scholarship s " +
-			"WHERE s.id IN :scholarshipIds " +
-			"AND s.deletedAt IS NULL " +
-			"AND s.title LIKE CONCAT('%', :keyword, '%')")
-	Page<Scholarship> searchByIdInAndKeyword(
-			@Param("scholarshipIds") List<Long> scholarshipIds,
-			@Param("keyword") String keyword,
-			Pageable pageable
-	);
 
 }

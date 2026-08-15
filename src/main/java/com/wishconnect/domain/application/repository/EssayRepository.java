@@ -30,15 +30,6 @@ public interface EssayRepository extends JpaRepository<Essay, Long> {
 
 	long countByUser_IdAndStatus(UUID userId, EssayStatus status);
 
-	@Query("SELECT DISTINCT e.scholarship.id FROM Essay e WHERE e.user.id = :userId")
-	List<Long> findScholarshipIdsByUserId(@Param("userId") UUID userId);
-
-	/** Archive 목록 조회용: 여러 scholarshipId에 대한 Essay 일괄 조회 (N+1 방지) */
-	@Query("SELECT e FROM Essay e WHERE e.user.id = :userId AND e.scholarship.id IN :scholarshipIds")
-	List<Essay> findAllByUser_IdAndScholarship_IdIn(
-			@Param("userId") UUID userId,
-			@Param("scholarshipIds") List<Long> scholarshipIds
-	);
 
 	/** Archive 진행률 계산용: 여러 Essay의 문항별 완료 개수 일괄 조회 (N+1 방지) */
 	@Query("SELECT eq.essay.id, COUNT(eq), " +
