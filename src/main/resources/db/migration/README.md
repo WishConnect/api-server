@@ -35,6 +35,12 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ✅ 2026-07-31 |
 | `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
 | `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
+| `V20260815_01__fix_scholarship_type_check.sql` | `scholarship.scholarship_type` CHECK 제약에 `WORK_STUDY` 추가 | ⬜ 미적용 |
+
+> `V20260815_01` 은 **적용 전까지 근로장학 공고 수집이 계속 실패한다.** `WORK_STUDY` 가
+> 2026-07-23(`2ae8a8c`)에 추가됐으나 마이그레이션이 누락됐고, 2026-08-05 점검에서도 빠졌다.
+> 운영은 `validate` 라 부팅은 되지만 CHECK 제약은 검증 대상이 아니라 INSERT 때만 터진다.
+
 > `V20260731_01` 은 2026-08-05 점검에서 **운영에 이미 반영되어 있음을 확인**했다(컬럼·인덱스 모두 일치).
 > 표기만 `미적용` 으로 남아 있던 것이라 정정한다. 앞으로는 적용 직후 이 표를 함께 갱신할 것.
 
