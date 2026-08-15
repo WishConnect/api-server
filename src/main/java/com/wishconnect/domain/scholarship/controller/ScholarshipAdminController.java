@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.controller;
 
+import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
@@ -65,6 +66,7 @@ public class ScholarshipAdminController {
 
 	private final ScholarshipSyncService scholarshipSyncService;
 	private final UnivNoticeCollector univNoticeCollector;
+	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipReportService scholarshipReportService;
@@ -121,12 +123,16 @@ public class ScholarshipAdminController {
 	}
 
 	@Operation(summary = "대학 장학공지 크롤링 수집",
-			description = "code 는 application.yml 의 사이트 코드(konkuk, yonsei 등). (ADMIN 전용)")
+			description = "code 는 application.yml 의 사이트 코드(konkuk, yonsei 등) 또는 전용 수집기 코드"
+					+ "(korea, sogang, skku, hanyang, cau, khu). 게시판 구조가 공통 규칙으로 묶이지 않는 대학은"
+					+ " 전용 수집기로 처리하며, 양쪽에서 코드를 찾지 못하면 400. (ADMIN 전용)")
 	@PostMapping("/collect/univ/{code}")
 	public ApiResponse<CollectResultResponse> collectUniv(
 			@PathVariable String code,
 			@RequestParam(defaultValue = "1") int pages) {
+		// 설정 기반 수집기를 먼저 보고, 없으면 대학별 전용 수집기로 넘긴다.
 		return ApiResponse.ok(univNoticeCollector.collectByCode(code, pages)
+				.or(() -> dedicatedNoticeCollectors.collectByCode(code, pages))
 				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT)));
 	}
 
