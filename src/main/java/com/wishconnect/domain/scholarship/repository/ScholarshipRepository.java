@@ -193,4 +193,5 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			""")
 	List<Scholarship> findRecentForAdmin(@Param("source") String source, Pageable pageable);
 
+
 }
