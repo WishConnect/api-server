@@ -85,5 +85,10 @@ public interface InsightRepository extends JpaRepository<Insight, Long> {
             Pageable pageable
     );
 
+    @Query("SELECT it.tag.name FROM InsightTag it " +
+            "GROUP BY it.tag.name " +
+            "ORDER BY COUNT(it) DESC")
+    List<String> findPopularTagNames(Pageable pageable);
+
 
 }

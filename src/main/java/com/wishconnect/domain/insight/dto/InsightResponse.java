@@ -4,6 +4,7 @@ import java.util.List;
 
 public record InsightResponse(
         List<InsightArticleResponse> articles,
+        List<String> popularTags,
         PaginationDto pagination
 ) {
     public record PaginationDto(
