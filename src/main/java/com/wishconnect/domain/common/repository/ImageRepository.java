@@ -23,4 +23,13 @@ public interface ImageRepository extends JpaRepository<Image, Long> {
 	 */
 	@Query("select distinct i.entityId from Image i where i.entityType = :entityType")
 	List<Long> findEntityIdsByEntityType(@Param("entityType") String entityType);
+
+	@Query("SELECT i FROM Image i " +
+			"WHERE i.entityType = :entityType " +
+			"AND i.entityId IN :entityIds " +
+			"ORDER BY i.id ASC")
+	List<Image> findAllByEntityTypeAndEntityIdIn(
+			@Param("entityType") String entityType,
+			@Param("entityIds") List<Long> entityIds
+	);
 }

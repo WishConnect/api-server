@@ -58,13 +58,20 @@ public class DraftPromptBuilder {
 						limit);
 	}
 
+	/**
+	 * 답변이 채워진 질문만 Q/A 쌍으로 넘긴다.
+	 *
+	 * <p>사전 질문을 일괄 생성하는 방식에서는 학생이 일부 질문만 답하고 넘어갈 수 있다.
+	 * 답변 없는 질문까지 넘기면 모델이 그 질문에 대한 내용을 지어낼 수 있으므로 아예 제외한다.
+	 */
 	private String buildUserMessage(List<AiInterview> history) {
 		StringBuilder sb = new StringBuilder("다음은 학생과의 사전 인터뷰 내용입니다.\n\n");
 		for (AiInterview turn : history) {
-			sb.append("Q: ").append(turn.getQuestionText()).append("\n");
-			if (turn.getAnswerText() != null && !turn.getAnswerText().isBlank()) {
-				sb.append("A: ").append(turn.getAnswerText()).append("\n\n");
+			if (!turn.isAnswered()) {
+				continue;
 			}
+			sb.append("Q: ").append(turn.getQuestionText()).append("\n");
+			sb.append("A: ").append(turn.getAnswerText()).append("\n\n");
 		}
 		sb.append("위 내용을 바탕으로 자기소개서 초안을 작성해주세요.");
 		return sb.toString();

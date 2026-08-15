@@ -44,7 +44,9 @@ public class SecurityConfig {
 			⚠️ 실질적인 접근 통제는 Nginx IP allowlist 로 한다. deploy/README.md 참고.
 			 */
 			"/admin",
-			"/admin/**"
+			"/admin/**",
+			"/api/v1/scholarships/search",
+			"/api/v1/insights"
 	};
 
 	/**
@@ -61,7 +63,8 @@ public class SecurityConfig {
 			"/api/v1/scholarships/reports",
 			"/api/v1/scholarships/reports/*",
 			"/api/v1/universities/sync",
-			"/api/v1/universities/sync/**"
+			"/api/v1/universities/sync/**",
+			"/api/v1/insights/sync"
 	};
 
 	private final JwtProvider jwtProvider;

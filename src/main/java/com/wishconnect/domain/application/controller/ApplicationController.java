@@ -91,13 +91,37 @@ public class ApplicationController {
 	}
 
 	/**
-	 * ④ STEP1 사전 인터뷰 대화. 인터뷰 이력이 없으면 seed 질문 자동 생성(부트스트랩), 있으면
-	 * 요청의 stepOrder 위치에 답변 저장 후 다음 질문 생성. body 를 비운 채 호출하면 부트스트랩만
-	 * 수행된다.
+	 * ④ STEP1 사전 인터뷰. 인터뷰 이력이 없으면 문항별 사전 질문 5개를 한 번에 생성해 전부 반환하고,
+	 * 있으면 요청에 담긴 답변들을 저장한다. body 를 비운 채 호출하면 질문 생성(또는 현재 상태 조회)만
+	 * 수행된다. 응답에는 항상 질문 전체와 답변 상태가 함께 담긴다.
 	 */
-	@Operation(summary = "④ STEP1 사전 인터뷰 대화",
-			description = "인터뷰 이력이 없으면 seed 질문 자동 생성(부트스트랩: body 비워서 호출), "
-					+ "있으면 답변 저장 후 다음 질문 생성. LLM = Haiku 사용, 최대 5턴.")
+	@Operation(summary = "④ STEP1 사전 인터뷰 (질문 일괄 생성 / 답변 저장)",
+			description = """
+					문항(카테고리)당 사전 질문 5개를 한 번에 생성하고, 답변을 저장한다.
+					인터뷰 시작이든 답변 저장이든 **응답 형태는 항상 동일**하다. 질문 전체와 현재 답변
+					상태가 함께 내려오므로 응답 하나로 화면을 다시 그리면 된다.
+
+					**호출 방법**
+					- 인터뷰 시작: body 없이(또는 answers=null) 호출 → 질문 5개를 생성해 전부 반환.
+					  이 호출만 LLM(Haiku)을 타므로 느리다. 이미 질문이 있으면 재생성하지 않고
+					  현재 상태를 반환하므로 여러 번 호출해도 안전하다.
+					- 답변 저장: answers 배열에 담아 호출 → LLM 호출 없음.
+					  부분 제출 가능(1건씩 자동저장 OK), 같은 stepOrder 재제출 시 덮어쓴다(수정 지원).
+					  answerText 가 비어 있는 항목은 건너뛰므로 기존 답변이 지워지지 않는다.
+
+					**STEP2 진입 판단**
+					- canGenerateDraft=true (답변 1건 이상) → ⑤ DRAFT 호출 가능.
+					  5개를 다 채우지 않아도 넘어갈 수 있다.
+					- isInterviewComplete=true → 5개 전부 답변 완료.
+
+					**주의**: totalCount 는 보통 5지만 LLM 응답에 따라 더 적을 수 있다.
+					화면은 questions 배열 길이 기준으로 그릴 것.
+
+					**에러**
+					- 400 : stepOrder 누락 / 존재하지 않는 stepOrder / 한 요청 내 stepOrder 중복
+					- 404 : 지원서 또는 문항 없음 (타인 소유 포함)
+					- 503 : LLM 이 질문을 하나도 생성하지 못함. 재시도 안내 필요
+					""")
 	@PostMapping("/{applicationId}/questions/{questionId}/interview")
 	public ApiResponse<InterviewAdvanceResponse> advanceInterview(
 			@AuthenticationPrincipal String userId,
@@ -106,7 +130,7 @@ public class ApplicationController {
 			@RequestBody(required = false) InterviewAnswerRequest request) {
 		InterviewAnswerRequest safeRequest = request != null
 				? request
-				: new InterviewAnswerRequest(null, null);
+				: new InterviewAnswerRequest(null);
 		return ApiResponse.ok(
 				interviewService.advance(UUID.fromString(userId), applicationId, questionId, safeRequest));
 	}

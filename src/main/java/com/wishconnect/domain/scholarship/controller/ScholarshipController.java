@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.dto.*;
+import com.wishconnect.domain.scholarship.service.ScholarshipCalendarService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
 import com.wishconnect.domain.scholarship.service.ScholarshipRecommendationService;
 import com.wishconnect.domain.scholarship.service.ScholarshipService;
@@ -27,6 +28,7 @@ public class ScholarshipController {
 
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
 	private final ScholarshipDetailService scholarshipDetailService;
+	private final ScholarshipCalendarService scholarshipCalendarService;
 	private final ScholarshipService scholarshipService;
 	
 	/**
@@ -47,6 +49,22 @@ public class ScholarshipController {
 	@GetMapping("/home-summary")
 	public ApiResponse<HomeSummaryResponse> getHomeSummary(@AuthenticationPrincipal String userId) {
 		return ApiResponse.ok(scholarshipRecommendationService.getHomeSummary(UUID.fromString(userId)));
+	}
+
+	/**
+	 * 홈 - 이번 달 일정 달력. 모집 시작·마감을 각각 이벤트로 준다.
+	 *
+	 * <p>year·month 를 생략하면 이번 달. scope 는 MATCHED(기본, 지원 가능) / SCRAPPED / ALL.
+	 * 전체를 다 띄우면 달력이 빽빽해 쓸모없어서 기본은 지원 가능한 것만 준다.
+	 */
+	@GetMapping("/calendar")
+	public ApiResponse<ScholarshipCalendarResponse> getCalendar(
+			@AuthenticationPrincipal String userId,
+			@RequestParam(required = false) Integer year,
+			@RequestParam(required = false) Integer month,
+			@RequestParam(required = false) CalendarScope scope) {
+		return ApiResponse.ok(
+				scholarshipCalendarService.getCalendar(UUID.fromString(userId), year, month, scope));
 	}
 
 	/** 장학금 상세(요약 테이블 + 선발 일정 타임라인 + 제출 서류 + 매칭 사유). */
