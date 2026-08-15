@@ -92,6 +92,7 @@ llm:
   anthropic:
     interview-model: claude-haiku-4-5   # STEP1 사전 인터뷰 세부 질문 생성 (빠르고 저렴)
     draft-model: claude-sonnet-5        # STEP2 자기소개서 초안 생성 (문체·품질 중요)
+    summary-model: claude-haiku-4-5
     max-tokens: 4096
 
 # 장학금 공공데이터 동기화 배치 (API 키 등 나머지 scholarship.api.* 는 환경별 주입)

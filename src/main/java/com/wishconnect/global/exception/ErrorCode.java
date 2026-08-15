@@ -104,7 +104,10 @@ public enum ErrorCode {
 	//검색
 	INVALID_SORT(HttpStatus.BAD_REQUEST,"지원하지 않는 정렬 기준입니다."),
 	INVALID_CATEGORY(HttpStatus.BAD_REQUEST, "지원하지 않는 장학금 분류입니다."),
-	LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+	LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
+
+	//인사이트
+	INVALID_INSIGHT_INPUT(HttpStatus.BAD_REQUEST, "지원하지 않는 카테고리/출처입니다.");
 
 
 	private final HttpStatus status;
