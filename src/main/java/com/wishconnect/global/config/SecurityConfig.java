@@ -55,6 +55,7 @@ public class SecurityConfig {
 	 * 어노테이션을 빠뜨려도 경로 규칙으로 걸리도록 한다.
 	 */
 	private static final String[] ADMIN_ENDPOINTS = {
+			"/api/v1/admin/**",
 			"/api/v1/scholarships/admin/**",
 			"/api/v1/scholarships/sync",
 			"/api/v1/scholarships/collect/**",

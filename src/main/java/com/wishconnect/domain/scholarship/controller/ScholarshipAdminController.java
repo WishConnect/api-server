@@ -19,6 +19,8 @@ import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
+import com.wishconnect.global.audit.AdminAction;
+import com.wishconnect.global.audit.AdminAuditLogService;
 import com.wishconnect.global.common.ApiResponse;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -28,6 +30,7 @@ import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +40,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -72,6 +76,7 @@ public class ScholarshipAdminController {
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
 	private final ScholarshipExcelService scholarshipExcelService;
+	private final AdminAuditLogService adminAuditLogService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -110,16 +115,28 @@ public class ScholarshipAdminController {
 					+ "기본은 검증만 하는 dryRun 이며, dryRun=false 로 보내야 실제로 반영된다. (ADMIN 전용)")
 	@PostMapping("/admin/excel")
 	public ApiResponse<ExcelImportResult> importExcel(
+			@AuthenticationPrincipal String actorId,
 			@RequestPart("file") MultipartFile file,
 			@RequestParam(defaultValue = "true") boolean dryRun) {
-		return ApiResponse.ok(scholarshipExcelService.importFrom(file, dryRun));
+		ExcelImportResult result = scholarshipExcelService.importFrom(file, dryRun);
+		// dryRun 은 DB 를 건드리지 않으므로 남기지 않는다. 실제 반영만 기록한다.
+		if (!dryRun) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.EXCEL_IMPORT, null, null,
+					"반영 %d행, 오류 %d행, 파일=%s"
+							.formatted(result.appliedRows(), result.errorCount(), file.getOriginalFilename()));
+		}
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "공공데이터 수동 동기화",
 			description = "한국장학재단 학자금지원정보를 수동으로 동기화한다. (ADMIN 전용)")
 	@PostMapping("/sync")
-	public ApiResponse<ScholarshipSyncResponse> syncScholarships() {
-		return ApiResponse.ok(scholarshipSyncService.sync());
+	public ApiResponse<ScholarshipSyncResponse> syncScholarships(@AuthenticationPrincipal String actorId) {
+		ScholarshipSyncResponse result = scholarshipSyncService.sync();
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SYNC_TRIGGER, null, null,
+				"수집 %d건, 저장 %d건, 실패 %d건"
+						.formatted(result.fetchedCount(), result.savedCount(), result.failedCount()));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "대학 장학공지 크롤링 수집",
@@ -128,19 +145,27 @@ public class ScholarshipAdminController {
 					+ " 전용 수집기로 처리하며, 양쪽에서 코드를 찾지 못하면 400. (ADMIN 전용)")
 	@PostMapping("/collect/univ/{code}")
 	public ApiResponse<CollectResultResponse> collectUniv(
+			@AuthenticationPrincipal String actorId,
 			@PathVariable String code,
 			@RequestParam(defaultValue = "1") int pages) {
 		// 설정 기반 수집기를 먼저 보고, 없으면 대학별 전용 수집기로 넘긴다.
-		return ApiResponse.ok(univNoticeCollector.collectByCode(code, pages)
+		CollectResultResponse result = univNoticeCollector.collectByCode(code, pages)
 				.or(() -> dedicatedNoticeCollectors.collectByCode(code, pages))
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT)));
+				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.COLLECT_TRIGGER, null, null,
+				"%s 수집 %d건, 저장 %d건".formatted(code, result.fetchedCount(), result.savedCount()));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "LLM 조건 구조화 추출",
 			description = "수집된 공고 본문에서 지원 자격조건을 구조화한다. sync 후 실행 권장. (ADMIN 전용)")
 	@PostMapping("/conditions/extract")
-	public ApiResponse<ConditionExtractionResponse> extractConditions() {
-		return ApiResponse.ok(conditionExtractionService.extract());
+	public ApiResponse<ConditionExtractionResponse> extractConditions(
+			@AuthenticationPrincipal String actorId) {
+		ConditionExtractionResponse result = conditionExtractionService.extract();
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_EXTRACT_TRIGGER,
+				null, null, "대상 %d건, 추출 %d건".formatted(result.targetCount(), result.extractedCount()));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "장학금 수기 등록",
@@ -148,24 +173,36 @@ public class ScholarshipAdminController {
 					+ "동기화 배치가 덮어쓰지 않도록 별도 출처(MANUAL)로 저장된다. (ADMIN 전용)")
 	@PostMapping("/manual")
 	public ResponseEntity<ApiResponse<ScholarshipManualResponse>> createManual(
+			@AuthenticationPrincipal String actorId,
 			@Valid @RequestBody ScholarshipManualRequest.Create request) {
-		return ResponseEntity.status(201).body(ApiResponse.ok(scholarshipManualService.create(request)));
+		ScholarshipManualResponse result = scholarshipManualService.create(request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(), result.title());
+		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
 	@Operation(summary = "장학금 직접 수정",
 			description = "보낸 필드만 반영한다(부분 수정). 수집분·수기분 모두 대상. (ADMIN 전용)")
 	@PatchMapping("/manual/{scholarshipId}")
 	public ApiResponse<ScholarshipManualResponse> updateManual(
+			@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId,
 			@Valid @RequestBody ScholarshipManualRequest request) {
-		return ApiResponse.ok(scholarshipManualService.update(scholarshipId, request));
+		ScholarshipManualResponse result = scholarshipManualService.update(scholarshipId, request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
+				"SCHOLARSHIP", scholarshipId, result.title());
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "장학금 내리기",
 			description = "오등록으로 확인된 장학금을 목록에서 내린다(soft delete). (ADMIN 전용)")
 	@DeleteMapping("/manual/{scholarshipId}")
-	public ApiResponse<Void> deleteManual(@PathVariable Long scholarshipId) {
+	public ApiResponse<Void> deleteManual(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId) {
 		scholarshipManualService.delete(scholarshipId);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
+				"SCHOLARSHIP", scholarshipId, null);
 		return ApiResponse.ok();
 	}
 
@@ -182,8 +219,12 @@ public class ScholarshipAdminController {
 			description = "신고 상태만 바꾼다. 데이터 수정은 /manual/{id} 로 한다. (ADMIN 전용)")
 	@PatchMapping("/reports/{reportId}")
 	public ApiResponse<ScholarshipReportResponse> resolveReport(
+			@AuthenticationPrincipal String actorId,
 			@PathVariable Long reportId,
 			@Valid @RequestBody ReportResolveRequest request) {
-		return ApiResponse.ok(scholarshipReportService.resolve(reportId, request));
+		ScholarshipReportResponse result = scholarshipReportService.resolve(reportId, request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.REPORT_RESOLVE,
+				"REPORT", reportId, String.valueOf(request.status()));
+		return ApiResponse.ok(result);
 	}
 }
