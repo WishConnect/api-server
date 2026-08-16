@@ -3,8 +3,10 @@ package com.wishconnect.domain.scholarship.service;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSearchResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipTag;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipTagRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -22,9 +24,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +37,7 @@ public class ScholarshipService {
 
     private final ScholarshipRepository scholarshipRepository;
     private final ScrapRepository scrapRepository;
+    private final ScholarshipTagRepository scholarshipTagRepository;
 
     public ScholarshipSearchResponse search(
             UUID userId, String keyword, String category,
@@ -73,10 +78,13 @@ public class ScholarshipService {
         // 4.유저의 스크랩 여부 확인
         Set<Long> scrappedInPage = getScrapped(userId,scholarshipPage.getContent());
 
+        // 4-1. 태그는 페이지 단위로 한 번에 가져온다(건별 조회하면 N+1).
+        Map<Long, List<String>> tagsByScholarshipId = getTags(scholarshipPage.getContent());
+
         // 5.Entity -> DTO
         List<ScholarshipSummaryResponse> results = scholarshipPage.getContent()
                 .stream()
-                .map(s -> toSummaryResponse(s, scrappedInPage))
+                .map(s -> toSummaryResponse(s, scrappedInPage, tagsByScholarshipId))
                 .toList();
 
         // 6. 페이지네이션 정보 구성
@@ -109,7 +117,8 @@ public class ScholarshipService {
         );
     }
 
-    private ScholarshipSummaryResponse toSummaryResponse(Scholarship scholarship, Set<Long> scrappedInPage) {
+    private ScholarshipSummaryResponse toSummaryResponse(Scholarship scholarship, Set<Long> scrappedInPage,
+            Map<Long, List<String>> tagsByScholarshipId) {
 
         int dDay = 0;
         if(scholarship.getApplicationEndAt() != null ){
@@ -149,10 +158,20 @@ public class ScholarshipService {
                 deadline,                                         // deadline
                 dDay,                                             // dDay
                 recruitStatus,                                    // recruitStatus
-                List.of(),                                        // tags (TODO: 태그 연동)
+                tagsByScholarshipId.getOrDefault(scholarship.getId(), List.of()),  // tags
                 scrappedInPage.contains(scholarship.getId())         // isScrapped
         );
 
+    }
+
+    /** 페이지 안 장학금들의 태그를 한 번에 조회해 id 별로 묶는다. */
+    private Map<Long, List<String>> getTags(List<Scholarship> scholarships) {
+        if (scholarships.isEmpty()) {
+            return Map.of();
+        }
+        return scholarshipTagRepository.findByScholarshipInOrderByDisplayOrderAsc(scholarships).stream()
+                .collect(Collectors.groupingBy(tag -> tag.getScholarship().getId(),
+                        Collectors.mapping(ScholarshipTag::getName, Collectors.toList())));
     }
 
     private String formatApplicationPeriod(LocalDateTime start, LocalDateTime end) {

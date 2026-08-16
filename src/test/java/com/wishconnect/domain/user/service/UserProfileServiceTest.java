@@ -80,7 +80,7 @@ class UserProfileServiceTest {
 				userInterestRepository
 		);
 		userId = UUID.randomUUID();
-		user = User.createLocal("user@example.com", "encoded", "홍길동", "010-1234-5678");
+		user = User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010-1234-5678");
 		ReflectionTestUtils.setField(user, "id", userId);
 		profile = UserProfile.createFor(user);
 

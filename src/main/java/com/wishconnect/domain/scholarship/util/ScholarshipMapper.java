@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
+import com.wishconnect.domain.scholarship.entity.ScholarshipTag;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -135,6 +136,27 @@ public class ScholarshipMapper {
 				.build());
 		}
 		return documents;
+	}
+
+	/**
+	 * 원문 분류 필드에서 태그를 만든다.
+	 *
+	 * <p>지금까지 응답의 {@code tags} 는 전 건 빈 배열이었는데, 원문에 분류 정보가 있는데도
+	 * 저장·노출을 안 하고 있었을 뿐이다. 어휘 기반 추출은
+	 * {@link ScholarshipTagExtractor} 참고(다중 선택 값이 구분자 없이 붙어 온다).
+	 */
+	public List<ScholarshipTag> toTags(Scholarship scholarship, JsonNode item) {
+		List<String> names = ScholarshipTagExtractor.extract(item, this::readText);
+		List<ScholarshipTag> tags = new ArrayList<>();
+		int displayOrder = 0;
+		for (String name : names) {
+			tags.add(ScholarshipTag.builder()
+				.scholarship(scholarship)
+				.name(limit(name, 50))
+				.displayOrder(displayOrder++)
+				.build());
+		}
+		return tags;
 	}
 
 	public List<ScholarshipCondition> toConditions(Scholarship scholarship, JsonNode item) {
