@@ -36,7 +36,9 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
 | `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
 | `V20260815_01__fix_scholarship_type_check.sql` | `scholarship.scholarship_type` CHECK 제약에 `WORK_STUDY` 추가 | ✅ 2026-08-16 확인 |
-| `V20260816_01__create_admin_audit_log.sql` | `admin_audit_log` 테이블 추가 (관리자 쓰기 작업 기록) | ⬜ 미적용 |
+| `V20260816_01__create_admin_audit_log.sql` | `admin_audit_log` 테이블 추가 (관리자 쓰기 작업 기록) | ✅ 2026-08-16 |
+| `V20260816_02__scholarship_tag_and_document_url.sql` | `scholarship_tag` 테이블 + `scholarship_document.download_url` | ✅ 2026-08-16 |
+| `V20260816_03__users_login_id_birth_date_region.sql` | `users.login_id`, `user_profile.birth_date`, 지역 마스터 17건 시드 | ✅ 2026-08-16 |
 
 > `V20260815_01` 은 2026-08-16 점검에서 **운영 제약에 `WORK_STUDY` 가 이미 들어 있음을 확인**했다.
 > (`pg_get_constraintdef` 로 `ARRAY['INTERNAL','EXTERNAL','WORK_STUDY']` 확인)

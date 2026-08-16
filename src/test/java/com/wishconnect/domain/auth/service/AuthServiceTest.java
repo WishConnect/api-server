@@ -36,6 +36,7 @@ import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserAgreementRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
+import java.time.LocalDate;
 import java.util.List;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -102,8 +103,8 @@ class AuthServiceTest {
 	class Signup {
 
 		private SignupRequest request(String password, List<AgreementItem> agreements) {
-			return new SignupRequest("user@example.com", password, "홍길동", "010-1234-5678",
-					2002, Gender.FEMALE, Nationality.DOMESTIC, "서울", agreements);
+			return new SignupRequest("user@example.com", "junho0414", password, "홍길동", "010-1234-5678",
+					LocalDate.of(2002, 4, 14), Gender.FEMALE, Nationality.DOMESTIC, "서울", agreements);
 		}
 
 		@Test
@@ -193,7 +194,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("성공 시 JWT 와 사용자 정보를 반환한다")
 		void success() {
-			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
+			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
 			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(true);
 			stubTokenIssue();
@@ -218,7 +219,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("비밀번호 불일치면 LOGIN_FAILED")
 		void wrongPassword() {
-			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
+			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
 			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(false);
 
@@ -460,7 +461,7 @@ class AuthServiceTest {
 			given(jwtProvider.validateToken("refresh-token")).willReturn(true);
 			given(jwtProvider.getUserId("refresh-token")).willReturn(userId);
 			given(refreshTokenService.find(userId)).willReturn(Optional.of("refresh-token"));
-			User user = userWithId(User.createLocal("user@example.com", "encoded", "홍길동", "010"));
+			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
 			given(userRepository.findById(userId)).willReturn(Optional.of(user));
 			stubTokenIssue();
 

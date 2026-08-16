@@ -64,13 +64,23 @@ public class User extends BaseEntity {
 	@Column(nullable = false, length = 20)
 	private UserRole role;
 
+	/**
+	 * 로그인 아이디. 회원가입 화면이 이메일과 별개로 아이디를 받도록 바뀌었다.
+	 *
+	 * <p>소셜 가입은 아이디를 입력받지 않으므로 null 이다. Postgres 의 UNIQUE 는 NULL 을
+	 * 서로 다른 값으로 보기 때문에, 소셜 계정이 여러 개여도 제약에 걸리지 않는다.
+	 */
+	@Column(name = "login_id", unique = true, length = 30)
+	private String loginId;
+
 	@Column
 	private LocalDateTime deletedAt;
 
 	@Builder
-	private User(String email, String password, String name, String phone,
+	private User(String email, String loginId, String password, String name, String phone,
 			LoginType loginType, Long kakaoId, String providerId, boolean onboardingCompleted) {
 		this.email = email;
+		this.loginId = loginId;
 		this.password = password;
 		this.name = name;
 		this.phone = phone;
@@ -82,9 +92,11 @@ public class User extends BaseEntity {
 	}
 
 	/** 기본(이메일/비밀번호) 회원 생성. password 는 해시된 값이어야 한다. */
-	public static User createLocal(String email, String encodedPassword, String name, String phone) {
+	public static User createLocal(String email, String loginId, String encodedPassword,
+			String name, String phone) {
 		return User.builder()
 				.email(email)
+				.loginId(loginId)
 				.password(encodedPassword)
 				.name(name)
 				.phone(phone)

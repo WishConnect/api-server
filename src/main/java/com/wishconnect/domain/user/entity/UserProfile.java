@@ -17,6 +17,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -52,8 +53,12 @@ public class UserProfile extends BaseEntity {
 	@JoinColumn(name = "region_id")
 	private Region region;
 
-	@Column(name = "birth_year", length = 4)
-	private String birthYear;
+	/**
+	 * 생년월일. 예전에는 출생년도(문자열 4자리)만 받았는데, 나이 제한이 "만 나이" 기준인
+	 * 장학금이 많아 연도만으로는 판정이 어긋난다. 회원가입 화면도 생년월일을 받도록 바뀌었다.
+	 */
+	@Column(name = "birth_date")
+	private LocalDate birthDate;
 
 	@Enumerated(EnumType.STRING)
 	@Column(length = 10)
@@ -104,8 +109,8 @@ public class UserProfile extends BaseEntity {
 		return profile;
 	}
 
-	public void updateBasic(String birthYear, Gender gender, Nationality nationality, Region region) {
-		this.birthYear = birthYear;
+	public void updateBasic(LocalDate birthDate, Gender gender, Nationality nationality, Region region) {
+		this.birthDate = birthDate;
 		this.gender = gender;
 		this.nationality = nationality;
 		this.region = region;

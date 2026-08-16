@@ -42,16 +42,33 @@ public class ScholarshipDocument extends BaseCreatedEntity {
 	@Column(name = "display_order", nullable = false)
 	private int displayOrder;
 
+	/**
+	 * 서류 양식 다운로드 링크.
+	 *
+	 * <p>공공데이터 원문에는 <b>파일 URL 이 없다</b>(제출서류가 텍스트로만 온다). 그래서 이 값은
+	 * 크롤링 출처의 첨부파일이나 관리자 보완 입력으로 채운다. 응답 DTO
+	 * {@code RequiredDocument(name, downloadUrl)} 는 진작 있었는데 컬럼이 없어 늘 null 이었다.
+	 */
+	@Column(name = "download_url", length = 1000)
+	private String downloadUrl;
+
 	@Builder
 	private ScholarshipDocument(
 		Scholarship scholarship,
 		String name,
 		boolean essay,
-		int displayOrder
+		int displayOrder,
+		String downloadUrl
 	) {
 		this.scholarship = scholarship;
 		this.name = name;
 		this.essay = essay;
 		this.displayOrder = displayOrder;
+		this.downloadUrl = downloadUrl;
+	}
+
+	/** 관리자 보완 입력·크롤링 첨부 연결용. */
+	public void updateDownloadUrl(String downloadUrl) {
+		this.downloadUrl = downloadUrl;
 	}
 }

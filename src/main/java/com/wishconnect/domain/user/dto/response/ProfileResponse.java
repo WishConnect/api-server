@@ -1,5 +1,6 @@
 package com.wishconnect.domain.user.dto.response;
 
+import java.time.LocalDate;
 import com.wishconnect.domain.common.entity.MajorCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
@@ -14,7 +15,7 @@ public record ProfileResponse(
 		@Schema(description = "이메일", example = "wishconnect@gmail.com")
 		String email,
 		@Schema(description = "출생년도", example = "2004")
-		String birthYear,
+		LocalDate birthDate,
 		@Schema(description = "연락처", example = "010-0000-0000")
 		String phone,
 		@Schema(description = "성별", example = "FEMALE")

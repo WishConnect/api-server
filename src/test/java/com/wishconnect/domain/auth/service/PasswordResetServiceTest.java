@@ -60,7 +60,7 @@ class PasswordResetServiceTest {
 	}
 
 	private static User localUser() {
-		User user = User.createLocal(EMAIL, "oldEncoded", "홍길동", "010-1234-5678");
+		User user = User.createLocal(EMAIL, "user01", "oldEncoded", "홍길동", "010-1234-5678");
 		ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
 		return user;
 	}

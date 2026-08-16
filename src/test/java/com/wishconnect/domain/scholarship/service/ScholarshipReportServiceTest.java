@@ -52,7 +52,7 @@ class ScholarshipReportServiceTest {
 	}
 
 	private User user() {
-		return User.createLocal("u@example.com", "encoded", "홍길동", "010-1111-2222");
+		return User.createLocal("u@example.com", "user01", "encoded", "홍길동", "010-1111-2222");
 	}
 
 	@Test

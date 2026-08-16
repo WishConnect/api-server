@@ -1,10 +1,12 @@
 package com.wishconnect.domain.user.dto.request;
 
+import jakarta.validation.constraints.NotNull;
+import java.time.LocalDate;
 import jakarta.validation.constraints.NotBlank;
 
 public record ProfileBasicRequest(
 		@NotBlank String name,
-		@NotBlank String birthYear,
+		@NotNull LocalDate birthDate,
 		@NotBlank String phone,
 		@NotBlank String gender,
 		@NotBlank String nationality,

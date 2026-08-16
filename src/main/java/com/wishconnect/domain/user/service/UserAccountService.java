@@ -54,7 +54,7 @@ public class UserAccountService {
 				user.getId(),
 				user.getName(),
 				user.getEmail(),
-				profile.birthYear(),
+				profile.birthDate(),
 				profile.region(),
 				profile.profileCompletionRate(),
 				scrapRepository.countByUser_Id(userId),
