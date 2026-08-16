@@ -19,6 +19,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipTagRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -53,6 +54,9 @@ class ScholarshipDetailServiceTest {
 
 	@Mock
 	private ScrapRepository scrapRepository;
+
+	@Mock
+	private ScholarshipTagRepository scholarshipTagRepository;
 
 	@Mock
 	private ScholarshipRecommendationService scholarshipRecommendationService;

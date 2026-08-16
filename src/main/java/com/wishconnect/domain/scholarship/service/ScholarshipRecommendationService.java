@@ -261,7 +261,7 @@ public class ScholarshipRecommendationService {
 			return 0;
 		}
 		Object[] fields = {
-				profile.getSchool(), profile.getMajor(), profile.getRegion(), profile.getBirthYear(),
+				profile.getSchool(), profile.getMajor(), profile.getRegion(), profile.getBirthDate(),
 				profile.getGender(), profile.getEnrollmentStatus(), profile.getGrade(),
 				profile.getCumulativeGpa() != null ? profile.getCumulativeGpa() : profile.getSemesterGpa(),
 				profile.getIncomeLevel()

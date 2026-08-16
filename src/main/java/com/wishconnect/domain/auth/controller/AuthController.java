@@ -9,18 +9,22 @@ import com.wishconnect.domain.auth.dto.request.TokenRefreshRequest;
 import com.wishconnect.domain.auth.dto.response.KakaoLoginResponse;
 import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
+import com.wishconnect.domain.auth.dto.response.LoginIdCheckResponse;
 import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.service.AuthService;
 import com.wishconnect.global.common.ApiResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,6 +38,17 @@ public class AuthController {
 	private final AuthService authService;
 
 	/** 이메일 회원가입. 이메일 인증을 먼저 완료해야 하며, 필수 약관 4종에 모두 동의해야 한다. */
+	/**
+	 * 회원가입 화면의 아이디 "중복 확인" 버튼.
+	 *
+	 * <p>대소문자를 구분하지 않는다(Junho 와 junho 는 같은 아이디로 본다).
+	 * 형식이 어긋나면 400 이라 화면에서 안내 문구를 바로 띄울 수 있다.
+	 */
+	@GetMapping("/login-id/check")
+	public ApiResponse<LoginIdCheckResponse> checkLoginId(@RequestParam @NotBlank String loginId) {
+		return ApiResponse.ok(new LoginIdCheckResponse(authService.isLoginIdAvailable(loginId)));
+	}
+
 	@PostMapping("/signup")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {

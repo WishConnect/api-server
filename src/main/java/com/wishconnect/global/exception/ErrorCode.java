@@ -22,6 +22,9 @@ public enum ErrorCode {
 
 	// 회원가입 / 로그인
 	DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
+	DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
+	/** 영문 소문자·숫자·언더스코어 4~20자. 이메일과 헷갈리지 않도록 @ 와 점은 막는다. */
+	INVALID_LOGIN_ID_FORMAT(HttpStatus.BAD_REQUEST, "아이디는 영문 소문자·숫자·_ 4~20자여야 합니다."),
 	INVALID_PASSWORD_FORMAT(HttpStatus.BAD_REQUEST, "비밀번호 형식이 올바르지 않습니다."),
 	AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해주세요."),
 	/** 온보딩 STEP2 전공 계열. 대학알리미 대계열 6종만 허용한다. */

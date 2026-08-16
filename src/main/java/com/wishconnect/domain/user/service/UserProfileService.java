@@ -33,6 +33,7 @@ import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -75,7 +76,7 @@ public class UserProfileService {
 
 		user.updateBasicProfile(request.name().trim(), request.phone().trim());
 		profile.updateBasic(
-				parseBirthYear(request.birthYear()),
+				validateBirthDate(request.birthDate()),
 				parseEnum(Gender.class, request.gender()),
 				parseEnum(Nationality.class, request.nationality()),
 				region
@@ -156,7 +157,7 @@ public class UserProfileService {
 				user.getId(),
 				user.getName(),
 				user.getEmail(),
-				profile == null ? null : profile.getBirthYear(),
+				profile == null ? null : profile.getBirthDate(),
 				user.getPhone(),
 				profile == null || profile.getGender() == null ? null : profile.getGender().name(),
 				profile == null || profile.getNationality() == null ? null : profile.getNationality().name(),
@@ -311,12 +312,15 @@ public class UserProfileService {
 		};
 	}
 
-	private String parseBirthYear(String value) {
-		String normalized = normalizeRequired(value);
-		if (!normalized.matches("\\d{4}")) {
+	/**
+	 * 생년월일 검증. 미래 날짜와 비현실적으로 오래된 값만 막는다.
+	 * 대학생 서비스지만 나이 하한을 두지는 않는다 — 검정고시·만학도 등 예외가 실제로 있다.
+	 */
+	private LocalDate validateBirthDate(LocalDate value) {
+		if (value == null || value.isAfter(LocalDate.now()) || value.isBefore(LocalDate.of(1900, 1, 1))) {
 			throw new CustomException(ErrorCode.INVALID_INPUT);
 		}
-		return normalized;
+		return value;
 	}
 
 	private String normalizeRequired(String value) {
@@ -413,7 +417,7 @@ public class UserProfileService {
 		fields.add(user.getName());
 		fields.add(user.getPhone());
 		if (profile != null) {
-			fields.add(profile.getBirthYear());
+			fields.add(profile.getBirthDate());
 			fields.add(profile.getGender());
 			fields.add(profile.getNationality());
 			fields.add(profile.getRegion());

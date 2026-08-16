@@ -48,6 +48,10 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class AuthService {
 
+	/** 영문 소문자·숫자·언더스코어 4~20자. 이메일과 헷갈리지 않도록 @ 와 점은 막는다. */
+	private static final java.util.regex.Pattern LOGIN_ID_PATTERN =
+			java.util.regex.Pattern.compile("^[a-z0-9_]{4,20}$");
+
 	private static final String SOCIAL_EMAIL_FORMAT = "%s_%s@wishconnect.kr"; // prefix, providerId
 	/**
 	 * 소셜 로그인에서 이메일을 못 받았을 때 채워 넣던 자리표시자 주소의 도메인.
@@ -81,11 +85,15 @@ public class AuthService {
 		if (userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
+		String loginId = normalizeLoginId(request.loginId());
+		if (userRepository.existsByLoginId(loginId)) {
+			throw new CustomException(ErrorCode.DUPLICATE_LOGIN_ID);
+		}
 		validateRequiredAgreements(request.agreements());
 
 		String encodedPassword = passwordEncoder.encode(request.password());
 		User user = userRepository.save(
-				User.createLocal(request.email(), encodedPassword, request.name(), request.phone()));
+				User.createLocal(request.email(), loginId, encodedPassword, request.name(), request.phone()));
 		saveProfile(user, request);
 		saveAgreements(user, request.agreements());
 		emailVerificationService.clearVerified(request.email());
@@ -254,13 +262,34 @@ public class AuthService {
 		UserProfile profile = UserProfile.builder()
 				.user(user)
 				.region(region)
-				.birthYear(request.birthYear() == null ? null : String.valueOf(request.birthYear()))
+				.birthDate(request.birthDate())
 				.gender(request.gender())
 				.nationality(request.nationality())
 				.onboardingStep("STEP_1")
 				.isOnboardingCompleted(false)
 				.build();
 		userProfileRepository.save(profile);
+	}
+
+	/**
+	 * 로그인 아이디 정규화·검증. 대소문자 구분으로 생기는 혼동(Junho vs junho)을 막으려고
+	 * 소문자로 낮춰 저장한다. 그래서 중복 검사도 같은 기준으로 걸린다.
+	 */
+	private String normalizeLoginId(String value) {
+		if (!StringUtils.hasText(value)) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+		String normalized = value.trim().toLowerCase();
+		if (!LOGIN_ID_PATTERN.matcher(normalized).matches()) {
+			throw new CustomException(ErrorCode.INVALID_LOGIN_ID_FORMAT);
+		}
+		return normalized;
+	}
+
+	/** 회원가입 화면의 아이디 "중복 확인" 버튼. 사용 가능하면 true. */
+	@Transactional(readOnly = true)
+	public boolean isLoginIdAvailable(String loginId) {
+		return !userRepository.existsByLoginId(normalizeLoginId(loginId));
 	}
 
 	private String normalizeRegionName(String value) {
