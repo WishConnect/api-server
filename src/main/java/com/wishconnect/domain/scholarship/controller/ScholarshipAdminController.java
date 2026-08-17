@@ -6,6 +6,7 @@ import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
+import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
@@ -15,6 +16,7 @@ import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
+import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
@@ -76,6 +78,7 @@ public class ScholarshipAdminController {
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
 	private final ScholarshipExcelService scholarshipExcelService;
+	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
 	private final AdminAuditLogService adminAuditLogService;
 
 	@Operation(summary = "데이터 현황 요약",
@@ -154,6 +157,22 @@ public class ScholarshipAdminController {
 				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.COLLECT_TRIGGER, null, null,
 				"%s 수집 %d건, 저장 %d건".formatted(code, result.fetchedCount(), result.savedCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "상세페이지·첨부·포스터 자동 보완",
+			description = "공공데이터가 주지 않는 상세 URL·제출서류 첨부·포스터를 검색+크롤링으로 채운다. "
+					+ "신뢰도가 낮으면 반영하지 않고 건너뛴 목록으로 돌려준다. 외부 사이트를 호출하므로 "
+					+ "limit 을 크게 주지 말 것. (ADMIN 전용)")
+	@PostMapping("/enrich")
+	public ApiResponse<EnrichmentResult> enrich(
+			@AuthenticationPrincipal String actorId,
+			@RequestParam(defaultValue = "20") int limit) {
+		EnrichmentResult result = scholarshipEnrichmentService.enrich(limit);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.ENRICH_TRIGGER, null, null,
+				"대상 %d건, 상세URL %d건, 이미지 %d건, 첨부 %d건, 건너뜀 %d건".formatted(
+						result.targetCount(), result.detailUrlFound(), result.imageSaved(),
+						result.documentLinked(), result.skippedCount()));
 		return ApiResponse.ok(result);
 	}
 

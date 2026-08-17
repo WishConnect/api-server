@@ -131,6 +131,23 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	List<Scholarship> findScheduledBetween(@Param("from") LocalDateTime from,
 										   @Param("to") LocalDateTime to);
 
+	/**
+	 * 자동 보완 대상: 상세 URL 이 아직 없는 활성 공고.
+	 *
+	 * <p>이미 시도한 건은 재시도 주기가 지나야 다시 본다. 안 그러면 매 배치가 "못 찾은 건" 만
+	 * 계속 붙잡아 검색 API 쿼터를 태운다. 마감 임박순으로 훑어 사용자가 볼 확률이 높은 것부터 채운다.
+	 */
+	@Query("""
+			select s from Scholarship s
+			where s.active = true
+			  and s.deletedAt is null
+			  and (s.detailUrl is null or s.detailUrl = '')
+			  and (s.enrichedAt is null or s.enrichedAt < :retryBefore)
+			order by s.applicationEndAt asc nulls last
+			""")
+	List<Scholarship> findEnrichmentTargets(@Param("retryBefore") LocalDateTime retryBefore,
+											Pageable pageable);
+
 	// --- 관리자 화면 집계 -------------------------------------------------
 	// 소프트 삭제분은 품질 지표에서 뺀다(이미 목록에서 내려간 공고라 고칠 대상이 아니다).
 
