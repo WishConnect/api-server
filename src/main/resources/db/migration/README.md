@@ -47,10 +47,10 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260817_04__user_family_type_interest_to_profile_fk.sql` | `user_family_type`·`user_interest` 의 `user_id` 를 users(uuid) → user_profile(bigint) 참조로 전환 | ✅ 2026-08-17 |
 | `V20260818_01__create_scholarship_merge_candidate.sql` | `scholarship_merge_candidate` 테이블 추가 (중복 병합 승인 큐) | ✅ 2026-08-17 |
 | `V20260818_02__add_merge_admin_actions.sql` | `admin_audit_log.action` CHECK 에 병합 액션 3개 추가 | ✅ 2026-08-17 |
-| `V20260818_03__create_notice_parse_log.sql` | `notice_parse_log` 테이블 추가 (LLM 파싱 이력·정확도 측정) | ⬜ 미적용 |
-| `V20260818_04__condition_necessity_and_refs.sql` | 조건에 `necessity`(필수/우대) + `scholarship_condition_ref` 집합 참조 | ⬜ 미적용 |
-| `V20260818_05__financial_aid_type_preferred.sql` | `FINANCIAL_AID_TYPE` 조건을 `PREFERRED` 로 (지원 성격은 자격이 아니다) | ⬜ 미적용 |
-| `V20260818_06__create_scholarship_event.sql` | `scholarship_event` 테이블 추가 (추천 노출·클릭 기록) | ⬜ 미적용 |
+| `V20260818_03__create_notice_parse_log.sql` | `notice_parse_log` 테이블 추가 (LLM 파싱 이력·정확도 측정) | ✅ 2026-08-18 |
+| `V20260818_04__condition_necessity_and_refs.sql` | 조건에 `necessity`(필수/우대) + `scholarship_condition_ref` 집합 참조 | ✅ 2026-08-18 |
+| `V20260818_05__financial_aid_type_preferred.sql` | `FINANCIAL_AID_TYPE` 조건을 `PREFERRED` 로 (지원 성격은 자격이 아니다) | ✅ 2026-08-18 |
+| `V20260818_06__create_scholarship_event.sql` | `scholarship_event` 테이블 추가 (추천 노출·클릭 기록) | ✅ 2026-08-18 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서
