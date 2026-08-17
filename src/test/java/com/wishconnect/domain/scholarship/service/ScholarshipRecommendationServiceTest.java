@@ -9,6 +9,7 @@ import static org.mockito.Mockito.lenient;
 
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.insight.repository.InsightRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
@@ -21,8 +22,10 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserProfile;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
+import com.wishconnect.domain.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +60,14 @@ class ScholarshipRecommendationServiceTest {
 	/** 홈 요약의 "작성 중인 지원서" 집계용. 기본 스텁이 0 을 돌려주므로 별도 지정은 필요 없다. */
 	@Mock
 	private EssayRepository essayRepository;
+
+	/** 홈 요약의 "새로운 인사이트" 집계용. 위와 같은 이유로 기본값 0 을 그대로 쓴다. */
+	@Mock
+	private InsightRepository insightRepository;
+
+	/** 인사말 이름 조회용. 이름이 없어도 카드는 그려져야 해서 대부분 비워 둔다. */
+	@Mock
+	private UserRepository userRepository;
 
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
@@ -275,6 +286,32 @@ class ScholarshipRecommendationServiceTest {
 	}
 
 	@Test
+	@DisplayName("홈 요약: 인사말 이름과 새로운 인사이트 건수를 함께 준다")
+	void homeSummaryCarriesNameAndInsightCount() {
+		stubScholarships(null, List.of(), List.of());
+		given(userRepository.findById(USER_ID)).willReturn(Optional.of(
+				User.createLocal("u@example.com", "user01", "encoded", "김위시", "010-1111-2222")));
+		given(insightRepository.countByCreatedAtAfter(any())).willReturn(3L);
+
+		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
+
+		assertThat(summary.userName()).isEqualTo("김위시");
+		assertThat(summary.newInsightCount()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("홈 요약: 회원 정보를 못 찾아도 이름만 비우고 카드는 내려준다")
+	void homeSummaryToleratesMissingUser() {
+		stubScholarships(null, List.of(), List.of());
+		given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
+
+		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
+
+		assertThat(summary.userName()).isNull();
+		assertThat(summary.newMatchedCount()).isZero();
+	}
+
+	@Test
 	@DisplayName("OPEN 장학금이 없으면 빈 응답")
 	void emptyWhenNoOpenScholarships() {
 		stubScholarships(null, List.of(), List.of());
@@ -285,7 +322,7 @@ class ScholarshipRecommendationServiceTest {
 		assertThat(response.featured()).isEmpty();
 		assertThat(response.otherScholarships()).isEmpty();
 		assertThat(response.ineligibleScholarships()).isEmpty();
-		assertThat(summary).isEqualTo(new HomeSummaryResponse(0, 0, 0, false));
+		assertThat(summary).isEqualTo(new HomeSummaryResponse(null, 0, 0, 0, 0, false));
 	}
 
 	/**
