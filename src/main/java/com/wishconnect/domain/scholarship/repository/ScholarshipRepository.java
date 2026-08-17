@@ -102,6 +102,9 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	List<Scholarship> findOpenByApplicationEndAtBetween(@Param("start") LocalDateTime start,
 														@Param("end") LocalDateTime end);
 
+	/** 중복 탐지용: 삭제되지 않은 장학금을 최신순으로. 최근 수집분에 중복이 몰리므로 내림차순이다. */
+	List<Scholarship> findByDeletedAtIsNullOrderByIdDesc(Pageable pageable);
+
 	/** 배치용: 마감일이 지났는데 CLOSED가 아닌 공고를 일괄 마감 처리한다. 처리 건수 반환. */
 	@Modifying(clearAutomatically = true)
 	@Query("""
