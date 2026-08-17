@@ -114,9 +114,12 @@ jobs:
             # 3) 재시작
             sudo systemctl restart wishconnect
 
-            # 4) 헬스체크 (최대 ~60초 대기)
+            # 4) 헬스체크 (최대 ~180초 대기)
+            #    기동 시간이 기능이 늘면서 계속 길어졌다. 2026-08-17 실측 58초인데 한계가 60초라
+            #    멀쩡한 배포가 타임아웃으로 롤백됐다(run 32006812629). 여유를 3배로 둔다.
+            #    t3.small 2 vCPU 에서 컨텍스트 로딩만 17초, 전체 58초.
             echo "Health checking /actuator/health ..."
-            for i in $(seq 1 12); do
+            for i in $(seq 1 36); do
               if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
                 echo "✅ Deploy healthy"
                 exit 0
