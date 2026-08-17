@@ -3,7 +3,9 @@ package com.wishconnect.domain.archive.service;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.Scrap;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.entity.ScholarshipEventType;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -23,6 +25,8 @@ public class ScrapService {
 	private final ScrapRepository scrapRepository;
 	private final ScholarshipRepository scholarshipRepository;
 	private final UserRepository userRepository;
+	// 추천 품질 측정용 행동 기록. 저장 실패가 스크랩을 실패시키지는 않는다.
+	private final ScholarshipEventService scholarshipEventService;
 
 	@Transactional
 	public void scrap(UUID userId, Long scholarshipId) {
@@ -36,6 +40,7 @@ public class ScrapService {
 				.user(userRepository.getReferenceById(userId))
 				.scholarship(scholarship)
 				.build());
+		scholarshipEventService.record(userId, scholarshipId, ScholarshipEventType.SCRAP);
 	}
 
 	@Transactional

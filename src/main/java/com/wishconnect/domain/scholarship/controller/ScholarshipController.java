@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.controller;
 import com.wishconnect.domain.scholarship.dto.*;
 import com.wishconnect.domain.scholarship.service.ScholarshipCalendarService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
+import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
 import com.wishconnect.domain.scholarship.service.ScholarshipRecommendationService;
 import com.wishconnect.domain.scholarship.service.ScholarshipService;
 import com.wishconnect.global.common.ApiResponse;
@@ -10,7 +11,11 @@ import java.util.UUID;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,6 +35,27 @@ public class ScholarshipController {
 	private final ScholarshipDetailService scholarshipDetailService;
 	private final ScholarshipCalendarService scholarshipCalendarService;
 	private final ScholarshipService scholarshipService;
+	private final ScholarshipEventService scholarshipEventService;
+
+	/**
+	 * 추천 노출·클릭 기록.
+	 *
+	 * <p>지금은 추천이 맞는지 알 방법이 없다. 점수식을 바꿔도 좋아졌는지 나빠졌는지 말할 근거가
+	 * 없어 고치는 것마다 취향 논쟁이 된다. 노출 대비 클릭을 보려면 노출부터 남아야 한다.
+	 *
+	 * <p>화면 단위로 모아서 한 번에 보낸다(최대 100건). 카드마다 요청하면 목록 한 번에 수십 번이다.
+	 * 스크랩·작성 착수는 서버가 직접 남기므로 보낼 필요 없다.
+	 *
+	 * <p>기록 실패는 응답을 실패시키지 않는다. 저장된 건수를 돌려준다.
+	 */
+	@Operation(summary = "추천 노출·클릭 기록")
+	@PostMapping("/events")
+	public ApiResponse<Integer> recordEvents(
+			@AuthenticationPrincipal String userId,
+			@Valid @RequestBody ScholarshipEventRequest request) {
+		return ApiResponse.ok(scholarshipEventService.record(UUID.fromString(userId), request));
+	}
+
 	
 	/**
 	 * 큐레이팅 메인. 응답의 {@code viewMode} 가 세 화면 중 어느 것인지 알려준다.

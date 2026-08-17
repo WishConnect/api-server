@@ -11,6 +11,7 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.entity.Scrap;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
@@ -37,6 +38,10 @@ class ScrapServiceTest {
 
 	@Mock
 	private UserRepository userRepository;
+
+	/** 추천 품질 측정용 기록. 스크랩 동작과는 무관하므로 아무것도 스텁하지 않는다. */
+	@Mock
+	private ScholarshipEventService scholarshipEventService;
 
 	@InjectMocks
 	private ScrapService scrapService;
