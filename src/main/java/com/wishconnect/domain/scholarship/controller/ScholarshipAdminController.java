@@ -320,7 +320,7 @@ public class ScholarshipAdminController {
 	public ApiResponse<ConditionRefBackfillResponse> backfillConditionRefs(
 			@AuthenticationPrincipal String actorId,
 			@RequestParam(defaultValue = "200") int limit) {
-		ConditionRefBackfillResponse result = conditionRefBackfillService.backfill(Math.clamp(limit, 1, 1000));
+		ConditionRefBackfillResponse result = conditionRefBackfillService.backfill(Math.max(1, Math.min(limit, 1000)));
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
 				null, null, "대상 %d건, 채움 %d건, 참조 %d개"
 						.formatted(result.targetCount(), result.filledCount(), result.refCount()));
