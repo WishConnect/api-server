@@ -24,6 +24,7 @@ import java.util.List;
  * @param amount            장학 금액(원)
  * @param summary           한 문장 요약
  * @param documents         제출서류명 목록
+ * @param conditions        지원 자격조건 목록
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ParsedNotice(
@@ -36,10 +37,29 @@ public record ParsedNotice(
 		Integer selectionCount,
 		Long amount,
 		String summary,
-		List<String> documents
+		List<String> documents,
+		List<Condition> conditions
 ) {
+
+	/**
+	 * 자격조건 하나. {@code evidence} 는 기간과 같은 이유로 <b>본문 원문 인용</b>이어야 한다.
+	 *
+	 * <p>잘못된 조건은 추천에서 자격 있는 학생을 부당하게 탈락시킨다. 그래서 인용문이 본문에
+	 * 실제로 없으면 그 조건은 버린다. 인용문은 그대로 {@code valueString} 이 되어,
+	 * 이후 수치 구조화(ConditionExtractionService)의 입력이자 사람의 검증 자료로 남는다.
+	 *
+	 * @param type     {@code ConditionType} 이름
+	 * @param evidence 조건의 근거가 된 본문 문장 원문
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public record Condition(String type, String evidence) {
+	}
 
 	public List<String> safeDocuments() {
 		return documents == null ? List.of() : documents;
+	}
+
+	public List<Condition> safeConditions() {
+		return conditions == null ? List.of() : conditions;
 	}
 }

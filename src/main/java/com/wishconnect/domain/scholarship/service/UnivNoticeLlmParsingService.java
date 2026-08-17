@@ -11,7 +11,6 @@ import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
-import com.wishconnect.domain.scholarship.collector.NoticeConditionExtractor;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
@@ -157,7 +156,7 @@ public class UnivNoticeLlmParsingService {
 
 		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null));
 		raw.markParsed(scholarship);
-		storeConditions(scholarship, title + "\n" + bodyText);
+		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
 		storeDocuments(scholarship, notice.safeDocuments());
 
 		return new Outcome(ParseStatus.PARSED,
@@ -214,23 +213,29 @@ public class UnivNoticeLlmParsingService {
 	}
 
 	/**
-	 * 자격조건은 규칙 기반 추출기를 그대로 쓴다.
-	 * 조건은 LLM 없이도 정형 패턴이 잘 잡히고, 이후 ConditionExtractionService 가
-	 * 수치 구조화를 이어받는 흐름이 이미 있어 그 파이프라인을 유지하는 것이 낫다.
+	 * 자격조건을 저장한다. 유형 판별과 문장 선별은 LLM 이 하고, 검증은 파서가 끝낸 상태로 들어온다.
+	 *
+	 * <p>정규식 추출기는 미리 정한 패턴에 걸리는 문장만 잡아서, 대학 공지의 서술형 자격 요건
+	 * (예: "가계 곤란으로 학업 유지가 어려운 자")을 통째로 놓쳤다. 문맥 판별은 LLM 이 낫다.
+	 *
+	 * <p>수치 구조화(valueInt)는 여기서 하지 않는다. {@code autoExtracted=false} 로 두면
+	 * ConditionExtractionService 가 대상으로 집어가 기존 파이프라인이 그대로 이어진다.
 	 */
-	private void storeConditions(Scholarship scholarship, String fullText) {
-		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(fullText).stream()
-				.map(extracted -> ScholarshipCondition.builder()
+	private void storeConditions(Scholarship scholarship,
+			List<UnivNoticeLlmParser.ResolvedCondition> resolved) {
+		if (resolved.isEmpty()) {
+			return;
+		}
+		List<ScholarshipCondition> conditions = resolved.stream()
+				.map(condition -> ScholarshipCondition.builder()
 						.scholarship(scholarship)
-						.conditionType(extracted.type())
+						.conditionType(condition.type())
 						.operator(ConditionOperator.EQ)
-						.valueString(extracted.snippet())
+						.valueString(condition.snippet())
 						.autoExtracted(false)
 						.build())
 				.toList();
-		if (!conditions.isEmpty()) {
-			scholarshipConditionRepository.saveAll(conditions);
-		}
+		scholarshipConditionRepository.saveAll(conditions);
 	}
 
 	/** 제출서류는 LLM 이 뽑은 목록을 쓴다. 서류명은 문맥 이해가 필요해 정규식보다 LLM 이 낫다. */

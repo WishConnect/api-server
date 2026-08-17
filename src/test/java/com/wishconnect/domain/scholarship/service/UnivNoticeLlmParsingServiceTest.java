@@ -15,6 +15,9 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -177,6 +180,47 @@ class UnivNoticeLlmParsingServiceTest {
 		verify(scholarshipRepository, never()).save(any(Scholarship.class));
 		assertThat(result.items().get(0).beforePeriod()).isEqualTo("2026-09-01 ~ 2027-02-28");
 		assertThat(result.items().get(0).afterPeriod()).isEqualTo("2026-08-01 ~ 2026-08-14");
+	}
+
+	/*
+	조건을 정규식 추출기에서 LLM 으로 넘긴 뒤의 핵심 동작.
+	정규식은 "가계 곤란으로 학업 유지가 어려운 자" 같은 서술형 요건을 아예 못 잡았다.
+	 */
+	@Test
+	@DisplayName("LLM 이 뽑은 조건을 유형·원문 그대로 저장하고, 수치 추출 대기열에 남긴다")
+	void storesLlmExtractedConditions() {
+		String body = """
+				2026학년도 2학기 성적우수 장학생을 모집합니다.
+				지원자격 : 직전학기 평점평균 3.5 이상인 자, 가계 곤란으로 학업 유지가 어려운 자
+				신청기간 : 2026. 8. 1. ~ 2026. 8. 14.
+				""";
+		String response = """
+				{"title":"성적우수 장학","provider":"경희대학교","scholarshipType":"INTERNAL",
+				 "documents":[],
+				 "conditions":[
+				   {"type":"ACADEMIC_CRITERIA","evidence":"직전학기 평점평균 3.5 이상인 자"},
+				   {"type":"SPECIFIC_QUALIFICATION","evidence":"가계 곤란으로 학업 유지가 어려운 자"},
+				   {"type":"INCOME_CRITERIA","evidence":"소득 3분위 이하만 지원할 수 있습니다"}]}
+				""";
+		givenPendingTargets(List.of(raw(7L, html(body), null, ParseStatus.PENDING)));
+		given(llmClient.chat(any())).willReturn(response);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(scholarshipConditionRepository).saveAll(captor.capture());
+		List<ScholarshipCondition> saved = captor.getValue();
+
+		// 본문에 없는 소득 조건은 환각으로 보고 버린다
+		assertThat(saved).extracting(ScholarshipCondition::getConditionType)
+				.containsExactly(ConditionType.ACADEMIC_CRITERIA, ConditionType.SPECIFIC_QUALIFICATION);
+		assertThat(saved.get(0).getValueString()).isEqualTo("직전학기 평점평균 3.5 이상인 자");
+		assertThat(saved.get(0).getOperator()).isEqualTo(ConditionOperator.EQ);
+		// false 여야 ConditionExtractionService 가 수치 구조화 대상으로 집어간다
+		assertThat(saved.get(0).isAutoExtracted()).isFalse();
 	}
 
 	@Test
