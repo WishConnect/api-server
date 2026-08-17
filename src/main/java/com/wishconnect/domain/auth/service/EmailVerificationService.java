@@ -38,7 +38,7 @@ public class EmailVerificationService {
 
 	/** LOCAL 기준 가입 가능(중복 아님) 여부. */
 	public boolean isEmailAvailable(String email) {
-		return !userRepository.existsByEmailAndLoginType(email, LoginType.LOCAL);
+		return !userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(email, LoginType.LOCAL);
 	}
 
 	/** 6자리 코드 생성 → Redis 저장 → SES 발송. 반환값은 코드 유효시간(초). */

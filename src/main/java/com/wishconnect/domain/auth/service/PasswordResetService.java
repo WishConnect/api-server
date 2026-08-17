@@ -45,7 +45,7 @@ public class PasswordResetService {
 		redisTemplate.opsForValue()
 				.set(COOLDOWN_KEY + email, "1", Duration.ofSeconds(properties.cooldownSeconds()));
 
-		userRepository.findByEmailAndLoginType(email, LoginType.LOCAL).ifPresentOrElse(
+		userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(email, LoginType.LOCAL).ifPresentOrElse(
 				user -> {
 					String code = generateCode();
 					redisTemplate.opsForValue()
@@ -68,7 +68,7 @@ public class PasswordResetService {
 		if (!stored.equals(code)) {
 			throw new CustomException(ErrorCode.INVALID_VERIFICATION_CODE);
 		}
-		User user = userRepository.findByEmailAndLoginType(email, LoginType.LOCAL)
+		User user = userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(email, LoginType.LOCAL)
 				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_VERIFICATION_CODE));
 		if (!PasswordValidator.isValid(newPassword, email)) {
 			throw new CustomException(ErrorCode.INVALID_PASSWORD_FORMAT);

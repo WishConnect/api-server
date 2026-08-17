@@ -14,6 +14,7 @@ public enum ErrorCode {
 	INVALID_INPUT(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
 	UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
 	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
+	WITHDRAWN_USER(HttpStatus.UNAUTHORIZED, "탈퇴한 계정입니다. 다시 로그인해주세요."),
 	/** 매핑된 엔드포인트가 없는 경로. 리소스 하나가 없는 경우(~_NOT_FOUND)와 구분한다. */
 	ENDPOINT_NOT_FOUND(HttpStatus.NOT_FOUND, "요청하신 경로를 찾을 수 없습니다."),
 	/** 경로는 있으나 HTTP 메서드가 다른 경우(예: GET 전용 경로에 POST). */

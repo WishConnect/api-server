@@ -112,7 +112,7 @@ class AuthServiceTest {
 		void success() {
 			SignupRequest request = request("Abcd1234!", ALL_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
-			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(false);
+			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(false);
 			given(passwordEncoder.encode(request.password())).willReturn("encoded");
 			given(regionRepository.findByName("서울")).willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
@@ -158,12 +158,36 @@ class AuthServiceTest {
 		void duplicateEmail() {
 			SignupRequest request = request("Abcd1234!", ALL_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
-			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(true);
+			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(true);
 
 			assertThatThrownBy(() -> authService.signup(request))
 					.isInstanceOf(CustomException.class)
 					.extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_EMAIL);
 			verify(userRepository, never()).save(any());
+		}
+
+		/*
+		탈퇴 회원은 soft delete 로 행이 남아 있다. 중복 검사가 deletedAt 을 무시하면
+		탈퇴한 사람은 같은 이메일·아이디로 영영 재가입할 수 없다.
+		 */
+		@Test
+		@DisplayName("탈퇴 회원의 이메일·아이디는 중복으로 보지 않아 재가입할 수 있다")
+		void allowsRejoinAfterWithdrawal() {
+			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
+			// 탈퇴 행을 제외한 조회라 둘 다 "없음" 이 된다
+			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL))
+					.willReturn(false);
+			given(userRepository.existsByLoginIdAndDeletedAtIsNull("junho0414")).willReturn(false);
+			given(passwordEncoder.encode(request.password())).willReturn("encoded");
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			SignupResponse response = authService.signup(request);
+
+			assertThat(response.accessToken()).isEqualTo("access-token");
+			verify(userRepository).save(any(User.class));
 		}
 
 		@Test
@@ -176,7 +200,7 @@ class AuthServiceTest {
 					new AgreementItem(AgreementType.AGE_14, false));
 			SignupRequest request = request("Abcd1234!", missing);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
-			given(userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(false);
+			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(false);
 
 			assertThatThrownBy(() -> authService.signup(request))
 					.isInstanceOf(CustomException.class)
@@ -195,7 +219,7 @@ class AuthServiceTest {
 		@DisplayName("성공 시 JWT 와 사용자 정보를 반환한다")
 		void success() {
 			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
+			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(true);
 			stubTokenIssue();
 
@@ -209,7 +233,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("존재하지 않는 이메일이면 USER_NOT_FOUND")
 		void userNotFound() {
-			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.empty());
+			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.empty());
 
 			assertThatThrownBy(() -> authService.login(request))
 					.isInstanceOf(CustomException.class)
@@ -220,7 +244,7 @@ class AuthServiceTest {
 		@DisplayName("비밀번호 불일치면 LOGIN_FAILED")
 		void wrongPassword() {
 			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
+			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(false);
 
 			assertThatThrownBy(() -> authService.login(request))
@@ -245,7 +269,7 @@ class AuthServiceTest {
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(111L, "k@kakao.com", "카카오닉"));
 			User existing = userWithId(User.createKakao(111L, "k@kakao.com", "카카오닉"));
-			given(userRepository.findByKakaoId(111L)).willReturn(Optional.of(existing));
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(111L)).willReturn(Optional.of(existing));
 			stubTokenIssue();
 
 			KakaoLoginResponse response = authService.kakaoLogin("code", null);
@@ -262,7 +286,7 @@ class AuthServiceTest {
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(222L, "new@kakao.com", "신규닉"));
-			given(userRepository.findByKakaoId(222L)).willReturn(Optional.empty());
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(222L)).willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();
@@ -274,6 +298,29 @@ class AuthServiceTest {
 			verify(userRepository).save(any(User.class));
 		}
 
+		/*
+		소셜은 로그인이 곧 가입이라, 탈퇴 행을 그대로 집어와 LOGIN_FAILED 를 던지면
+		그 카카오 계정으로는 다시 들어올 방법이 아예 없어진다.
+		 */
+		@Test
+		@DisplayName("탈퇴한 카카오 회원이 다시 로그인하면 신규 가입으로 처리된다")
+		void rejoinAfterWithdrawal() {
+			given(kakaoApiClient.getToken("code", null))
+					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
+			given(kakaoApiClient.getUserInfo("kakao-access"))
+					.willReturn(kakaoUser(666L, "back@kakao.com", "돌아온닉"));
+			// 탈퇴 행은 조회에서 제외되므로 신규로 보인다
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(666L)).willReturn(Optional.empty());
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			KakaoLoginResponse response = authService.kakaoLogin("code", null);
+
+			assertThat(response.isNewUser()).isTrue();
+			verify(userRepository).save(any(User.class));
+		}
+
 		@Test
 		@DisplayName("이메일 미수신 시 자리표시자로 가입하지 않고 KAKAO_EMAIL_REQUIRED 로 막는다")
 		void rejectsSignupWithoutEmail() {
@@ -281,7 +328,7 @@ class AuthServiceTest {
 					.willReturn(new KakaoTokenResponse("kakao-access", "bearer", null, 3600, null));
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(333L, null, "닉네임"));
-			given(userRepository.findByKakaoId(333L)).willReturn(Optional.empty());
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(333L)).willReturn(Optional.empty());
 
 			assertThatThrownBy(() -> authService.kakaoLogin("code", null))
 					.isInstanceOf(CustomException.class)
@@ -297,7 +344,7 @@ class AuthServiceTest {
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(444L, "real@kakao.com", "닉네임"));
 			User existing = userWithId(User.createKakao(444L, "kakao_444@wishconnect.kr", "닉네임"));
-			given(userRepository.findByKakaoId(444L)).willReturn(Optional.of(existing));
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(444L)).willReturn(Optional.of(existing));
 			stubTokenIssue();
 
 			authService.kakaoLogin("code", null);
@@ -313,7 +360,7 @@ class AuthServiceTest {
 			given(kakaoApiClient.getUserInfo("kakao-access"))
 					.willReturn(kakaoUser(555L, "provider@kakao.com", "닉네임"));
 			User existing = userWithId(User.createKakao(555L, "mine@gmail.com", "닉네임"));
-			given(userRepository.findByKakaoId(555L)).willReturn(Optional.of(existing));
+			given(userRepository.findByKakaoIdAndDeletedAtIsNull(555L)).willReturn(Optional.of(existing));
 			stubTokenIssue();
 
 			authService.kakaoLogin("code", null);
@@ -345,7 +392,7 @@ class AuthServiceTest {
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-123", "g@google.com", "구글이름"));
 			User existing = userWithId(User.createSocial(LoginType.GOOGLE, "sub-123", "g@google.com", "구글이름"));
-			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-123"))
+			given(userRepository.findByLoginTypeAndProviderIdAndDeletedAtIsNull(LoginType.GOOGLE, "sub-123"))
 					.willReturn(Optional.of(existing));
 			stubTokenIssue();
 
@@ -362,7 +409,7 @@ class AuthServiceTest {
 			given(googleApiClient.getToken("code", null)).willReturn(token());
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-999", "new@google.com", "신규구글"));
-			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-999"))
+			given(userRepository.findByLoginTypeAndProviderIdAndDeletedAtIsNull(LoginType.GOOGLE, "sub-999"))
 					.willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
@@ -380,7 +427,7 @@ class AuthServiceTest {
 			given(googleApiClient.getToken("code", null)).willReturn(token());
 			given(googleApiClient.getUserInfo("g-access"))
 					.willReturn(new GoogleUserResponse("sub-777", null, "구글"));
-			given(userRepository.findByLoginTypeAndProviderId(LoginType.GOOGLE, "sub-777"))
+			given(userRepository.findByLoginTypeAndProviderIdAndDeletedAtIsNull(LoginType.GOOGLE, "sub-777"))
 					.willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
@@ -420,7 +467,7 @@ class AuthServiceTest {
 		void newUser() {
 			given(naverApiClient.getToken("code", "state")).willReturn(token());
 			given(naverApiClient.getUserInfo("n-access")).willReturn(naverUser("nid-1", "n@naver.com", "네이버이름"));
-			given(userRepository.findByLoginTypeAndProviderId(LoginType.NAVER, "nid-1"))
+			given(userRepository.findByLoginTypeAndProviderIdAndDeletedAtIsNull(LoginType.NAVER, "nid-1"))
 					.willReturn(Optional.empty());
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));

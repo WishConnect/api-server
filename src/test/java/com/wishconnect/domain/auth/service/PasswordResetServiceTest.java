@@ -69,7 +69,7 @@ class PasswordResetServiceTest {
 	@DisplayName("재설정 요청: LOCAL 가입자면 코드 발송하고 유효시간 반환")
 	void requestReset_existingUser() {
 		given(redisTemplate.hasKey(COOLDOWN_KEY)).willReturn(false);
-		given(userRepository.findByEmailAndLoginType(EMAIL, LoginType.LOCAL))
+		given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL))
 				.willReturn(Optional.of(localUser()));
 
 		long expiresIn = service.requestReset(EMAIL);
@@ -82,7 +82,7 @@ class PasswordResetServiceTest {
 	@DisplayName("재설정 요청: 미가입/소셜이면 발송 안 하지만 동일 응답(계정 열거 방지)")
 	void requestReset_noLocalUser() {
 		given(redisTemplate.hasKey(COOLDOWN_KEY)).willReturn(false);
-		given(userRepository.findByEmailAndLoginType(EMAIL, LoginType.LOCAL)).willReturn(Optional.empty());
+		given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL)).willReturn(Optional.empty());
 
 		long expiresIn = service.requestReset(EMAIL);
 
@@ -106,7 +106,7 @@ class PasswordResetServiceTest {
 	void resetPassword_success() {
 		User user = localUser();
 		given(valueOps.get(CODE_KEY)).willReturn("123456");
-		given(userRepository.findByEmailAndLoginType(EMAIL, LoginType.LOCAL)).willReturn(Optional.of(user));
+		given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL)).willReturn(Optional.of(user));
 		given(passwordEncoder.encode("NewPass1!")).willReturn("newEncoded");
 
 		service.resetPassword(EMAIL, "123456", "NewPass1!");
@@ -152,7 +152,7 @@ class PasswordResetServiceTest {
 	@DisplayName("재설정: 새 비밀번호 정책 위반 시 INVALID_PASSWORD_FORMAT")
 	void resetPassword_invalidNewPassword() {
 		given(valueOps.get(CODE_KEY)).willReturn("123456");
-		given(userRepository.findByEmailAndLoginType(EMAIL, LoginType.LOCAL)).willReturn(Optional.of(localUser()));
+		given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL)).willReturn(Optional.of(localUser()));
 
 		assertThatThrownBy(() -> service.resetPassword(EMAIL, "123456", "weak"))
 				.isInstanceOf(CustomException.class)

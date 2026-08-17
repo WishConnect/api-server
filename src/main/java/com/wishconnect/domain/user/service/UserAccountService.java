@@ -20,8 +20,10 @@ import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ import org.springframework.util.StringUtils;
 마이페이지의 내 정보 요약, 계정 보안 변경, 회원 탈퇴를 담당합니다.
 프로필 상세/추천 기준 수정은 기존 UserProfileService의 온보딩 API를 재사용합니다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserAccountService {
@@ -41,6 +44,7 @@ public class UserAccountService {
 	private final UserProfileService userProfileService;
 	private final EmailVerificationService emailVerificationService;
 	private final RefreshTokenService refreshTokenService;
+	private final WithdrawnTokenStore withdrawnTokenStore;
 	private final PasswordEncoder passwordEncoder;
 
 	@Transactional(readOnly = true)
@@ -125,18 +129,24 @@ public class UserAccountService {
 		return new UpdateResponse(true);
 	}
 
+	/**
+	 * 회원 탈퇴. soft delete 후 재발급(Refresh)과 남은 Access Token 을 모두 끊는다.
+	 * Access Token 은 상태가 없어 블랙리스트에 올려야 만료 전에 무효화된다.
+	 */
 	@Transactional
 	public void deleteMe(UUID userId) {
 		User user = getActiveUser(userId);
-		user.softDelete();
+		user.withdraw();
 		refreshTokenService.delete(userId);
+		withdrawnTokenStore.markWithdrawn(userId);
+		log.info("[User] 회원 탈퇴 완료 (userId={})", userId);
 	}
 
 	private User getActiveUser(UUID userId) {
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 		if (user.isDeleted()) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.WITHDRAWN_USER);
 		}
 		return user;
 	}
