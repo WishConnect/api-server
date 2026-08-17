@@ -77,7 +77,10 @@ public class ScholarshipDetailService {
 								ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId)
 						.map(image -> imageStorageService.publicUrl(image.getS3Key()))
 						.orElse(null),
-				scholarship.getHomepageUrl(),
+				// 검색으로 찾은 상세페이지가 있으면 그쪽을 준다. 기관 메인(homepageUrl)으로 보내면
+				// 사용자가 장학금을 못 찾는다.
+				org.springframework.util.StringUtils.hasText(scholarship.getDetailUrl())
+						? scholarship.getDetailUrl() : scholarship.getHomepageUrl(),
 				buildSummary(scholarship, conditions),
 				schedule,
 				documents,

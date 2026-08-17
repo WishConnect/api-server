@@ -20,5 +20,8 @@ public enum AdminAction {
 	/** 외부 API 호출·크롤링·LLM 과금을 유발하는 수동 트리거. */
 	SYNC_TRIGGER,
 	COLLECT_TRIGGER,
-	CONDITION_EXTRACT_TRIGGER
+	CONDITION_EXTRACT_TRIGGER,
+
+	/** 상세페이지·첨부·포스터 자동 보완. 외부 검색·크롤링을 유발한다. */
+	ENRICH_TRIGGER
 }
