@@ -251,9 +251,9 @@ class UserProfileServiceTest {
 
 		assertThat(profile.getIncomeLevel()).isNull();
 		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_3");
-		verify(userFamilyTypeRepository).deleteByUser(user);
+		verify(userFamilyTypeRepository).deleteByUserProfile(profile);
 		verify(userFamilyTypeRepository).flush();
-		verify(userInterestRepository).deleteByUser(user);
+		verify(userInterestRepository).deleteByUserProfile(profile);
 		verify(userInterestRepository).flush();
 	}
 
@@ -289,11 +289,11 @@ class UserProfileServiceTest {
 		));
 
 		assertThat(profile.getIncomeLevel()).isNull();
-		verify(userFamilyTypeRepository).deleteByUser(user);
+		verify(userFamilyTypeRepository).deleteByUserProfile(profile);
 		verify(userFamilyTypeRepository).flush();
 		verify(userFamilyTypeRepository).saveAll(argThat((Iterable<UserFamilyType> mappings) ->
 				iterableSize(mappings) == 3));
-		verify(userInterestRepository).deleteByUser(user);
+		verify(userInterestRepository).deleteByUserProfile(profile);
 		verify(userInterestRepository).flush();
 		verify(userInterestRepository).saveAll(argThat((Iterable<UserInterest> mappings) ->
 				iterableSize(mappings) == 2));
@@ -316,8 +316,8 @@ class UserProfileServiceTest {
 		assertThat(user.isOnboardingCompleted()).isTrue();
 		assertThat(profile.isOnboardingCompleted()).isTrue();
 		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_4");
-		verify(userFamilyTypeRepository).deleteByUser(user);
-		verify(userInterestRepository).deleteByUser(user);
+		verify(userFamilyTypeRepository).deleteByUserProfile(profile);
+		verify(userInterestRepository).deleteByUserProfile(profile);
 	}
 
 	private long iterableSize(Iterable<?> values) {
