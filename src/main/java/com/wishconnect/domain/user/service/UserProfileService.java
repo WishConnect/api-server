@@ -116,8 +116,8 @@ public class UserProfileService {
 				request.familySize()
 		);
 
-		replaceFamilyTypes(user, request.familyTypes(), request.personalStatuses());
-		replaceInterests(user, request.interests());
+		replaceFamilyTypes(profile, request.familyTypes(), request.personalStatuses());
+		replaceInterests(profile, request.interests());
 		return new OnboardingStepResponse(3, true);
 	}
 
@@ -140,7 +140,7 @@ public class UserProfileService {
 	public ProfileResponse getProfile(UUID userId) {
 		User user = getUser(userId);
 		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
-		List<UserFamilyType> familyMappings = userFamilyTypeRepository.findAllByUser_Id(userId);
+		List<UserFamilyType> familyMappings = userFamilyTypeRepository.findAllByUserProfile_User_Id(userId);
 		List<String> familyTypes = familyMappings.stream()
 				.filter(mapping -> mapping.getFamilyType().getCategory() == FamilyCategory.FAMILY)
 				.map(mapping -> mapping.getFamilyType().getName())
@@ -149,7 +149,7 @@ public class UserProfileService {
 				.filter(mapping -> mapping.getFamilyType().getCategory() == FamilyCategory.PERSONAL)
 				.map(mapping -> mapping.getFamilyType().getName())
 				.toList();
-		List<String> interests = userInterestRepository.findAllByUser_Id(userId)
+		List<String> interests = userInterestRepository.findAllByUserProfile_User_Id(userId)
 				.stream()
 				.map(mapping -> mapping.getInterest().getName())
 				.toList();
@@ -226,21 +226,21 @@ public class UserProfileService {
 				.build());
 	}
 
-	private void replaceFamilyTypes(User user, List<String> familyNames, List<String> personalNames) {
-		userFamilyTypeRepository.deleteByUser(user);
+	private void replaceFamilyTypes(UserProfile profile, List<String> familyNames, List<String> personalNames) {
+		userFamilyTypeRepository.deleteByUserProfile(profile);
 		userFamilyTypeRepository.flush();
 
 		List<UserFamilyType> mappings = new ArrayList<>();
-		mappings.addAll(toFamilyTypeMappings(user, familyNames, FamilyCategory.FAMILY));
-		mappings.addAll(toFamilyTypeMappings(user, personalNames, FamilyCategory.PERSONAL));
+		mappings.addAll(toFamilyTypeMappings(profile, familyNames, FamilyCategory.FAMILY));
+		mappings.addAll(toFamilyTypeMappings(profile, personalNames, FamilyCategory.PERSONAL));
 		userFamilyTypeRepository.saveAll(mappings);
 	}
 
-	private List<UserFamilyType> toFamilyTypeMappings(User user, List<String> names, FamilyCategory category) {
+	private List<UserFamilyType> toFamilyTypeMappings(UserProfile profile, List<String> names, FamilyCategory category) {
 		return normalizeSelections(names).stream()
 				.map(name -> getOrCreateFamilyType(name, category))
 				.map(familyType -> UserFamilyType.builder()
-						.user(user)
+						.userProfile(profile)
 						.familyType(familyType)
 						.build())
 				.toList();
@@ -254,14 +254,14 @@ public class UserProfileService {
 						.build()));
 	}
 
-	private void replaceInterests(User user, List<String> names) {
-		userInterestRepository.deleteByUser(user);
+	private void replaceInterests(UserProfile profile, List<String> names) {
+		userInterestRepository.deleteByUserProfile(profile);
 		userInterestRepository.flush();
 
 		List<UserInterest> mappings = normalizeSelections(names).stream()
 				.map(this::getOrCreateInterest)
 				.map(interest -> UserInterest.builder()
-						.user(user)
+						.userProfile(profile)
 						.interest(interest)
 						.build())
 				.toList();

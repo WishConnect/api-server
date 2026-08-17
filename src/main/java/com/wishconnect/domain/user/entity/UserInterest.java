@@ -29,7 +29,7 @@ public class UserInterest extends BaseCreatedEntity {
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "user_id", nullable = false)
-	private User user;
+	private UserProfile userProfile;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "interest_id", nullable = false)

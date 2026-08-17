@@ -1,14 +1,14 @@
 package com.wishconnect.domain.user.repository;
 
-import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserFamilyType;
+import com.wishconnect.domain.user.entity.UserProfile;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserFamilyTypeRepository extends JpaRepository<UserFamilyType, Long> {
 
-	void deleteByUser(User user);
+	void deleteByUserProfile(UserProfile userProfile);
 
-	List<UserFamilyType> findAllByUser_Id(UUID userId);
+	List<UserFamilyType> findAllByUserProfile_User_Id(UUID userId);
 }
