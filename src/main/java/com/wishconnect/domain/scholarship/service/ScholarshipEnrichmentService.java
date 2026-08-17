@@ -60,6 +60,11 @@ public class ScholarshipEnrichmentService {
 	private static final int RETRY_AFTER_DAYS = 14;
 	private static final int CRAWL_TIMEOUT_MS = 10_000;
 	private static final String USER_AGENT = "Mozilla/5.0 (compatible; WishConnectBot/1.0)";
+	/**
+	 * 보완이 필요한 유일한 출처. 대학 크롤링분은 homepageUrl 이 이미 공고 상세페이지라 대상이 아니다.
+	 * (ScholarshipApiProperties.sourceName() 과 같은 값)
+	 */
+	private static final String KOSAF_SOURCE = "KOSAF_SCHOLARSHIP";
 
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
@@ -79,7 +84,7 @@ public class ScholarshipEnrichmentService {
 	public EnrichmentResult enrich(int limit) {
 		LocalDateTime now = LocalDateTime.now();
 		List<Scholarship> targets = scholarshipRepository.findEnrichmentTargets(
-				now, now.minusDays(RETRY_AFTER_DAYS), PageRequest.of(0, Math.max(1, limit)));
+				KOSAF_SOURCE, now, now.minusDays(RETRY_AFTER_DAYS), PageRequest.of(0, Math.max(1, limit)));
 		if (targets.isEmpty()) {
 			return EnrichmentResult.empty();
 		}
@@ -88,6 +93,7 @@ public class ScholarshipEnrichmentService {
 		int imageSaved = 0;
 		int documentLinked = 0;
 		int skipped = 0;
+		boolean searchUnavailable = false;
 		List<EnrichmentResult.Skipped> skippedRows = new ArrayList<>();
 
 		for (Scholarship scholarship : targets) {
@@ -112,6 +118,14 @@ public class ScholarshipEnrichmentService {
 					imageSaved++;
 				}
 				documentLinked += linkAttachments(scholarship, page);
+			} catch (SearchUnavailableException e) {
+				// 검색이 죽어 있으면 남은 건도 전부 실패한다. 쿼터·시간을 태우지 말고 즉시 중단한다.
+				log.error("[Enrich] 검색 API 를 쓸 수 없어 중단합니다. 키·쿼터를 확인하세요.");
+				searchUnavailable = true;
+				skipped++;
+				skippedRows.add(new EnrichmentResult.Skipped(scholarship.getId(), scholarship.getTitle(),
+						"검색 API 호출 실패(키·쿼터 확인 필요) — 매칭 실패가 아님"));
+				break;
 			} catch (RuntimeException e) {
 				// 외부 사이트는 언제든 죽는다. 한 건 때문에 배치 전체를 멈추지 않는다.
 				log.warn("[Enrich] 보완 실패 scholarshipId={} : {}", scholarship.getId(), e.getMessage());
@@ -122,17 +136,27 @@ public class ScholarshipEnrichmentService {
 			sleep();
 		}
 
-		log.info("[Enrich] 대상={} 상세URL={} 이미지={} 첨부={} 건너뜀={}",
-				targets.size(), detailFound, imageSaved, documentLinked, skipped);
-		return new EnrichmentResult(
-				targets.size(), detailFound, imageSaved, documentLinked, skipped, skippedRows);
+		log.info("[Enrich] 대상={} 상세URL={} 이미지={} 첨부={} 건너뜀={} 검색불가={}",
+				targets.size(), detailFound, imageSaved, documentLinked, skipped, searchUnavailable);
+		return new EnrichmentResult(targets.size(), detailFound, imageSaved, documentLinked,
+				skipped, searchUnavailable, skippedRows);
 	}
 
-	/** 검색 결과 중 점수가 가장 높은 후보. 임계값 미만이면 null(= 채택하지 않음). */
+	/**
+	 * 검색 결과 중 점수가 가장 높은 후보. 임계값 미만이면 null(= 채택하지 않음).
+	 *
+	 * <p>검색 자체가 실패한 경우({@link SearchUnavailableException})와 "찾았지만 신뢰도 미달"을
+	 * 반드시 구분한다. 예전에는 둘 다 "상세페이지를 찾지 못함"으로 보고돼,
+	 * 검색 API 키가 401 로 죽어 있는데도 매칭 실패처럼 보였다.
+	 */
 	private Candidate findBestCandidate(Scholarship scholarship) {
 		String query = (scholarship.getTitle() + " " + defaultText(scholarship.getProvider())).trim();
 		NaverSearchResponse response = naverSearchClient.searchWeb(query, SEARCH_DISPLAY);
-		if (response == null || response.items() == null || response.items().isEmpty()) {
+		if (response == null) {
+			// 클라이언트가 실패를 null 로 삼킨다(401·쿼터초과·타임아웃 등 구분 불가).
+			throw new SearchUnavailableException();
+		}
+		if (response.items() == null || response.items().isEmpty()) {
 			return null;
 		}
 		return response.items().stream()
@@ -234,5 +258,9 @@ public class ScholarshipEnrichmentService {
 	}
 
 	private record Candidate(String url, String title, int score) {
+	}
+
+	/** 검색 API 자체를 쓸 수 없는 상태(키 오류·쿼터 초과 등). 매칭 실패와 구분하기 위한 신호. */
+	private static class SearchUnavailableException extends RuntimeException {
 	}
 }

@@ -14,6 +14,11 @@ public record EnrichmentResult(
 		int imageSaved,
 		int documentLinked,
 		int skippedCount,
+		/**
+		 * 검색 API 자체를 못 써서 중단됐는지. true 면 "매칭 실패" 가 아니라 <b>키·쿼터 문제</b>다.
+		 * 이 둘을 구분하지 않아, 키가 401 로 죽어 있는데도 매칭 실패처럼 보인 적이 있다.
+		 */
+		boolean searchUnavailable,
 		List<Skipped> skippedRows
 ) {
 
@@ -21,6 +26,6 @@ public record EnrichmentResult(
 	}
 
 	public static EnrichmentResult empty() {
-		return new EnrichmentResult(0, 0, 0, 0, 0, List.of());
+		return new EnrichmentResult(0, 0, 0, 0, 0, false, List.of());
 	}
 }
