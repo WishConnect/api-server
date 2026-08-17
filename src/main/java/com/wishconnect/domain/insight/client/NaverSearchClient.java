@@ -1,6 +1,8 @@
 package com.wishconnect.domain.insight.client;
 
 import com.wishconnect.domain.insight.dto.NaverSearchResponse;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -8,6 +10,7 @@ import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -63,14 +66,24 @@ public class NaverSearchClient {
                     .body(NaverSearchResponse.class);
 
             if (response == null) {
-                log.warn("[Naver API] 응답이 null로 옴 type={}", type);
-                return new NaverSearchResponse(List.of());
+                log.error("[Naver API] 응답 본문이 비어 있음 type={}", type);
+                throw new CustomException(ErrorCode.NAVER_SEARCH_FAILED);
             }
             return response;
 
+        } catch (RestClientResponseException e) {
+            // 응답 본문에 실패 원인이 들어 있다(예: errorCode 024 = 인증 실패).
+            // 이걸 안 찍어서 401 인지 쿼터 초과인지 구분하지 못했다. 키 값 자체는 본문에 없다.
+            log.error("[Naver API] 검색 실패 type={} status={} body={}",
+                    type, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new CustomException(ErrorCode.NAVER_SEARCH_FAILED);
+
+        } catch (CustomException e) {
+            throw e;
+
         } catch (Exception e) {
             log.error("[Naver API] 검색 실패 type={} query={}", type, query, e);
-            return new NaverSearchResponse(List.of());
+            throw new CustomException(ErrorCode.NAVER_SEARCH_FAILED);
         }
     }
 }
