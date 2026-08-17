@@ -4,6 +4,7 @@ import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
+import com.wishconnect.domain.insight.repository.InsightRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.Pagination;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
@@ -20,8 +21,10 @@ import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Evaluation;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Result;
+import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserProfile;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
+import com.wishconnect.domain.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -66,8 +69,11 @@ public class ScholarshipRecommendationService {
 	private final ScholarshipRepository scholarshipRepository;
 	// 홈 요약의 "작성 중인 지원서" 칸. 도메인은 다르지만 집계 한 줄이라 별도 서비스를 두지 않는다.
 	private final EssayRepository essayRepository;
+	// 같은 이유로 "새로운 인사이트" 칸도 여기서 센다.
+	private final InsightRepository insightRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UserProfileRepository userProfileRepository;
+	private final UserRepository userRepository;
 	private final ScrapRepository scrapRepository;
 	// 카드 그리드가 포스터 중심이라 목록에서도 이미지를 함께 내려준다.
 	private final ImageRepository imageRepository;
@@ -310,8 +316,13 @@ public class ScholarshipRecommendationService {
 		long writingApplicationCount =
 				essayRepository.countByUser_IdAndStatus(userId, EssayStatus.NOT_STARTED)
 						+ essayRepository.countByUser_IdAndStatus(userId, EssayStatus.IN_PROGRESS);
-		return new HomeSummaryResponse(
-				newMatchedCount, urgentDeadlineCount, writingApplicationCount, newMatchedCount > 0);
+		long newInsightCount = insightRepository.countByCreatedAtAfter(newSince);
+
+		// 인사말용 이름. 회원이 없으면 이름 없이라도 카드 4칸은 그려져야 하므로 예외로 막지 않는다.
+		String userName = userRepository.findById(userId).map(User::getName).orElse(null);
+
+		return new HomeSummaryResponse(userName, newMatchedCount, urgentDeadlineCount,
+				writingApplicationCount, newInsightCount, newMatchedCount > 0);
 	}
 
 	/**

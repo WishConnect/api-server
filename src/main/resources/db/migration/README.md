@@ -35,6 +35,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ✅ 2026-07-31 |
 | `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
 | `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
+| `V20260816_01__seed_sigungu_regions.sql` | 거주지역 시군구 228건 시딩 + `(name, parent_id)` UNIQUE | ⬜ 미적용 |
 | `V20260815_01__fix_scholarship_type_check.sql` | `scholarship.scholarship_type` CHECK 제약에 `WORK_STUDY` 추가 | ✅ 2026-08-16 확인 |
 | `V20260816_01__create_admin_audit_log.sql` | `admin_audit_log` 테이블 추가 (관리자 쓰기 작업 기록) | ✅ 2026-08-16 |
 | `V20260816_02__scholarship_tag_and_document_url.sql` | `scholarship_tag` 테이블 + `scholarship_document.download_url` | ✅ 2026-08-16 |
@@ -42,6 +43,12 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260816_04__drop_scholarship_tag.sql` | `scholarship_tag` 테이블 제거 (태그 기능 철회) | ✅ 2026-08-17 (배포 후 적용) |
 | `V20260817_01__scholarship_enrichment.sql` | `scholarship.detail_url`·`enriched_at`, `image.source_url` (자동 보완) | ✅ 2026-08-17 |
 | `V20260817_02__release_withdrawn_user_unique_keys.sql` | 탈퇴 회원이 점유한 `users.login_id`·`kakao_id` 해제 (재가입 차단 해소) | ⬜ 미적용 |
+| `V20260817_03__scholarship_report_multi_reason.sql` | 신고 사유 다중 선택 (`scholarship_report_reason` 테이블 + `reason` 컬럼 제거) | ⬜ 미적용 |
+
+> `V20260817_03` 은 **반드시 배포보다 먼저** 적용해야 한다. 엔티티에서 `reason` 필드가
+> 사라지므로, 적용 전에 새 코드가 뜨면 NOT NULL 인 `scholarship_report.reason` 에 값을 못 넣어
+> **신고 접수가 전부 실패**한다. 반대로 SQL 만 먼저 적용하고 옛 코드가 떠 있는 동안에도
+> 같은 이유로 신고가 실패하므로, 이 둘 사이 간격을 짧게 가져가는 편이 좋다.
 
 > `V20260817_02` 는 **스키마 변경이 아니라 데이터 정정**이다. `validate` 와 무관하므로
 > 배포 순서를 지키지 않아도 기동은 깨지지 않는다. 다만 적용 전까지는 수정 이전에 탈퇴한
