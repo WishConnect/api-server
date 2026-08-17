@@ -113,7 +113,13 @@ public enum ErrorCode {
 	LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
 
 	//인사이트
-	INVALID_INSIGHT_INPUT(HttpStatus.BAD_REQUEST, "지원하지 않는 카테고리/출처입니다.");
+	INVALID_INSIGHT_INPUT(HttpStatus.BAD_REQUEST, "지원하지 않는 카테고리/출처입니다."),
+	/**
+	 * 네이버 검색 API 호출 자체가 실패(401·쿼터 초과·타임아웃 등).
+	 * "검색은 됐는데 결과가 0건" 과 반드시 구분한다 — 예전에는 실패를 빈 결과로 삼켜서,
+	 * 키가 401 로 죽어 있는데도 "검색 결과 없음" 으로 보였다.
+	 */
+	NAVER_SEARCH_FAILED(HttpStatus.BAD_GATEWAY, "네이버 검색 API 호출에 실패했습니다.");
 
 
 	private final HttpStatus status;

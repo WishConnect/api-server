@@ -14,6 +14,8 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.DetailPageMatcher;
 import com.wishconnect.domain.scholarship.util.ScholarshipPageParser;
 import com.wishconnect.domain.scholarship.util.ScholarshipPageParser.Attachment;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -151,9 +153,15 @@ public class ScholarshipEnrichmentService {
 	 */
 	private Candidate findBestCandidate(Scholarship scholarship) {
 		String query = (scholarship.getTitle() + " " + defaultText(scholarship.getProvider())).trim();
-		NaverSearchResponse response = naverSearchClient.searchWeb(query, SEARCH_DISPLAY);
-		if (response == null) {
-			// 클라이언트가 실패를 null 로 삼킨다(401·쿼터초과·타임아웃 등 구분 불가).
+		NaverSearchResponse response;
+		try {
+			response = naverSearchClient.searchWeb(query, SEARCH_DISPLAY);
+		} catch (CustomException e) {
+			if (e.getErrorCode() != ErrorCode.NAVER_SEARCH_FAILED) {
+				throw e;
+			}
+			// 호출 자체가 실패(키 오류·쿼터 초과 등). 보완 대상 전체를 중단시키지 않고
+			// "검색 불가" 로 집계만 하고 넘어간다 — 원인은 클라이언트가 이미 로그로 남긴다.
 			throw new SearchUnavailableException();
 		}
 		if (response.items() == null || response.items().isEmpty()) {
