@@ -1,7 +1,9 @@
 package com.wishconnect.domain.scholarship.entity;
 
 import com.wishconnect.global.common.BaseEntity;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -12,10 +14,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 /*
 장학금 추천/매칭에 사용할 자격 조건 엔티티입니다.
@@ -43,7 +48,33 @@ public class ScholarshipCondition extends BaseEntity {
 	@Column(nullable = false, length = 20)
 	private ConditionOperator operator;
 
-	@Column(name = "ref_id")
+	/**
+	 * 자격요건인지 우대사항인지. 게이트로 쓸 수 있는 건 {@code REQUIRED} 뿐이다.
+	 *
+	 * <p>기존 행은 마이그레이션에서 {@code REQUIRED} 로 채운다 — NULL 로 두면 현재 작동 중인
+	 * 소득·성적·학년 게이트가 통째로 풀린다.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private ConditionNecessity necessity;
+
+	/**
+	 * 조건이 가리키는 마스터 값들. "기초생활수급자 또는 차상위계층" 처럼 OR 로 묶이므로 집합이다.
+	 *
+	 * <p>판정은 사용자 값 집합과의 <b>교집합</b>으로 한다. 여기가 비어 있으면 이 조건은
+	 * 대조할 대상이 없다는 뜻이고, {@code ConditionMatcher} 는 {@code UNKNOWN} 을 낸다.
+	 */
+	@ElementCollection
+	@CollectionTable(
+			name = "scholarship_condition_ref",
+			joinColumns = @JoinColumn(name = "condition_id"))
+	// 목록 조회에서 조건마다 참조 조회가 따로 나가는(N+1) 것을 막는다.
+	@BatchSize(size = 200)
+	private Set<ConditionRef> refs = new LinkedHashSet<>();
+
+	/** @deprecated {@link #refs} 로 대체됨. 값이 채워진 적이 없어 읽는 곳도 없다. */
+	@Deprecated
+	@Column(name = "legacy_ref_id")
 	private Long refId;
 
 	/*
@@ -70,6 +101,7 @@ public class ScholarshipCondition extends BaseEntity {
 		ConditionType conditionType,
 		ConditionOperator operator,
 		Long refId,
+		ConditionNecessity necessity,
 		Integer valueInt,
 		Integer valueIntMax,
 		String valueString,
@@ -79,10 +111,19 @@ public class ScholarshipCondition extends BaseEntity {
 		this.conditionType = conditionType;
 		this.operator = operator == null ? ConditionOperator.EQ : operator;
 		this.refId = refId;
+		this.necessity = necessity == null ? ConditionNecessity.REQUIRED : necessity;
 		this.valueInt = valueInt;
 		this.valueIntMax = valueIntMax;
 		this.valueString = valueString;
 		this.autoExtracted = autoExtracted;
+	}
+
+	/**
+	 * 마스터 참조를 통째로 갈아끼운다. 재파싱은 조건을 지우고 다시 만들지만,
+	 * 2단계 구조화는 기존 행에 참조만 채우므로 이 경로가 필요하다.
+	 */
+	public void applyRefs(java.util.Collection<ConditionRef> resolved) {
+		this.refs = new LinkedHashSet<>(resolved);
 	}
 
 	/** LLM이 원문(valueString)에서 추출한 구조화 값을 반영한다. 원문은 검증용으로 보존한다. */

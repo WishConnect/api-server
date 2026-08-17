@@ -35,15 +35,53 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ✅ 2026-07-31 |
 | `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
 | `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
-| `V20260816_01__seed_sigungu_regions.sql` | 거주지역 시군구 228건 시딩 + `(name, parent_id)` UNIQUE | ⬜ 미적용 |
+| `V20260816_01__seed_sigungu_regions.sql` | 거주지역 시군구 228건 시딩 + `(name, parent_id)` UNIQUE | ✅ 2026-08-17 |
 | `V20260815_01__fix_scholarship_type_check.sql` | `scholarship.scholarship_type` CHECK 제약에 `WORK_STUDY` 추가 | ✅ 2026-08-16 확인 |
 | `V20260816_01__create_admin_audit_log.sql` | `admin_audit_log` 테이블 추가 (관리자 쓰기 작업 기록) | ✅ 2026-08-16 |
 | `V20260816_02__scholarship_tag_and_document_url.sql` | `scholarship_tag` 테이블 + `scholarship_document.download_url` | ✅ 2026-08-16 |
 | `V20260816_03__users_login_id_birth_date_region.sql` | `users.login_id`, `user_profile.birth_date`, 지역 마스터 17건 시드 | ✅ 2026-08-16 |
 | `V20260816_04__drop_scholarship_tag.sql` | `scholarship_tag` 테이블 제거 (태그 기능 철회) | ✅ 2026-08-17 (배포 후 적용) |
 | `V20260817_01__scholarship_enrichment.sql` | `scholarship.detail_url`·`enriched_at`, `image.source_url` (자동 보완) | ✅ 2026-08-17 |
-| `V20260817_02__release_withdrawn_user_unique_keys.sql` | 탈퇴 회원이 점유한 `users.login_id`·`kakao_id` 해제 (재가입 차단 해소) | ⬜ 미적용 |
-| `V20260817_03__scholarship_report_multi_reason.sql` | 신고 사유 다중 선택 (`scholarship_report_reason` 테이블 + `reason` 컬럼 제거) | ⬜ 미적용 |
+| `V20260817_02__release_withdrawn_user_unique_keys.sql` | 탈퇴 회원이 점유한 `users.login_id`·`kakao_id` 해제 (재가입 차단 해소) | ✅ 2026-08-17 |
+| `V20260817_03__scholarship_report_multi_reason.sql` | 신고 사유 다중 선택 (`scholarship_report_reason` 테이블 + `reason` 컬럼 제거) | ✅ 2026-08-17 |
+| `V20260817_04__user_family_type_interest_to_profile_fk.sql` | `user_family_type`·`user_interest` 의 `user_id` 를 users(uuid) → user_profile(bigint) 참조로 전환 | ✅ 2026-08-17 |
+| `V20260818_01__create_scholarship_merge_candidate.sql` | `scholarship_merge_candidate` 테이블 추가 (중복 병합 승인 큐) | ✅ 2026-08-17 |
+| `V20260818_02__add_merge_admin_actions.sql` | `admin_audit_log.action` CHECK 에 병합 액션 3개 추가 | ✅ 2026-08-17 |
+| `V20260818_03__create_notice_parse_log.sql` | `notice_parse_log` 테이블 추가 (LLM 파싱 이력·정확도 측정) | ✅ 2026-08-18 |
+| `V20260818_04__condition_necessity_and_refs.sql` | 조건에 `necessity`(필수/우대) + `scholarship_condition_ref` 집합 참조 | ✅ 2026-08-18 |
+| `V20260818_05__financial_aid_type_preferred.sql` | `FINANCIAL_AID_TYPE` 조건을 `PREFERRED` 로 (지원 성격은 자격이 아니다) | ✅ 2026-08-18 |
+| `V20260818_06__create_scholarship_event.sql` | `scholarship_event` 테이블 추가 (추천 노출·클릭 기록) | ✅ 2026-08-18 |
+
+> `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
+> 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서
+> 컬럼 타입을 바꾸는 SQL 을 함께 올리지 않았고, 그 사실이 **2026-08-17 배포가 실패하고 나서야**
+> 드러났다(`wrong column type ... found [uuid], but expecting [bigint]`).
+> 엔티티의 연관 대상을 바꾸는 변경은 컬럼 타입이 따라 바뀐다는 점을 기억할 것.
+
+> ⚠️ **`V20260818_06` 도 반드시 배포보다 먼저** 적용해야 한다. `ScholarshipEvent` 엔티티가 새로
+> 생겨 테이블이 없으면 `validate` 가 실패해 앱이 기동되지 않는다.
+
+> `V20260818_05` 는 기동을 막지 않는다(값만 바꾼다). 다만 **`V20260818_04` 다음에** 돌려야 한다 —
+> 04 가 만든 `necessity` 컬럼을 갱신하기 때문이다. 적용 전까지는 "생활비 지원" 같은 지원 성격이
+> 자격요건으로 남아, 참조가 채워지는 순간 관심분야를 안 고른 학생을 탈락시킨다.
+
+> ⚠️ **`V20260818_04` 도 배포보다 먼저** 적용해야 한다. `necessity` 는 **기존 행을 `REQUIRED` 로
+> 채운 뒤** NOT NULL 을 건다 — NULL 로 두면 지금 작동 중인 소득·성적·학년 게이트가 통째로 풀려
+> "조건 미충족" 섹션이 비어버린다.
+
+> ⚠️ **`V20260818_03` 은 반드시 배포보다 먼저** 적용해야 한다. `NoticeParseLog` 엔티티가 새로
+> 생기므로 테이블이 없으면 `validate` 가 실패해 **애플리케이션이 뜨지 않는다**(= 배포 실패·롤백).
+
+> ⚠️ **`V20260818_01` 은 반드시 배포보다 먼저** 적용해야 한다. `ScholarshipMergeCandidate` 엔티티가
+> 새로 생겼으므로, 테이블이 없으면 `validate` 가 실패해 **애플리케이션이 아예 뜨지 않는다**
+> (= 배포 실패·롤백). 이 목록에서 유일하게 기동을 막는 항목이다.
+
+> `V20260818_02` 는 기동을 막지는 않는다(`validate` 는 CHECK 를 보지 않는다). 대신 적용 전까지
+> 병합 승인·거절의 **감사 로그 INSERT 가 23514 로 실패**한다. 병합은 스크랩·자소서를 다른
+> 장학금으로 옮기는 파괴적 작업이라 기록이 남지 않으면 곤란하므로 함께 적용한다.
+
+> ⚠️ `V20260816_01` 이 **두 개**다(`create_admin_audit_log`, `seed_sigungu_regions`). 같은 버전
+> 접두사라 나중에 Flyway 를 도입하면 충돌한다. 도입 시점에 한쪽 번호를 바꿔야 한다.
 
 > `V20260817_03` 은 **반드시 배포보다 먼저** 적용해야 한다. 엔티티에서 `reason` 필드가
 > 사라지므로, 적용 전에 새 코드가 뜨면 NOT NULL 인 `scholarship_report.reason` 에 값을 못 넣어

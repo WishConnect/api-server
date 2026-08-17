@@ -6,15 +6,30 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
+import com.wishconnect.domain.application.config.LlmProperties;
+import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
+import org.mockito.ArgumentCaptor;
+import com.wishconnect.domain.common.service.RegionResolver;
+import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
+import com.wishconnect.domain.user.repository.FamilyTypeRepository;
+import com.wishconnect.domain.user.repository.InterestRepository;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -63,6 +78,10 @@ class UnivNoticeLlmParsingServiceTest {
 	@Mock private ScholarshipConditionRepository scholarshipConditionRepository;
 	@Mock private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock private LlmClient llmClient;
+	@Mock private NoticeParseLogRepository noticeParseLogRepository;
+	@Mock private RegionResolver regionResolver;
+	@Mock private FamilyTypeRepository familyTypeRepository;
+	@Mock private InterestRepository interestRepository;
 
 	private UnivNoticeLlmParsingService service;
 
@@ -71,7 +90,12 @@ class UnivNoticeLlmParsingServiceTest {
 		service = new UnivNoticeLlmParsingService(
 				rawScholarshipRepository, scholarshipRepository,
 				scholarshipConditionRepository, scholarshipDocumentRepository,
-				new UnivNoticeLlmParser(new ObjectMapper()), llmClient);
+				new UnivNoticeLlmParser(new ObjectMapper()), llmClient,
+				noticeParseLogRepository,
+				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
+						"claude-haiku-4-5", "claude-haiku-4-5", 4096),
+				new ObjectMapper(),
+				new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository));
 	}
 
 	// --- Fixture ---
@@ -179,6 +203,92 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(result.items().get(0).afterPeriod()).isEqualTo("2026-08-01 ~ 2026-08-14");
 	}
 
+	/*
+	조건을 정규식 추출기에서 LLM 으로 넘긴 뒤의 핵심 동작.
+	정규식은 "가계 곤란으로 학업 유지가 어려운 자" 같은 서술형 요건을 아예 못 잡았다.
+	 */
+	@Test
+	@DisplayName("LLM 이 뽑은 조건을 유형·원문·수치·필수여부까지 한 번에 저장한다")
+	void storesLlmExtractedConditions() {
+		String body = """
+				2026학년도 2학기 성적우수 장학생을 모집합니다.
+				지원자격 : 직전학기 평점평균 3.5 이상인 자, 가계 곤란으로 학업 유지가 어려운 자
+				신청기간 : 2026. 8. 1. ~ 2026. 8. 14.
+				""";
+		String response = """
+				{"title":"성적우수 장학","provider":"경희대학교","scholarshipType":"INTERNAL",
+				 "documents":[],
+				 "conditions":[
+				   {"type":"ACADEMIC_CRITERIA","evidence":"직전학기 평점평균 3.5 이상인 자",
+				    "necessity":"REQUIRED","refLabels":[],"operator":"GTE","valueInt":350,"valueIntMax":null},
+				   {"type":"SPECIFIC_QUALIFICATION","evidence":"가계 곤란으로 학업 유지가 어려운 자",
+				    "necessity":"PREFERRED","refLabels":[],"operator":null,"valueInt":null,"valueIntMax":null},
+				   {"type":"INCOME_CRITERIA","evidence":"소득 3분위 이하만 지원할 수 있습니다",
+				    "necessity":"REQUIRED","refLabels":[],"operator":"LTE","valueInt":3,"valueIntMax":null}]}
+				""";
+		givenPendingTargets(List.of(raw(7L, html(body), null, ParseStatus.PENDING)));
+		given(llmClient.chat(any())).willReturn(response);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(scholarshipConditionRepository).saveAll(captor.capture());
+		List<ScholarshipCondition> saved = captor.getValue();
+
+		// 본문에 없는 소득 조건은 환각으로 보고 버린다
+		assertThat(saved).extracting(ScholarshipCondition::getConditionType)
+				.containsExactly(ConditionType.ACADEMIC_CRITERIA, ConditionType.SPECIFIC_QUALIFICATION);
+		assertThat(saved.get(0).getValueString()).isEqualTo("직전학기 평점평균 3.5 이상인 자");
+
+		// 1단계가 본문 맥락을 보며 수치까지 뽑는다 (평점은 100배 정수 규약)
+		assertThat(saved.get(0).getOperator()).isEqualTo(ConditionOperator.GTE);
+		assertThat(saved.get(0).getValueInt()).isEqualTo(350);
+
+		// 우대사항은 게이트가 아니다 — 없으면 자격 있는 학생이 탈락한다
+		assertThat(saved.get(0).getNecessity()).isEqualTo(ConditionNecessity.REQUIRED);
+		assertThat(saved.get(1).getNecessity()).isEqualTo(ConditionNecessity.PREFERRED);
+
+		/*
+		true 로 둬야 2단계(ConditionExtractionService)가 다시 집어가지 않는다.
+		1단계는 본문 전체를 보고 뽑지만 2단계는 evidence 텍스트만 봐서, 다시 태우면
+		맥락 없이 없는 숫자를 만들어낼 위험이 있다. 대학공지는 여기서 끝낸다.
+		 */
+		assertThat(saved.get(0).isAutoExtracted()).isTrue();
+	}
+
+	@Test
+	@DisplayName("FINANCIAL_AID_TYPE 은 LLM 답변과 무관하게 우대로 강제한다 — 자격이 아니라 지원 성격이다")
+	void financialAidTypeIsAlwaysPreferred() {
+		String body = """
+				2026학년도 2학기 생활비 지원 장학생을 모집합니다.
+				지원 내용은 생활비 지원입니다. 학기당 100만원을 지급합니다.
+				신청기간 : 2026. 8. 1. ~ 2026. 8. 14.
+				""";
+		String response = """
+				{"title":"생활비 장학","provider":"경희대학교","scholarshipType":"INTERNAL","documents":[],
+				 "conditions":[{"type":"FINANCIAL_AID_TYPE","evidence":"지원 내용은 생활비 지원입니다",
+				   "necessity":"REQUIRED","refLabels":["생활비 지원"],
+				   "operator":null,"valueInt":null,"valueIntMax":null}]}
+				""";
+		givenPendingTargets(List.of(raw(30L, html(body), null, ParseStatus.PENDING)));
+		given(llmClient.chat(any())).willReturn(response);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(scholarshipConditionRepository).saveAll(captor.capture());
+		List<ScholarshipCondition> saved = captor.getValue();
+
+		// LLM 이 REQUIRED 라고 답해도 우대로 내린다
+		assertThat(saved.get(0).getNecessity()).isEqualTo(ConditionNecessity.PREFERRED);
+	}
+
 	@Test
 	@DisplayName("재파싱은 기존 조건·서류를 지우고 다시 만든다")
 	void reparseClearsOldConditionsAndDocuments() {
@@ -244,6 +354,80 @@ class UnivNoticeLlmParsingServiceTest {
 
 		assertThat(result.failedCount()).isEqualTo(1);
 		assertThat(target.getParseStatus()).isEqualTo(ParseStatus.FAILED);
+	}
+
+	@Test
+	@DisplayName("형식 실패는 1회 재시도한다 — 모델이 매번 조금씩 다르게 답하므로 대개 풀린다")
+	void retriesOnceOnRecoverableFailure() {
+		RawScholarship target = raw(20L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any()))
+				.willThrow(new CustomException(ErrorCode.LLM_EMPTY_RESPONSE))
+				.willReturn(LLM_RESPONSE);
+
+		var result = service.parse(20, false, false);
+
+		assertThat(result.parsedCount()).isEqualTo(1);
+		verify(llmClient, times(2)).chat(any());
+	}
+
+	@Test
+	@DisplayName("토큰 상한에서 잘린 응답은 재시도하지 않는다 — 같은 지점에서 다시 잘린다")
+	void doesNotRetryOnTruncatedResponse() {
+		RawScholarship target = raw(21L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willThrow(new CustomException(ErrorCode.LLM_RESPONSE_TRUNCATED));
+
+		var result = service.parse(20, false, false);
+
+		assertThat(result.failedCount()).isEqualTo(1);
+		verify(llmClient, times(1)).chat(any());
+		assertThat(target.getParseError()).contains("토큰 상한");
+	}
+
+	@Test
+	@DisplayName("본문이 잘린 채 실패하면 사유에 그 사실을 남긴다 — 재시도 대상에서 빼기 위함")
+	void recordsBodyTruncationInFailureReason() {
+		String longBody = "장학금 신청 안내입니다. ".repeat(2000);
+		RawScholarship target = raw(22L, html(longBody), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn("JSON 이 아닙니다");
+
+		service.parse(20, false, false);
+
+		assertThat(target.getParseError()).contains("잘린 상태");
+	}
+
+	@Test
+	@DisplayName("성공하면 파싱 이력에 정제 결과를, 실패하면 응답 원문을 남긴다")
+	void savesParseLog() {
+		RawScholarship ok = raw(23L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(ok));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+
+		service.parse(20, false, false);
+
+		ArgumentCaptor<NoticeParseLog> captor = ArgumentCaptor.forClass(NoticeParseLog.class);
+		verify(noticeParseLogRepository).save(captor.capture());
+		NoticeParseLog log = captor.getValue();
+		assertThat(log.getStatus()).isEqualTo(ParseStatus.PARSED);
+		assertThat(log.getParsedJson()).contains("운연장학");
+		// 성공 건은 정제 결과에서 언제든 되돌릴 수 있어 원문을 중복 저장하지 않는다
+		assertThat(log.getRawResponse()).isNull();
+		assertThat(log.getPromptVersion()).isEqualTo(UnivNoticeLlmParser.PROMPT_VERSION);
+		assertThat(log.isBodyTruncated()).isFalse();
+	}
+
+	@Test
+	@DisplayName("dryRun 은 파싱 이력도 남기지 않는다")
+	void dryRunSavesNoLog() {
+		RawScholarship target = raw(24L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+
+		service.parse(20, false, true);
+
+		verify(noticeParseLogRepository, never()).save(any());
 	}
 
 	@Test

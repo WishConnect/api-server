@@ -4,14 +4,19 @@ import com.wishconnect.domain.application.client.LlmClient;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wishconnect.domain.application.config.LlmProperties;
+import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
-import com.wishconnect.domain.scholarship.collector.NoticeConditionExtractor;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
@@ -74,6 +79,11 @@ public class UnivNoticeLlmParsingService {
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final UnivNoticeLlmParser parser;
 	private final LlmClient llmClient;
+	// 파싱 1회를 기록해 정확도 측정·실패 원인 추적에 쓴다.
+	private final NoticeParseLogRepository noticeParseLogRepository;
+	private final LlmProperties llmProperties;
+	private final ObjectMapper objectMapper;
+	private final ConditionRefResolver conditionRefResolver;
 
 	/**
 	 * 대학 장학공지를 LLM 으로 파싱한다.
@@ -121,10 +131,68 @@ public class UnivNoticeLlmParsingService {
 		return new NoticeParsingResponse(targets.size(), parsed, skipped, failed, dryRun, items);
 	}
 
+
+	/**
+	 * LLM 호출. 형식 오류로 보이는 실패만 한 번 더 시도한다.
+	 *
+	 * <p>재시도가 의미 있는 실패와 없는 실패를 나눈다. 응답이 {@code max_tokens} 에서 잘린 경우는
+	 * 같은 요청이 같은 지점에서 다시 잘리므로 재시도가 토큰만 태운다. 반면 형식이 깨지거나
+	 * 일시적 오류로 실패한 경우는 모델이 매번 조금씩 다르게 답하므로 한 번 더 부르면 대개 풀린다.
+	 */
+	private String callWithRetry(String bodyText, Long rawId) {
+		try {
+			return llmClient.chat(parser.buildRequest(bodyText));
+		} catch (CustomException e) {
+			if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
+				throw e;
+			}
+			log.info("[UnivLlmParsing] LLM 호출 실패, 1회 재시도합니다. rawId={} reason={}",
+					rawId, e.getErrorCode());
+			return llmClient.chat(parser.buildRequest(bodyText));
+		}
+	}
+
+	/** 실패 사유를 사람이 읽고 조치할 수 있는 문장으로 만든다. */
+	private String describeLlmFailure(CustomException e, UnivNoticeLlmParser.ExtractedBody extracted) {
+		if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
+			return "LLM 응답이 토큰 상한에서 잘렸습니다(재시도 무의미, max_tokens 상향 필요).";
+		}
+		if (extracted.truncated()) {
+			return "본문이 상한을 넘어 잘린 상태에서 LLM 호출 실패: " + e.getErrorCode();
+		}
+		return "LLM 호출 실패: " + e.getErrorCode();
+	}
+
+	/**
+	 * 파싱 1회를 기록한다. 실패해도 배치를 멈추지 않는다 — 기록이 본 작업을 막으면 안 된다.
+	 *
+	 * <p>성공은 정제 결과를, 실패는 응답 원문을 남긴다. 실패 시엔 정제 객체가 없으므로
+	 * 원문이 유일한 단서다.
+	 */
+	private void saveLog(RawScholarship raw, UnivNoticeLlmParser.ExtractedBody extracted,
+			ParseStatus status, ParsedNotice notice, String rawResponse, String message) {
+		try {
+			String parsedJson = notice == null ? null : objectMapper.writeValueAsString(notice);
+			noticeParseLogRepository.save(NoticeParseLog.builder()
+					.rawScholarshipId(raw.getId())
+					.status(status)
+					.modelId(llmProperties.parserModel())
+					.promptVersion(UnivNoticeLlmParser.PROMPT_VERSION)
+					.bodyTruncated(extracted.truncated())
+					.bodyLength(extracted.originalLength())
+					.parsedJson(parsedJson)
+					.rawResponse(rawResponse)
+					.errorMessage(message)
+					.build());
+		} catch (Exception e) {
+			log.warn("[UnivLlmParsing] 파싱 이력 저장 실패 rawId={} : {}", raw.getId(), e.getMessage());
+		}
+	}
+
 	private Outcome parseOne(RawScholarship raw, boolean dryRun) {
 		String beforePeriod = describePeriod(raw.getScholarship());
 
-		Optional<String> body = parser.extractBody(raw.getRawHtml());
+		Optional<UnivNoticeLlmParser.ExtractedBody> body = parser.extractBody(raw.getRawHtml());
 		if (body.isEmpty()) {
 			if (!dryRun) {
 				raw.markSkipped("본문을 추출할 수 없습니다(첨부·이미지 전용 공지로 추정).");
@@ -133,15 +201,34 @@ public class UnivNoticeLlmParsingService {
 					item(raw, "SKIPPED", null, beforePeriod, "본문 없음"));
 		}
 
-		String bodyText = body.get();
-		String response = llmClient.chat(parser.buildRequest(bodyText));
+		UnivNoticeLlmParser.ExtractedBody extracted = body.get();
+		String bodyText = extracted.text();
+		if (extracted.truncated()) {
+			log.info("[UnivLlmParsing] 본문이 잘렸습니다. rawId={} 원본={}자", raw.getId(), extracted.originalLength());
+		}
+
+		String response;
+		try {
+			response = callWithRetry(bodyText, raw.getId());
+		} catch (CustomException e) {
+			String reason = describeLlmFailure(e, extracted);
+			if (!dryRun) {
+				raw.markFailed(reason);
+				saveLog(raw, extracted, ParseStatus.FAILED, null, null, reason);
+			}
+			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
+		}
+
 		Optional<ParsedNotice> maybeNotice = parser.readResponse(response);
 		if (maybeNotice.isEmpty()) {
+			String reason = extracted.truncated()
+					? "본문이 상한을 넘어 잘린 상태에서 응답 파싱 실패(재시도 무의미)."
+					: "LLM 응답을 JSON 으로 읽지 못했습니다.";
 			if (!dryRun) {
-				raw.markFailed("LLM 응답을 JSON 으로 읽지 못했습니다.");
+				raw.markFailed(reason);
+				saveLog(raw, extracted, ParseStatus.FAILED, null, response, reason);
 			}
-			return new Outcome(ParseStatus.FAILED,
-					item(raw, "FAILED", null, beforePeriod, "응답 파싱 실패"));
+			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
 		}
 
 		ParsedNotice notice = maybeNotice.get();
@@ -157,7 +244,8 @@ public class UnivNoticeLlmParsingService {
 
 		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null));
 		raw.markParsed(scholarship);
-		storeConditions(scholarship, title + "\n" + bodyText);
+		saveLog(raw, extracted, ParseStatus.PARSED, notice, null, note);
+		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
 		storeDocuments(scholarship, notice.safeDocuments());
 
 		return new Outcome(ParseStatus.PARSED,
@@ -214,23 +302,49 @@ public class UnivNoticeLlmParsingService {
 	}
 
 	/**
-	 * 자격조건은 규칙 기반 추출기를 그대로 쓴다.
-	 * 조건은 LLM 없이도 정형 패턴이 잘 잡히고, 이후 ConditionExtractionService 가
-	 * 수치 구조화를 이어받는 흐름이 이미 있어 그 파이프라인을 유지하는 것이 낫다.
+	 * 자격조건을 저장한다. 유형 판별과 문장 선별은 LLM 이 하고, 검증은 파서가 끝낸 상태로 들어온다.
+	 *
+	 * <p>정규식 추출기는 미리 정한 패턴에 걸리는 문장만 잡아서, 대학 공지의 서술형 자격 요건
+	 * (예: "가계 곤란으로 학업 유지가 어려운 자")을 통째로 놓쳤다. 문맥 판별은 LLM 이 낫다.
+	 *
+	 * <p>수치 구조화(valueInt)는 여기서 하지 않는다. {@code autoExtracted=false} 로 두면
+	 * ConditionExtractionService 가 대상으로 집어가 기존 파이프라인이 그대로 이어진다.
 	 */
-	private void storeConditions(Scholarship scholarship, String fullText) {
-		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(fullText).stream()
-				.map(extracted -> ScholarshipCondition.builder()
-						.scholarship(scholarship)
-						.conditionType(extracted.type())
-						.operator(ConditionOperator.EQ)
-						.valueString(extracted.snippet())
-						.autoExtracted(false)
-						.build())
-				.toList();
-		if (!conditions.isEmpty()) {
-			scholarshipConditionRepository.saveAll(conditions);
+	private void storeConditions(Scholarship scholarship,
+			List<UnivNoticeLlmParser.ResolvedCondition> resolved) {
+		if (resolved.isEmpty()) {
+			return;
 		}
+		List<ScholarshipCondition> conditions = resolved.stream()
+				.map(condition -> toEntity(scholarship, condition))
+				.toList();
+		scholarshipConditionRepository.saveAll(conditions);
+	}
+
+
+	/**
+	 * 1단계 결과를 조건 행으로 만든다.
+	 *
+	 * <p>{@code autoExtracted = true} 로 둔다. 이 값의 실제 의미는 "수치 구조화를 시도했는가"이고,
+	 * 2단계(ConditionExtractionService)가 {@code autoExtracted=false AND value_int IS NULL} 로
+	 * 대상을 고르기 때문이다. 1단계가 본문 맥락을 보며 값까지 뽑았으므로, 값을 못 찾았더라도
+	 * evidence 만 보는 2단계가 다시 집어가면 오히려 없는 숫자를 만들어낼 위험이 있다.
+	 * 그래서 대학공지는 여기서 끝내고 2단계는 공공데이터 전용으로 남긴다.
+	 */
+	private ScholarshipCondition toEntity(Scholarship scholarship,
+			UnivNoticeLlmParser.ResolvedCondition condition) {
+		ScholarshipCondition entity = ScholarshipCondition.builder()
+				.scholarship(scholarship)
+				.conditionType(condition.type())
+				.necessity(condition.necessity())
+				.operator(condition.operator())
+				.valueInt(condition.valueInt())
+				.valueIntMax(condition.valueIntMax())
+				.valueString(condition.snippet())
+				.autoExtracted(true)
+				.build();
+		entity.applyRefs(conditionRefResolver.resolve(condition.type(), condition.refLabels()));
+		return entity;
 	}
 
 	/** 제출서류는 LLM 이 뽑은 목록을 쓴다. 서류명은 문맥 이해가 필요해 정규식보다 LLM 이 낫다. */

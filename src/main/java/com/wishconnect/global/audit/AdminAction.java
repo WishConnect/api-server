@@ -22,6 +22,9 @@ public enum AdminAction {
 	COLLECT_TRIGGER,
 	CONDITION_EXTRACT_TRIGGER,
 
+	/** 공공데이터 조건에 마스터 참조 채우기. 과금은 없지만 추천 결과를 바꾸는 쓰기다. */
+	CONDITION_REF_BACKFILL,
+
 	/** 상세페이지·첨부·포스터 자동 보완. 외부 검색·크롤링을 유발한다. */
 	ENRICH_TRIGGER,
 

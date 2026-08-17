@@ -35,8 +35,15 @@ public class SecurityConfig {
 			"/api/v1/auth/login-id/check",
 			"/api/v1/universities/search",
 			"/api/v1/majors/search",
-			// 거주지역 드롭다운. 회원가입 화면에서 쓰므로 가입 전에도 열려 있어야 한다.
+			/*
+			거주지역 드롭다운. 회원가입 화면에서 쓰므로 가입 전에도 열려 있어야 한다.
+
+			하위 경로까지 열어야 한다. "/api/v1/regions" 만 적으면 그 경로 하나만 매칭되고
+			시군구 조회(/api/v1/regions/{id}/children)는 인증을 요구해, 가입 화면에서
+			시도는 뜨는데 구·군만 401 로 비는 상태가 된다.
+			 */
 			"/api/v1/regions",
+			"/api/v1/regions/**",
 			"/actuator/health",
 			"/swagger-ui/**",
 			"/swagger-ui.html",

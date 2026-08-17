@@ -13,6 +13,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.util.ConditionRuleParser;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -101,6 +102,11 @@ public class ConditionExtractionService {
 				if (condition == null || !isValid(condition.getConditionType(), item)) {
 					continue;
 				}
+				if (!hasNumericEvidence(condition.getConditionType(), condition.getValueString(), item)) {
+					log.warn("[ConditionExtraction] 원문에 없는 숫자라 버림. id={} type={} value={}",
+							condition.getId(), condition.getConditionType(), item.valueInt());
+					continue;
+				}
 				condition.applyExtracted(toOperator(item.operator()), item.valueInt(), item.valueIntMax());
 				extracted++;
 			}
@@ -136,6 +142,45 @@ public class ConditionExtractionService {
 			case ACADEMIC_CRITERIA -> value >= 100 && value <= 450;
 			case GRADE_LEVEL -> value >= 1 && value <= 12
 					&& (item.valueIntMax() == null || (item.valueIntMax() >= value && item.valueIntMax() <= 12));
+			default -> false;
+		};
+	}
+
+	/**
+	 * 뽑은 숫자가 <b>원문에 실제로 있는지</b> 확인한다.
+	 *
+	 * <p>이 단계는 {@code id|유형|원문} 한 줄만 받아 공고 본문을 보지 못한다. 그래서 "이건 소득 조건이다"
+	 * 라는 전제가 틀리면 모델이 없는 숫자를 만들어낸다 — 운영 데이터에 {@code INCOME_CRITERIA LTE 6}
+	 * 인데 원문은 학년·성적 얘기인 행이 실제로 있다. 범위 검사(1~10)는 이걸 못 잡는다. 6은 멀쩡한 분위다.
+	 *
+	 * <p>원문에 없는 숫자는 근거가 없으므로 버린다. 버리면 그 조건은 판정 불가로 남아 아무도 배제하지
+	 * 않는다 — 지어낸 숫자로 자격 있는 학생을 탈락시키는 것보다 낫다.
+	 */
+	private boolean hasNumericEvidence(ConditionType type, String valueString, ExtractedCondition item) {
+		if (valueString == null) {
+			return false;
+		}
+		// 숫자만 남겨 토큰으로 견준다. 부분 문자열로 보면 "10분위" 안의 "1" 이 걸려 근거가 없는데도 통과한다.
+		Set<String> tokens = java.util.Arrays
+				.stream(valueString.replaceAll("[^0-9.]", " ").trim().split("\\s+"))
+				.filter(token -> !token.isBlank())
+				.collect(Collectors.toSet());
+		if (!appears(tokens, type, item.valueInt())) {
+			return false;
+		}
+		return item.valueIntMax() == null || appears(tokens, type, item.valueIntMax());
+	}
+
+	private boolean appears(Set<String> tokens, ConditionType type, int value) {
+		if (tokens.contains(String.valueOf(value))) {
+			return true;
+		}
+		return switch (type) {
+			// 평점은 100배로 저장한다. 원문에는 "2.75"·"3.0" 처럼 적혀 있다.
+			case ACADEMIC_CRITERIA -> tokens.contains("%.2f".formatted(value / 100.0))
+					|| tokens.contains("%.1f".formatted(value / 100.0));
+			// "3학년"은 5~6학기로 환산해 저장한다. 원문에는 학년 숫자만 있다.
+			case GRADE_LEVEL -> tokens.contains(String.valueOf((value + 1) / 2));
 			default -> false;
 		};
 	}

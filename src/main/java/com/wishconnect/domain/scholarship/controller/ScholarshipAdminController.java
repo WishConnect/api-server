@@ -12,6 +12,7 @@ import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
+import com.wishconnect.domain.scholarship.dto.ConditionRefBackfillResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
@@ -21,6 +22,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
@@ -81,6 +83,7 @@ public class ScholarshipAdminController {
 	private final UnivNoticeCollector univNoticeCollector;
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
+	private final ConditionRefBackfillService conditionRefBackfillService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
@@ -297,6 +300,30 @@ public class ScholarshipAdminController {
 		ConditionExtractionResponse result = conditionExtractionService.extract();
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_EXTRACT_TRIGGER,
 				null, null, "대상 %d건, 추출 %d건".formatted(result.targetCount(), result.extractedCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "공공데이터 조건 마스터 참조 채우기",
+			description = """
+					이미 저장된 공공데이터 조건(지역·특정자격·전공계열·지원성격)의 원문에서 마스터 라벨을
+					찾아 참조를 채운다. 참조가 없으면 매칭이 전부 "판정 불가"로 넘어가므로,
+					지역·자격·전공 매칭을 켜기 전에 한 번 돌려야 한다.
+
+					**LLM 을 쓰지 않는다.** 공공데이터는 이미 필드가 나뉘어 있어 규칙으로 충분하고,
+					규칙은 같은 입력에 같은 답을 내므로 몇 번을 다시 돌려도 결과가 흔들리지 않는다.
+					참조가 이미 있는 조건은 건드리지 않는다(대학공지 LLM 결과를 덮어쓰지 않기 위해서다).
+
+					**파라미터**
+					- limit: 처리 건수 (1~1000, 기본 200). (ADMIN 전용)
+					""")
+	@PostMapping("/conditions/refs")
+	public ApiResponse<ConditionRefBackfillResponse> backfillConditionRefs(
+			@AuthenticationPrincipal String actorId,
+			@RequestParam(defaultValue = "200") int limit) {
+		ConditionRefBackfillResponse result = conditionRefBackfillService.backfill(Math.clamp(limit, 1, 1000));
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
+				null, null, "대상 %d건, 채움 %d건, 참조 %d개"
+						.formatted(result.targetCount(), result.filledCount(), result.refCount()));
 		return ApiResponse.ok(result);
 	}
 

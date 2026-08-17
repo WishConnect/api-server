@@ -61,6 +61,11 @@ public enum ErrorCode {
 	// LLM (AI 자기소개서)
 	LLM_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요."),
 	LLM_EMPTY_RESPONSE(HttpStatus.BAD_GATEWAY, "AI 응답이 비어 있습니다. 잠시 후 다시 시도해주세요."),
+	/**
+	 * 응답이 max_tokens 에서 잘렸다. 같은 요청은 같은 지점에서 다시 잘리므로
+	 * <b>재시도해도 소용없다</b> — 호출측은 재시도 대상에서 빼고 max_tokens 를 올려야 한다.
+	 */
+	LLM_RESPONSE_TRUNCATED(HttpStatus.BAD_GATEWAY, "AI 응답이 길이 제한에서 잘렸습니다."),
 
 	// 장학금/지원서
 	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),

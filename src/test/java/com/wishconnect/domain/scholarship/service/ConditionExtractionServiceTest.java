@@ -77,7 +77,8 @@ class ConditionExtractionServiceTest {
 	@DisplayName("룰로 못 푼 비정형 조건만 LLM에 위임한다")
 	void delegatesUnresolvedToLlm() {
 		ScholarshipCondition ruled = condition(1L, ConditionType.INCOME_CRITERIA, "소득 8분위 이하");
-		ScholarshipCondition fuzzy = condition(2L, ConditionType.ACADEMIC_CRITERIA, "성적 우수자에 한함");
+		ScholarshipCondition fuzzy = condition(2L, ConditionType.ACADEMIC_CRITERIA,
+				"직전학기 성적이 3.0(4.5 만점) 아래로 떨어지지 않은 자");
 		stubTargets(ruled, fuzzy);
 		given(llmClient.chat(any())).willReturn("[{\"id\":2,\"operator\":\"GTE\",\"valueInt\":300}]");
 
@@ -119,7 +120,8 @@ class ConditionExtractionServiceTest {
 	@Test
 	@DisplayName("코드펜스로 감싼 LLM 응답도 파싱한다")
 	void parsesFencedJson() {
-		ScholarshipCondition fuzzy = condition(1L, ConditionType.GRADE_LEVEL, "재학 기간 요건 별도 안내");
+		ScholarshipCondition fuzzy = condition(1L, ConditionType.GRADE_LEVEL,
+				"학부 2년차부터 4년차까지 지원 가능");
 		stubTargets(fuzzy);
 		given(llmClient.chat(any()))
 				.willReturn("```json\n[{\"id\":1,\"operator\":\"BETWEEN\",\"valueInt\":2,\"valueIntMax\":8}]\n```");
@@ -128,6 +130,36 @@ class ConditionExtractionServiceTest {
 
 		assertThat(response.extractedCount()).isEqualTo(1);
 		assertThat(fuzzy.getValueIntMax()).isEqualTo(8);
+	}
+
+	@Test
+	@DisplayName("원문에 없는 숫자는 범위 안이어도 버린다 — 이 단계는 본문을 못 봐서 지어내기 쉽다")
+	void rejectsNumbersAbsentFromTheSourceText() {
+		ScholarshipCondition fuzzy = condition(1L, ConditionType.INCOME_CRITERIA, "가계 곤란 학생 우선 선발");
+		stubTargets(fuzzy);
+		// 6분위는 멀쩡한 값이라 범위 검사로는 못 잡는다. 원문에 6이 없다는 것만이 근거다.
+		given(llmClient.chat(any())).willReturn("[{\"id\":1,\"operator\":\"LTE\",\"valueInt\":6}]");
+
+		ConditionExtractionResponse response = conditionExtractionService.extract();
+
+		assertThat(response.extractedCount()).isZero();
+		assertThat(fuzzy.getValueInt()).isNull();
+		assertThat(fuzzy.isAutoExtracted()).isFalse();
+	}
+
+	@Test
+	@DisplayName("'3년차'를 5~6학기로 환산한 값은 원문에 5·6이 없어도 인정한다")
+	void acceptsSemesterConversionFromGradeNumber() {
+		ScholarshipCondition grade = condition(1L, ConditionType.GRADE_LEVEL, "학부 3년차 재학생 대상");
+		stubTargets(grade);
+		given(llmClient.chat(any()))
+				.willReturn("[{\"id\":1,\"operator\":\"BETWEEN\",\"valueInt\":5,\"valueIntMax\":6}]");
+
+		ConditionExtractionResponse response = conditionExtractionService.extract();
+
+		assertThat(response.extractedCount()).isEqualTo(1);
+		assertThat(grade.getValueInt()).isEqualTo(5);
+		assertThat(grade.getValueIntMax()).isEqualTo(6);
 	}
 
 	@Test

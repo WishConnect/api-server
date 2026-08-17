@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.util.List;
@@ -22,7 +23,12 @@ class UnivNoticeLlmParserTest {
 
 	private ParsedNotice notice(String start, String end, String evidence) {
 		return new ParsedNotice("제목", "경희대학교", "INTERNAL", start, end, evidence,
-				null, null, null, List.of());
+				null, null, null, List.of(), List.of());
+	}
+
+	private ParsedNotice noticeWithConditions(ParsedNotice.Condition... conditions) {
+		return new ParsedNotice("제목", "경희대학교", "INTERNAL", null, null, null,
+				null, null, null, List.of(), List.of(conditions));
 	}
 
 	// --- 본문 추출 ---
@@ -43,10 +49,11 @@ class UnivNoticeLlmParserTest {
 		var body = parser.extractBody(html);
 
 		assertThat(body).isPresent();
-		assertThat(body.get()).contains("2026학년도 2학기 운연장학 장학생을 모집합니다");
-		assertThat(body.get()).doesNotContain("전체메뉴");
-		assertThat(body.get()).doesNotContain("COPYRIGHT");
-		assertThat(body.get()).doesNotContain("var x=1");
+		assertThat(body.get().text()).contains("2026학년도 2학기 운연장학 장학생을 모집합니다");
+		assertThat(body.get().text()).doesNotContain("전체메뉴");
+		assertThat(body.get().text()).doesNotContain("COPYRIGHT");
+		assertThat(body.get().text()).doesNotContain("var x=1");
+		assertThat(body.get().truncated()).isFalse();
 	}
 
 	@Test
@@ -64,7 +71,9 @@ class UnivNoticeLlmParserTest {
 		var body = parser.extractBody("<html><body>" + long텍스트 + "</body></html>");
 
 		assertThat(body).isPresent();
-		assertThat(body.get().length()).isEqualTo(6_000);
+		assertThat(body.get().text().length()).isEqualTo(6_000);
+		assertThat(body.get().truncated()).isTrue();
+		assertThat(body.get().originalLength()).isGreaterThan(6_000);
 	}
 
 	// --- 응답 파싱 ---
@@ -276,5 +285,105 @@ class UnivNoticeLlmParserTest {
 		assertThat(parser.resolveType("external")).isEqualTo(ScholarshipType.EXTERNAL);
 		assertThat(parser.resolveType("교외")).isEqualTo(ScholarshipType.INTERNAL);
 		assertThat(parser.resolveType(null)).isEqualTo(ScholarshipType.INTERNAL);
+	}
+
+	// --- 자격조건 검증 ---
+
+	private static final String CONDITION_BODY = """
+			2026학년도 2학기 성적우수 장학생을 모집합니다. 지원자격은 직전학기 평점평균 3.5 이상인 \
+			2학년 이상 재학생이며, 가계 곤란으로 학업 유지가 어려운 자를 우선 선발합니다. \
+			타 장학금과의 중복수혜는 불가합니다. 제출서류는 성적증명서 1부입니다.
+			""";
+
+	@Test
+	@DisplayName("본문에 근거가 있는 조건만 유형별로 남긴다")
+	void resolvesGroundedConditions() {
+		var notice = noticeWithConditions(
+				ParsedNotice.Condition.of("ACADEMIC_CRITERIA", "직전학기 평점평균 3.5 이상인"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"),
+				ParsedNotice.Condition.of("RESTRICTION", "타 장학금과의 중복수혜는 불가합니다"));
+
+		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
+
+		assertThat(resolved).extracting(UnivNoticeLlmParser.ResolvedCondition::type)
+				.containsExactly(ConditionType.ACADEMIC_CRITERIA, ConditionType.GRADE_LEVEL,
+						ConditionType.RESTRICTION);
+		assertThat(resolved.get(0).snippet()).isEqualTo("직전학기 평점평균 3.5 이상인");
+	}
+
+	/*
+	정규식 추출기가 놓치던 유형. 패턴에 숫자·키워드가 없어 잡히지 않았는데,
+	이게 대학 공지에서 흔한 서술형 자격 요건이다. LLM 으로 바꾼 주된 이유.
+	 */
+	@Test
+	@DisplayName("숫자·키워드 없는 서술형 자격 요건도 조건으로 잡는다")
+	void resolvesNarrativeCondition() {
+		var notice = noticeWithConditions(
+				ParsedNotice.Condition.of("SPECIFIC_QUALIFICATION", "가계 곤란으로 학업 유지가 어려운 자"));
+
+		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
+
+		assertThat(resolved).singleElement()
+				.satisfies(condition -> assertThat(condition.type())
+						.isEqualTo(ConditionType.SPECIFIC_QUALIFICATION));
+	}
+
+	/*
+	없는 조건을 만들어내면 자격 있는 학생이 추천에서 조용히 탈락한다.
+	기간과 같은 이유로, 본문에 없는 인용은 통째로 버린다.
+	 */
+	@Test
+	@DisplayName("본문에 없는 문장을 인용한 조건은 버린다 — 환각 방어")
+	void dropsHallucinatedCondition() {
+		var notice = noticeWithConditions(
+				ParsedNotice.Condition.of("INCOME_CRITERIA", "소득 3분위 이하인 학생만 지원 가능합니다"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"));
+
+		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
+
+		assertThat(resolved).extracting(UnivNoticeLlmParser.ResolvedCondition::type)
+				.containsExactly(ConditionType.GRADE_LEVEL);
+	}
+
+	@Test
+	@DisplayName("알 수 없는 조건 유형은 버린다")
+	void dropsUnknownType() {
+		var notice = noticeWithConditions(
+				ParsedNotice.Condition.of("성적", "직전학기 평점평균 3.5 이상인"),
+				ParsedNotice.Condition.of(null, "2학년 이상 재학생이며"));
+
+		assertThat(parser.resolveConditions(notice, CONDITION_BODY)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("유형·문장이 같은 조건은 한 번만 남긴다")
+	void deduplicates() {
+		var notice = noticeWithConditions(
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"));
+
+		assertThat(parser.resolveConditions(notice, CONDITION_BODY)).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("조건이 12개를 넘으면 앞에서부터 12개만 저장한다")
+	void capsConditionCount() {
+		// 근거 검증을 통과해야 하므로, 인용할 문장 20개를 실제로 담은 본문을 만든다
+		var body = new StringBuilder();
+		var conditions = new ParsedNotice.Condition[20];
+		for (int i = 0; i < conditions.length; i++) {
+			String sentence = "지원자격 세부요건 " + i + " 번 항목을 충족해야 합니다.";
+			body.append(sentence).append(' ');
+			conditions[i] = ParsedNotice.Condition.of("SPECIFIC_QUALIFICATION", sentence);
+		}
+
+		assertThat(parser.resolveConditions(noticeWithConditions(conditions), body.toString()))
+				.hasSize(12);
+	}
+
+	@Test
+	@DisplayName("conditions 가 없으면 빈 목록을 돌려준다")
+	void handlesMissingConditions() {
+		assertThat(parser.resolveConditions(notice(null, null, null), CONDITION_BODY)).isEmpty();
 	}
 }
