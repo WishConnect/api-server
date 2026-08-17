@@ -110,6 +110,24 @@ class ConditionRefResolverTest {
 	}
 
 	@Test
+	@DisplayName("공공데이터 계열명은 별칭으로 이어준다 — 안 하면 공공데이터 전공 조건이 통째로 안 풀린다")
+	void resolvesPublicDataMajorAliases() {
+		assertThat(resolver.resolve(ConditionType.MAJOR_FIELD, List.of("자연계열")))
+				.containsExactly(ConditionRef.ofCode("NATURAL_SCIENCE"));
+		assertThat(resolver.resolve(ConditionType.MAJOR_FIELD, List.of("의약계열")))
+				.containsExactly(ConditionRef.ofCode("MEDICAL"));
+		assertThat(resolver.resolve(ConditionType.MAJOR_FIELD, List.of("인문계열", "사회계열")))
+				.containsExactly(ConditionRef.ofCode("HUMANITIES_SOCIAL"));
+	}
+
+	@Test
+	@DisplayName("6종 어디에도 맞지 않는 계열은 버린다 — 이공계열은 하나를 고르면 나머지가 탈락한다")
+	void dropsMajorLabelsThatSpanCategories() {
+		assertThat(resolver.resolve(ConditionType.MAJOR_FIELD, List.of("이공계열"))).isEmpty();
+		assertThat(resolver.resolve(ConditionType.MAJOR_FIELD, List.of("교육계열"))).isEmpty();
+	}
+
+	@Test
 	@DisplayName("관심분야는 지원 성격이라 마스터에서 찾아 붙인다")
 	void resolvesInterest() {
 		given(interestRepository.findFirstByName("생활비 지원"))

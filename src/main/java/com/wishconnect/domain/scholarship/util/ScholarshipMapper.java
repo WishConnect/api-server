@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.wishconnect.domain.scholarship.config.ScholarshipApiProperties;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
@@ -170,9 +171,23 @@ public class ScholarshipMapper {
 			.scholarship(scholarship)
 			.conditionType(conditionType)
 			.operator(ConditionOperator.EQ)
+			.necessity(necessityOf(conditionType))
 			.valueString(cleanText(value))
 			.autoExtracted(false)
 			.build());
+	}
+
+	/**
+	 * 공공데이터 조건의 필수/우대 구분.
+	 *
+	 * <p>{@code 학자금유형구분}(등록금·생활비·해외연수)은 <b>자격이 아니라 지원 성격</b>이다.
+	 * 이걸 필수로 두면 "생활비 지원" 장학금이 생활비를 원한다고 표시하지 않은 학생을 전부 탈락시킨다
+	 * ({@code eligible = mismatchCount == 0}). 나머지는 공공데이터가 자격요건 필드로 준 값이라 필수다.
+	 */
+	private ConditionNecessity necessityOf(ConditionType conditionType) {
+		return conditionType == ConditionType.FINANCIAL_AID_TYPE
+			? ConditionNecessity.PREFERRED
+			: ConditionNecessity.REQUIRED;
 	}
 
 	private void addGradeLevelCondition(
@@ -284,6 +299,7 @@ public class ScholarshipMapper {
 			.scholarship(scholarship)
 			.conditionType(conditionType)
 			.operator(operator)
+			.necessity(necessityOf(conditionType))
 			.valueInt(valueInt)
 			.valueIntMax(valueIntMax)
 			.valueString(cleanText(value))
