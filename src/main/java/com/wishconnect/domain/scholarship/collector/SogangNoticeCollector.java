@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -199,11 +198,6 @@ public class SogangNoticeCollector {
 				.source(SOURCE)
 				.sourceId(pkId)
 				.sourceUrl(detailUrl)
-				.rawJson(Map.of(
-						"title", title,
-						"sdate", data.path("sdate").asText(""),
-						"edate", data.path("edate").asText(""),
-						"category", categoryOf(data)))
 				.rawHtml(contentHtml)
 				.parseStatus(closed ? ParseStatus.SKIPPED : ParseStatus.PENDING)
 				.parseError(closed ? "모집종료일이 지난 공지입니다." : null)
