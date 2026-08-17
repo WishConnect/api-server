@@ -12,6 +12,7 @@ import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
 import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.common.repository.SchoolRepository;
 import com.wishconnect.domain.user.dto.request.ProfileAcademicRequest;
 import com.wishconnect.domain.user.dto.request.ProfileHouseholdRequest;
@@ -57,6 +58,8 @@ class UserProfileServiceTest {
 	@Mock
 	private InterestRepository interestRepository;
 	@Mock
+	private RegionResolver regionResolver;
+	@Mock
 	private UserFamilyTypeRepository userFamilyTypeRepository;
 	@Mock
 	private UserInterestRepository userInterestRepository;
@@ -71,7 +74,7 @@ class UserProfileServiceTest {
 		userProfileService = new UserProfileService(
 				userRepository,
 				userProfileRepository,
-				regionRepository,
+				regionResolver,
 				schoolRepository,
 				majorRepository,
 				familyTypeRepository,

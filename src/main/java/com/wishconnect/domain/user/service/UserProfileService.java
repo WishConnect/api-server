@@ -5,7 +5,7 @@ import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
-import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.common.repository.SchoolRepository;
 import com.wishconnect.domain.user.dto.request.ProfileAcademicRequest;
 import com.wishconnect.domain.user.dto.request.ProfileBasicRequest;
@@ -59,7 +59,7 @@ public class UserProfileService {
 
 	private final UserRepository userRepository;
 	private final UserProfileRepository userProfileRepository;
-	private final RegionRepository regionRepository;
+	private final RegionResolver regionResolver;
 	private final SchoolRepository schoolRepository;
 	private final MajorRepository majorRepository;
 	private final FamilyTypeRepository familyTypeRepository;
@@ -180,10 +180,19 @@ public class UserProfileService {
 				.orElseGet(() -> userProfileRepository.save(UserProfile.createFor(user)));
 	}
 
+	/**
+	 * 거주지역을 찾는다. 시도만 올 수도 있고 시군구까지 올 수도 있다.
+	 *
+	 * <p>{@code 중구} 처럼 여러 시도에 있는 이름은 단독으로는 특정할 수 없으므로,
+	 * 프론트는 {@code "서울 중구"} 형태로 보내거나 목록 API 의 regionId 를 쓰는 게 확실하다.
+	 * 특정하지 못하면 조용히 넘기지 않고 400 으로 알려 준다.
+	 */
 	private Region getRegion(String name) {
-		String normalized = normalizeRegionName(name);
-		return regionRepository.findByName(normalized)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		Region region = regionResolver.byName(name);
+		if (region == null) {
+			throw new CustomException(ErrorCode.INVALID_REGION);
+		}
+		return region;
 	}
 
 	private School getOrCreateSchool(String name) {
@@ -330,29 +339,6 @@ public class UserProfileService {
 		return value.trim();
 	}
 
-	private String normalizeRegionName(String value) {
-		String normalized = normalizeRequired(value);
-		return switch (normalized) {
-			case "서울특별시" -> "서울";
-			case "부산광역시" -> "부산";
-			case "대구광역시" -> "대구";
-			case "인천광역시" -> "인천";
-			case "광주광역시" -> "광주";
-			case "대전광역시" -> "대전";
-			case "울산광역시" -> "울산";
-			case "세종특별자치시" -> "세종";
-			case "경기도" -> "경기";
-			case "강원특별자치도", "강원도" -> "강원";
-			case "충청북도" -> "충북";
-			case "충청남도" -> "충남";
-			case "전북특별자치도", "전라북도" -> "전북";
-			case "전라남도" -> "전남";
-			case "경상북도" -> "경북";
-			case "경상남도" -> "경남";
-			case "제주특별자치도", "제주도" -> "제주";
-			default -> normalized;
-		};
-	}
 
 	private ProfileResponse.Academic toAcademic(UserProfile profile) {
 		if (profile == null) {

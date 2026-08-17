@@ -75,6 +75,7 @@ public class AcademicInfoSyncWriteService {
 		if (normalized == null) {
 			return null;
 		}
-		return regionRepository.findByName(normalized).orElse(null);
+		// 학교 소재지는 시도 단위다. 시군구까지 뒤지면 '중구' 같은 중복 이름에서 결과가 여러 건이 된다.
+		return regionRepository.findByNameAndParentIsNull(normalized).orElse(null);
 	}
 }

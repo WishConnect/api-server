@@ -30,6 +30,8 @@ public enum ErrorCode {
 	AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해주세요."),
 	/** 온보딩 STEP2 전공 계열. 대학알리미 대계열 6종만 허용한다. */
 	INVALID_MAJOR_CATEGORY(HttpStatus.BAD_REQUEST, "지원하지 않는 전공 계열입니다."),
+	/** 거주지역을 특정하지 못한 경우. 시군구 이름은 여러 시도에 중복되므로 "서울 중구" 형태로 보내야 한다. */
+	INVALID_REGION(HttpStatus.BAD_REQUEST, "거주지역을 찾을 수 없습니다. 시도와 함께 선택해주세요."),
 	LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 일치하지 않습니다."),
 	/** 소셜 3사 공통: 프론트가 보낸 redirectUri 가 서버 허용목록에 없을 때. */
 	INVALID_REDIRECT_URI(HttpStatus.BAD_REQUEST, "허용되지 않은 redirectUri 입니다."),
