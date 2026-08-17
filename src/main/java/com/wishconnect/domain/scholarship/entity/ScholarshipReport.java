@@ -2,7 +2,9 @@ package com.wishconnect.domain.scholarship.entity;
 
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.global.common.BaseEntity;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,9 +16,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 /**
  * 장학금 오등록 신고. 사용자가 잘못된 정보를 발견하면 접수하고, 관리자가 확인해 처리한다.
@@ -43,9 +49,22 @@ public class ScholarshipReport extends BaseEntity {
 	@JoinColumn(name = "user_id", nullable = false)
 	private User user;
 
+	/**
+	 * 선택된 신고 사유. 화면이 체크박스 다중 선택이라 한 건에 여러 개가 붙는다.
+	 *
+	 * <p>{@code Set} 을 쓰는 이유는 프론트가 같은 값을 두 번 보내도 저장이 깨지지 않게 하기 위함이다
+	 * ({@code (report_id, reason)} 이 복합 PK 라 중복이 오면 제약 위반이 난다).
+	 * 순서는 화면 체크박스 순서를 그대로 돌려주려고 {@link LinkedHashSet} 으로 보존한다.
+	 */
+	@ElementCollection
+	@CollectionTable(
+			name = "scholarship_report_reason",
+			joinColumns = @JoinColumn(name = "report_id"))
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 30)
-	private ReportReason reason;
+	@Column(name = "reason", nullable = false, length = 30)
+	// 목록 조회에서 신고 건마다 사유 조회가 따로 나가는(N+1) 것을 막는다.
+	@BatchSize(size = 100)
+	private Set<ReportReason> reasons = new LinkedHashSet<>();
 
 	@Column(columnDefinition = "TEXT")
 	private String detail;
@@ -61,17 +80,18 @@ public class ScholarshipReport extends BaseEntity {
 	@Column(name = "resolved_at")
 	private LocalDateTime resolvedAt;
 
-	private ScholarshipReport(Scholarship scholarship, User user, ReportReason reason, String detail) {
+	private ScholarshipReport(
+			Scholarship scholarship, User user, Collection<ReportReason> reasons, String detail) {
 		this.scholarship = scholarship;
 		this.user = user;
-		this.reason = reason;
+		this.reasons = new LinkedHashSet<>(reasons);
 		this.detail = detail;
 		this.status = ReportStatus.PENDING;
 	}
 
 	public static ScholarshipReport create(
-			Scholarship scholarship, User user, ReportReason reason, String detail) {
-		return new ScholarshipReport(scholarship, user, reason, detail);
+			Scholarship scholarship, User user, Collection<ReportReason> reasons, String detail) {
+		return new ScholarshipReport(scholarship, user, reasons, detail);
 	}
 
 	/** 관리자 처리. PENDING 이 아닌 상태로 바뀌는 시점을 처리 시각으로 본다. */
