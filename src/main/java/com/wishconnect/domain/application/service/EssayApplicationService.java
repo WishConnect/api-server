@@ -20,7 +20,9 @@ import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.notification.service.NotificationService;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import com.wishconnect.domain.scholarship.entity.ScholarshipEventType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
@@ -55,6 +57,8 @@ public class EssayApplicationService {
 	private final ScholarshipRepository scholarshipRepository;
 	private final UserRepository userRepository;
 	private final NotificationService notificationService;
+	// 추천 품질 측정용 행동 기록. 저장 실패가 지원서 생성을 실패시키지는 않는다.
+	private final ScholarshipEventService scholarshipEventService;
 
 	/**
 	 * ① 지원서 목록 조회. status 로 필터링 가능.
@@ -184,6 +188,8 @@ public class EssayApplicationService {
 					.build());
 		}
 		createWritingNotificationSafely(essay);
+		// 깔때기의 가장 강한 신호. 프론트에 맡기면 빠뜨렸을 때 아래쪽이 통째로 빈다.
+		scholarshipEventService.record(userId, scholarshipId, ScholarshipEventType.ESSAY_START);
 
 		return new CreateApplicationResponse(essay.getId(), essay.getStatus(), questions.size());
 	}

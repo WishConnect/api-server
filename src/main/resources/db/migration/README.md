@@ -49,12 +49,21 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_02__add_merge_admin_actions.sql` | `admin_audit_log.action` CHECK 에 병합 액션 3개 추가 | ✅ 2026-08-17 |
 | `V20260818_03__create_notice_parse_log.sql` | `notice_parse_log` 테이블 추가 (LLM 파싱 이력·정확도 측정) | ⬜ 미적용 |
 | `V20260818_04__condition_necessity_and_refs.sql` | 조건에 `necessity`(필수/우대) + `scholarship_condition_ref` 집합 참조 | ⬜ 미적용 |
+| `V20260818_05__financial_aid_type_preferred.sql` | `FINANCIAL_AID_TYPE` 조건을 `PREFERRED` 로 (지원 성격은 자격이 아니다) | ⬜ 미적용 |
+| `V20260818_06__create_scholarship_event.sql` | `scholarship_event` 테이블 추가 (추천 노출·클릭 기록) | ⬜ 미적용 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서
 > 컬럼 타입을 바꾸는 SQL 을 함께 올리지 않았고, 그 사실이 **2026-08-17 배포가 실패하고 나서야**
 > 드러났다(`wrong column type ... found [uuid], but expecting [bigint]`).
 > 엔티티의 연관 대상을 바꾸는 변경은 컬럼 타입이 따라 바뀐다는 점을 기억할 것.
+
+> ⚠️ **`V20260818_06` 도 반드시 배포보다 먼저** 적용해야 한다. `ScholarshipEvent` 엔티티가 새로
+> 생겨 테이블이 없으면 `validate` 가 실패해 앱이 기동되지 않는다.
+
+> `V20260818_05` 는 기동을 막지 않는다(값만 바꾼다). 다만 **`V20260818_04` 다음에** 돌려야 한다 —
+> 04 가 만든 `necessity` 컬럼을 갱신하기 때문이다. 적용 전까지는 "생활비 지원" 같은 지원 성격이
+> 자격요건으로 남아, 참조가 채워지는 순간 관심분야를 안 고른 학생을 탈락시킨다.
 
 > ⚠️ **`V20260818_04` 도 배포보다 먼저** 적용해야 한다. `necessity` 는 **기존 행을 `REQUIRED` 로
 > 채운 뒤** NOT NULL 을 건다 — NULL 로 두면 지금 작동 중인 소득·성적·학년 게이트가 통째로 풀려
