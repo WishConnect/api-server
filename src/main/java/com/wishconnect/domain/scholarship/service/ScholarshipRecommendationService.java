@@ -2,9 +2,13 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.common.repository.ImageRepository;
+import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.Pagination;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
+import com.wishconnect.domain.scholarship.dto.CuratedSort;
+import com.wishconnect.domain.scholarship.dto.CuratedViewMode;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
@@ -22,6 +26,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -33,13 +39,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /*
-프로필 룰 기반 장학금 맞춤 추천(Phase 1)입니다.
+큐레이팅 화면을 만든다. 화면은 로그인·온보딩 여부에 따라 셋으로 갈린다(CuratedViewMode).
+
+- GUEST: 추천 없음. 지금 지원 가능한 공고를 정렬 드롭다운(최신 등록순/마감 임박순)대로만 준다.
+- ONBOARDING_REQUIRED: 마감 임박 배너까지만. 교내·조건미충족 섹션은 화면에서 잠기므로 비운다.
+- PERSONALIZED: 아래 프로필 룰 기반 추천(Phase 1).
+
+PERSONALIZED 의 규칙:
 - 조건별 판정은 충족/불충족/판정불가 3값(ConditionMatcher). 판정불가는 탈락 사유로 쓰지 않는다.
 - 불충족 조건이 있으면 eligible=false로 "조건 미충족" 분류(ineligibleScholarships 로 분리 노출).
 - 점수 = 충족 비율(최대 70) + 판정 가능 조건 존재 가점(10) + 마감 임박 가점(20).
 - featured = 지원 가능 공고 중 마감 임박순 상위 5건(캐러셀). campus = 소속 학교의 교내(INTERNAL).
-- 프로필이 없으면 배제 없이 전체 OPEN을 마감 임박순으로 노출(온보딩 전 폴백).
-추후 Phase 2 에서 스크랩 등 행동 데이터 가점을 결합한다.
+
+이 점수식은 조건 데이터가 있는 공고만 변별하고 나머지는 전부 동점이 된다는 한계가 있다.
+추천 방식 자체는 별도로 검토 중이다.
  */
 @Service
 @RequiredArgsConstructor
@@ -56,15 +69,100 @@ public class ScholarshipRecommendationService {
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UserProfileRepository userProfileRepository;
 	private final ScrapRepository scrapRepository;
+	// 카드 그리드가 포스터 중심이라 목록에서도 이미지를 함께 내려준다.
+	private final ImageRepository imageRepository;
+	private final ImageStorageService imageStorageService;
 
+	/**
+	 * 큐레이팅 메인. 로그인·온보딩 여부에 따라 세 가지 화면 중 하나를 만든다.
+	 *
+	 * @param userId 비로그인이면 {@code null}
+	 * @param sort   비로그인 화면의 정렬 드롭다운. 나머지 상태에서는 화면에 드롭다운이 없어 쓰이지 않는다.
+	 */
 	@Transactional(readOnly = true)
-	public CuratedScholarshipResponse getCuratedScholarships(UUID userId, int page, int size) {
+	public CuratedScholarshipResponse getCuratedScholarships(
+			UUID userId, CuratedSort sort, int page, int size) {
+
+		if (userId == null) {
+			return guestCurated(sort, page, size);
+		}
 		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+		if (profile == null || !profile.isOnboardingCompleted()) {
+			return onboardingRequiredCurated(userId);
+		}
+		return personalizedCurated(userId, profile, page, size);
+	}
+
+	/**
+	 * 비로그인 화면. 추천 로직을 태우지 않는다.
+	 *
+	 * <p>프로필이 없으면 모든 조건이 "판정 불가" 라 점수가 전부 0 으로 같아진다. 즉 채점을 해도
+	 * 정렬에 아무 영향이 없으면서 조건 조회만 낭비된다. 그래서 조건을 아예 읽지 않고
+	 * 정렬 기준만 적용한다.
+	 */
+	private CuratedScholarshipResponse guestCurated(CuratedSort sort, int page, int size) {
+		List<Scholarship> open = scholarshipRepository.findAllOpenForRecommendation(
+				RecruitmentStatus.OPEN, LocalDateTime.now());
+
+		List<Scholarship> sorted = open.stream().sorted(comparatorFor(sort)).toList();
+		Page<Scholarship> paged = slice(sorted, page, size);
+		Map<Long, String> posters = findPosterUrls(
+				paged.items().stream().map(Scholarship::getId).toList());
+
+		// 비로그인은 스크랩 상태가 없고(로그인해야 스크랩할 수 있다) 판정 근거도 없다.
+		List<ScholarshipCard> cards = paged.items().stream()
+				.map(s -> ScholarshipCard.of(s, posters.get(s.getId()), 0, List.of(), true, false))
+				.toList();
+
+		return new CuratedScholarshipResponse(CuratedViewMode.GUEST,
+				List.of(), 0, List.of(), cards, List.of(), paged.pagination());
+	}
+
+	/**
+	 * 로그인했지만 온보딩 미완료. 마감 임박 배너까지만 채우고 나머지 섹션은 비운다.
+	 *
+	 * <p>교내·조건미충족 섹션은 화면에서 흐리게 잠기고 "프로필 업데이트하고 확인하기" 가 덮인다.
+	 * 잠긴 자리에 실을 데이터를 굳이 내려보내지 않는다. 빈 배열이 "없음" 인지 "잠김" 인지는
+	 * {@code viewMode} 로 구분한다.
+	 */
+	private CuratedScholarshipResponse onboardingRequiredCurated(UUID userId) {
+		List<Scholarship> open = scholarshipRepository.findAllOpenForRecommendation(
+				RecruitmentStatus.OPEN, LocalDateTime.now());
+
+		// 근로장학은 추천 성격이 아니라 히어로 배너에 올리지 않는다(온보딩 완료 화면과 같은 기준).
+		List<Scholarship> featured = open.stream()
+				.filter(s -> s.getScholarshipType() != ScholarshipType.WORK_STUDY)
+				.filter(s -> {
+					Long dDay = CuratedScholarshipResponse.calculateDday(s.getApplicationEndAt());
+					return dDay != null && dDay >= 0;
+				})
+				.sorted(comparatorFor(CuratedSort.DEADLINE))
+				.limit(FEATURED_LIMIT)
+				.toList();
+
+		List<Long> featuredIds = featured.stream().map(Scholarship::getId).toList();
+		Set<Long> scrappedIds = findScrappedIds(userId, featuredIds);
+		Map<Long, String> posters = findPosterUrls(featuredIds);
+
+		List<ScholarshipCard> cards = featured.stream()
+				.map(s -> ScholarshipCard.of(s, posters.get(s.getId()), 0, List.of(), true,
+						scrappedIds.contains(s.getId())))
+				.toList();
+
+		return new CuratedScholarshipResponse(CuratedViewMode.ONBOARDING_REQUIRED,
+				cards, 0, List.of(), List.of(), List.of(), new Pagination(1, 0, 0, 0));
+	}
+
+	private CuratedScholarshipResponse personalizedCurated(
+			UUID userId, UserProfile profile, int page, int size) {
 		List<ScoredScholarship> scored = scoreOpenScholarships(profile);
 
 		// 화면에 노출되는 카드(featured/교내/그외)의 스크랩 여부를 한 번에 조회한다.
 		// 상세·검색과 달리 큐레이팅 카드에 isScrapped 가 없어, 뒤로가기 시 스크랩 상태가 사라지던 문제 해결.
-		Set<Long> scrappedIds = findScrappedIds(userId, scored);
+		Set<Long> scrappedIds = findScrappedIds(userId,
+				scored.stream().map(s -> s.scholarship().getId()).toList());
+		Map<Long, String> posters = findPosterUrls(
+				scored.stream().map(s -> s.scholarship().getId()).toList());
 
 		List<ScoredScholarship> eligibleList = scored.stream().filter(ScoredScholarship::eligible).toList();
 
@@ -80,11 +178,11 @@ public class ScholarshipRecommendationService {
 				.map(s -> s.scholarship().getId())
 				.collect(Collectors.toSet());
 
-		// 교내는 소속 학교 것만 노출한다. 학교 정보가 없으면(온보딩 전) 판단할 수 없어 비운다.
+		// 교내는 소속 학교 것만 노출한다. 학교 정보가 없으면 판단할 수 없어 비운다.
 		List<ScholarshipCard> campus = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
 				.filter(s -> isSameSchool(s.scholarship(), profile))
-				.map(s -> s.toCard(scrappedIds))
+				.map(s -> s.toCard(scrappedIds, posters))
 				.toList();
 
 		// 그 외 추천: 지원 가능한 교외(EXTERNAL) 공고를 점수순으로. featured 중복은 제외한다.
@@ -94,7 +192,7 @@ public class ScholarshipRecommendationService {
 				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
 						.thenComparing(s -> s.scholarship().getApplicationEndAt(),
 								Comparator.nullsLast(Comparator.naturalOrder())))
-				.map(s -> s.toCard(scrappedIds))
+				.map(s -> s.toCard(scrappedIds, posters))
 				.toList();
 
 		// 조건 미충족은 피그마상 별도 섹션이라 분리한다. 근로장학(WORK_STUDY)은 성격이 달라 제외.
@@ -102,23 +200,65 @@ public class ScholarshipRecommendationService {
 				.filter(s -> !s.eligible())
 				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
 				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed())
-				.map(s -> s.toCard(scrappedIds))
+				.map(s -> s.toCard(scrappedIds, posters))
 				.toList();
 
-		int safePage = Math.max(page, 1);
-		int safeSize = Math.max(size, 1);
-		int fromIndex = Math.min((safePage - 1) * safeSize, others.size());
-		int toIndex = Math.min(fromIndex + safeSize, others.size());
-		int totalPages = (int) Math.ceil((double) others.size() / safeSize);
+		Page<ScholarshipCard> paged = slice(others, page, size);
 
 		return new CuratedScholarshipResponse(
-				featured.stream().map(s -> s.toCard(scrappedIds)).toList(),
+				CuratedViewMode.PERSONALIZED,
+				featured.stream().map(s -> s.toCard(scrappedIds, posters)).toList(),
 				calculateProfileCompletionRate(profile),
 				campus,
-				others.subList(fromIndex, toIndex),
+				paged.items(),
 				ineligible,
-				new Pagination(safePage, safeSize, others.size(), totalPages)
+				paged.pagination()
 		);
+	}
+
+	/** 정렬 드롭다운을 비교자로 바꾼다. 마감일이 없는 공고는 어느 기준에서든 뒤로 민다. */
+	private Comparator<Scholarship> comparatorFor(CuratedSort sort) {
+		if (sort == CuratedSort.LATEST) {
+			return Comparator.comparing(Scholarship::getCreatedAt,
+							Comparator.nullsLast(Comparator.reverseOrder()))
+					.thenComparing(Scholarship::getId, Comparator.reverseOrder());
+		}
+		return Comparator.comparing(Scholarship::getApplicationEndAt,
+						Comparator.nullsLast(Comparator.naturalOrder()))
+				.thenComparing(Scholarship::getId);
+	}
+
+	/**
+	 * 목록을 페이지 하나로 자른다.
+	 *
+	 * <p>후보가 수백 건 규모라 DB 페이징 대신 메모리에서 자른다. 추천 점수는 DB 가 모르는 값이라
+	 * 어차피 전량을 읽어 정렬해야 하고, 비로그인 목록만 따로 DB 페이징을 두면 같은 화면에
+	 * 페이징 방식이 두 개가 된다. 후보가 크게 늘면 그때 함께 옮기는 편이 낫다.
+	 */
+	private <T> Page<T> slice(List<T> all, int page, int size) {
+		int safePage = Math.max(page, 1);
+		int safeSize = Math.max(size, 1);
+		int fromIndex = Math.min((safePage - 1) * safeSize, all.size());
+		int toIndex = Math.min(fromIndex + safeSize, all.size());
+		int totalPages = (int) Math.ceil((double) all.size() / safeSize);
+		return new Page<>(all.subList(fromIndex, toIndex),
+				new Pagination(safePage, safeSize, all.size(), totalPages));
+	}
+
+	private record Page<T>(List<T> items, Pagination pagination) {
+	}
+
+	/** 카드에 실을 포스터 주소. 이미지가 여러 장이면 가장 먼저 붙은 것을 쓴다. */
+	private Map<Long, String> findPosterUrls(List<Long> scholarshipIds) {
+		if (scholarshipIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<Long, String> result = new HashMap<>();
+		imageRepository.findAllByEntityTypeAndEntityIdIn(
+						ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipIds)
+				.forEach(image -> result.putIfAbsent(
+						image.getEntityId(), imageStorageService.publicUrl(image.getS3Key())));
+		return result;
 	}
 
 	/**
@@ -146,12 +286,11 @@ public class ScholarshipRecommendationService {
 	}
 
 	/** 로그인 사용자가 스크랩한 장학금 ID 집합. 비로그인/후보 없음이면 빈 집합. */
-	private Set<Long> findScrappedIds(UUID userId, List<ScoredScholarship> scored) {
-		if (userId == null || scored.isEmpty()) {
+	private Set<Long> findScrappedIds(UUID userId, List<Long> scholarshipIds) {
+		if (userId == null || scholarshipIds.isEmpty()) {
 			return Set.of();
 		}
-		List<Long> ids = scored.stream().map(s -> s.scholarship().getId()).toList();
-		return new java.util.HashSet<>(scrapRepository.findScrappedScholarshipIds(userId, ids));
+		return new HashSet<>(scrapRepository.findScrappedScholarshipIds(userId, scholarshipIds));
 	}
 
 	@Transactional(readOnly = true)
@@ -273,9 +412,9 @@ public class ScholarshipRecommendationService {
 	private record ScoredScholarship(Scholarship scholarship, boolean eligible, int matchScore, Long dDay,
 			List<String> matchReasons) {
 
-		ScholarshipCard toCard(Set<Long> scrappedIds) {
-			return ScholarshipCard.of(scholarship, matchScore, matchReasons, eligible,
-					scrappedIds.contains(scholarship.getId()));
+		ScholarshipCard toCard(Set<Long> scrappedIds, Map<Long, String> posterUrls) {
+			return ScholarshipCard.of(scholarship, posterUrls.get(scholarship.getId()), matchScore,
+					matchReasons, eligible, scrappedIds.contains(scholarship.getId()));
 		}
 	}
 }

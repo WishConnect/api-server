@@ -32,17 +32,23 @@ public class ScholarshipController {
 	private final ScholarshipService scholarshipService;
 	
 	/**
-	 * 맞춤 추천 목록(메인). featured/교내/그 외(+조건 미충족 분류)와 페이지네이션 포함.
-	 * category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
+	 * 큐레이팅 메인. 응답의 {@code viewMode} 가 세 화면 중 어느 것인지 알려준다.
+	 *
+	 * <p>비로그인도 볼 수 있다. 가입 전에 "여기 뭐가 있는지" 를 보여주지 못하면 가입할 이유가
+	 * 생기지 않는다. 이때는 추천 없이 {@code sort} 기준으로만 정렬한다.
+	 *
+	 * <p>{@code sort} 는 비로그인 화면의 드롭다운(최신 등록순/마감 임박순)이다. 로그인 상태에는
+	 * 화면에 드롭다운이 없어 무시된다. category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
 	 */
 	@GetMapping("/curated")
 	public ApiResponse<CuratedScholarshipResponse> getCurated(
-			@AuthenticationPrincipal String userId,
+			@AuthenticationPrincipal String userIdStr,
 			@RequestParam(required = false) String category,
+			@RequestParam(defaultValue = "DEADLINE") CuratedSort sort,
 			@RequestParam(defaultValue = "1") int page,
 			@RequestParam(defaultValue = "10") int size) {
-		return ApiResponse.ok(
-				scholarshipRecommendationService.getCuratedScholarships(UUID.fromString(userId), page, size));
+		return ApiResponse.ok(scholarshipRecommendationService.getCuratedScholarships(
+				resolveUserId(userIdStr), sort, page, size));
 	}
 
 	/** 홈 - 오늘의 장학금 소식 요약(신규 맞춤/이번 주 마감 건수). */

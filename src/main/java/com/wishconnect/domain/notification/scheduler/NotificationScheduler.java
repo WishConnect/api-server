@@ -3,6 +3,7 @@ package com.wishconnect.domain.notification.scheduler;
 import com.wishconnect.domain.notification.service.NotificationService;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
+import com.wishconnect.domain.scholarship.dto.CuratedSort;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipRecommendationService;
@@ -70,8 +71,11 @@ public class NotificationScheduler {
 				.toList();
 		int targetCount = 0;
 		for (User user : users) {
+			// 온보딩을 안 끝낸 회원은 otherScholarships 가 비어 알림 대상에서 자연히 빠진다.
+			// 프로필이 없으면 "맞춤" 이라고 부를 근거가 없으므로 그편이 맞다.
+			// sort 는 개인화 응답에서 쓰이지 않지만 시그니처상 필요해 기본값을 넘긴다.
 			CuratedScholarshipResponse curated = scholarshipRecommendationService
-					.getCuratedScholarships(user.getId(), 1, 20);
+					.getCuratedScholarships(user.getId(), CuratedSort.DEADLINE, 1, 20);
 			List<Long> scholarshipIds = curated.otherScholarships().stream()
 					.filter(ScholarshipCard::eligible)
 					.map(ScholarshipCard::scholarshipId)
