@@ -299,9 +299,9 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("본문에 근거가 있는 조건만 유형별로 남긴다")
 	void resolvesGroundedConditions() {
 		var notice = noticeWithConditions(
-				new ParsedNotice.Condition("ACADEMIC_CRITERIA", "직전학기 평점평균 3.5 이상인"),
-				new ParsedNotice.Condition("GRADE_LEVEL", "2학년 이상 재학생이며"),
-				new ParsedNotice.Condition("RESTRICTION", "타 장학금과의 중복수혜는 불가합니다"));
+				ParsedNotice.Condition.of("ACADEMIC_CRITERIA", "직전학기 평점평균 3.5 이상인"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"),
+				ParsedNotice.Condition.of("RESTRICTION", "타 장학금과의 중복수혜는 불가합니다"));
 
 		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
 
@@ -319,7 +319,7 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("숫자·키워드 없는 서술형 자격 요건도 조건으로 잡는다")
 	void resolvesNarrativeCondition() {
 		var notice = noticeWithConditions(
-				new ParsedNotice.Condition("SPECIFIC_QUALIFICATION", "가계 곤란으로 학업 유지가 어려운 자"));
+				ParsedNotice.Condition.of("SPECIFIC_QUALIFICATION", "가계 곤란으로 학업 유지가 어려운 자"));
 
 		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
 
@@ -336,8 +336,8 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("본문에 없는 문장을 인용한 조건은 버린다 — 환각 방어")
 	void dropsHallucinatedCondition() {
 		var notice = noticeWithConditions(
-				new ParsedNotice.Condition("INCOME_CRITERIA", "소득 3분위 이하인 학생만 지원 가능합니다"),
-				new ParsedNotice.Condition("GRADE_LEVEL", "2학년 이상 재학생이며"));
+				ParsedNotice.Condition.of("INCOME_CRITERIA", "소득 3분위 이하인 학생만 지원 가능합니다"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"));
 
 		var resolved = parser.resolveConditions(notice, CONDITION_BODY);
 
@@ -349,8 +349,8 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("알 수 없는 조건 유형은 버린다")
 	void dropsUnknownType() {
 		var notice = noticeWithConditions(
-				new ParsedNotice.Condition("성적", "직전학기 평점평균 3.5 이상인"),
-				new ParsedNotice.Condition(null, "2학년 이상 재학생이며"));
+				ParsedNotice.Condition.of("성적", "직전학기 평점평균 3.5 이상인"),
+				ParsedNotice.Condition.of(null, "2학년 이상 재학생이며"));
 
 		assertThat(parser.resolveConditions(notice, CONDITION_BODY)).isEmpty();
 	}
@@ -359,8 +359,8 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("유형·문장이 같은 조건은 한 번만 남긴다")
 	void deduplicates() {
 		var notice = noticeWithConditions(
-				new ParsedNotice.Condition("GRADE_LEVEL", "2학년 이상 재학생이며"),
-				new ParsedNotice.Condition("GRADE_LEVEL", "2학년 이상 재학생이며"));
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"),
+				ParsedNotice.Condition.of("GRADE_LEVEL", "2학년 이상 재학생이며"));
 
 		assertThat(parser.resolveConditions(notice, CONDITION_BODY)).hasSize(1);
 	}
@@ -374,7 +374,7 @@ class UnivNoticeLlmParserTest {
 		for (int i = 0; i < conditions.length; i++) {
 			String sentence = "지원자격 세부요건 " + i + " 번 항목을 충족해야 합니다.";
 			body.append(sentence).append(' ');
-			conditions[i] = new ParsedNotice.Condition("SPECIFIC_QUALIFICATION", sentence);
+			conditions[i] = ParsedNotice.Condition.of("SPECIFIC_QUALIFICATION", sentence);
 		}
 
 		assertThat(parser.resolveConditions(noticeWithConditions(conditions), body.toString()))

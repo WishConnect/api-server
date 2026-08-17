@@ -83,6 +83,7 @@ public class UnivNoticeLlmParsingService {
 	private final NoticeParseLogRepository noticeParseLogRepository;
 	private final LlmProperties llmProperties;
 	private final ObjectMapper objectMapper;
+	private final ConditionRefResolver conditionRefResolver;
 
 	/**
 	 * 대학 장학공지를 LLM 으로 파싱한다.
@@ -315,15 +316,35 @@ public class UnivNoticeLlmParsingService {
 			return;
 		}
 		List<ScholarshipCondition> conditions = resolved.stream()
-				.map(condition -> ScholarshipCondition.builder()
-						.scholarship(scholarship)
-						.conditionType(condition.type())
-						.operator(ConditionOperator.EQ)
-						.valueString(condition.snippet())
-						.autoExtracted(false)
-						.build())
+				.map(condition -> toEntity(scholarship, condition))
 				.toList();
 		scholarshipConditionRepository.saveAll(conditions);
+	}
+
+
+	/**
+	 * 1단계 결과를 조건 행으로 만든다.
+	 *
+	 * <p>{@code autoExtracted = true} 로 둔다. 이 값의 실제 의미는 "수치 구조화를 시도했는가"이고,
+	 * 2단계(ConditionExtractionService)가 {@code autoExtracted=false AND value_int IS NULL} 로
+	 * 대상을 고르기 때문이다. 1단계가 본문 맥락을 보며 값까지 뽑았으므로, 값을 못 찾았더라도
+	 * evidence 만 보는 2단계가 다시 집어가면 오히려 없는 숫자를 만들어낼 위험이 있다.
+	 * 그래서 대학공지는 여기서 끝내고 2단계는 공공데이터 전용으로 남긴다.
+	 */
+	private ScholarshipCondition toEntity(Scholarship scholarship,
+			UnivNoticeLlmParser.ResolvedCondition condition) {
+		ScholarshipCondition entity = ScholarshipCondition.builder()
+				.scholarship(scholarship)
+				.conditionType(condition.type())
+				.necessity(condition.necessity())
+				.operator(condition.operator())
+				.valueInt(condition.valueInt())
+				.valueIntMax(condition.valueIntMax())
+				.valueString(condition.snippet())
+				.autoExtracted(true)
+				.build();
+		entity.applyRefs(conditionRefResolver.resolve(condition.type(), condition.refLabels()));
+		return entity;
 	}
 
 	/** 제출서류는 LLM 이 뽑은 목록을 쓴다. 서류명은 문맥 이해가 필요해 정규식보다 LLM 이 낫다. */

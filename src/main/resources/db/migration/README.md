@@ -48,12 +48,17 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_01__create_scholarship_merge_candidate.sql` | `scholarship_merge_candidate` 테이블 추가 (중복 병합 승인 큐) | ✅ 2026-08-17 |
 | `V20260818_02__add_merge_admin_actions.sql` | `admin_audit_log.action` CHECK 에 병합 액션 3개 추가 | ✅ 2026-08-17 |
 | `V20260818_03__create_notice_parse_log.sql` | `notice_parse_log` 테이블 추가 (LLM 파싱 이력·정확도 측정) | ⬜ 미적용 |
+| `V20260818_04__condition_necessity_and_refs.sql` | 조건에 `necessity`(필수/우대) + `scholarship_condition_ref` 집합 참조 | ⬜ 미적용 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서
 > 컬럼 타입을 바꾸는 SQL 을 함께 올리지 않았고, 그 사실이 **2026-08-17 배포가 실패하고 나서야**
 > 드러났다(`wrong column type ... found [uuid], but expecting [bigint]`).
 > 엔티티의 연관 대상을 바꾸는 변경은 컬럼 타입이 따라 바뀐다는 점을 기억할 것.
+
+> ⚠️ **`V20260818_04` 도 배포보다 먼저** 적용해야 한다. `necessity` 는 **기존 행을 `REQUIRED` 로
+> 채운 뒤** NOT NULL 을 건다 — NULL 로 두면 지금 작동 중인 소득·성적·학년 게이트가 통째로 풀려
+> "조건 미충족" 섹션이 비어버린다.
 
 > ⚠️ **`V20260818_03` 은 반드시 배포보다 먼저** 적용해야 한다. `NoticeParseLog` 엔티티가 새로
 > 생기므로 테이블이 없으면 `validate` 가 실패해 **애플리케이션이 뜨지 않는다**(= 배포 실패·롤백).
