@@ -35,7 +35,9 @@ import com.wishconnect.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -114,8 +116,7 @@ public class UserProfileService {
 				request.familySize()
 		);
 
-		replaceFamilyTypes(user, request.familyTypes(), FamilyCategory.FAMILY);
-		replaceFamilyTypes(user, request.personalStatuses(), FamilyCategory.PERSONAL);
+		replaceFamilyTypes(user, request.familyTypes(), request.personalStatuses());
 		replaceInterests(user, request.interests());
 		return new OnboardingStepResponse(3, true);
 	}
@@ -234,26 +235,28 @@ public class UserProfileService {
 				.build());
 	}
 
-	private void replaceFamilyTypes(User user, List<String> names, FamilyCategory category) {
-		if (names == null) {
-			names = List.of();
-		}
-		if (category == FamilyCategory.FAMILY) {
-			userFamilyTypeRepository.deleteByUser(user);
-		}
-		List<UserFamilyType> mappings = names.stream()
-				.filter(StringUtils::hasText)
-				.map(name -> getOrCreateFamilyType(name.trim(), category))
+	private void replaceFamilyTypes(User user, List<String> familyNames, List<String> personalNames) {
+		userFamilyTypeRepository.deleteByUser(user);
+		userFamilyTypeRepository.flush();
+
+		List<UserFamilyType> mappings = new ArrayList<>();
+		mappings.addAll(toFamilyTypeMappings(user, familyNames, FamilyCategory.FAMILY));
+		mappings.addAll(toFamilyTypeMappings(user, personalNames, FamilyCategory.PERSONAL));
+		userFamilyTypeRepository.saveAll(mappings);
+	}
+
+	private List<UserFamilyType> toFamilyTypeMappings(User user, List<String> names, FamilyCategory category) {
+		return normalizeSelections(names).stream()
+				.map(name -> getOrCreateFamilyType(name, category))
 				.map(familyType -> UserFamilyType.builder()
 						.user(user)
 						.familyType(familyType)
 						.build())
 				.toList();
-		userFamilyTypeRepository.saveAll(mappings);
 	}
 
 	private FamilyType getOrCreateFamilyType(String name, FamilyCategory category) {
-		return familyTypeRepository.findFirstByName(name)
+		return familyTypeRepository.findFirstByNameAndCategory(name, category)
 				.orElseGet(() -> familyTypeRepository.save(FamilyType.builder()
 						.name(name)
 						.category(category)
@@ -262,12 +265,10 @@ public class UserProfileService {
 
 	private void replaceInterests(User user, List<String> names) {
 		userInterestRepository.deleteByUser(user);
-		if (names == null) {
-			return;
-		}
-		List<UserInterest> mappings = names.stream()
-				.filter(StringUtils::hasText)
-				.map(name -> getOrCreateInterest(name.trim()))
+		userInterestRepository.flush();
+
+		List<UserInterest> mappings = normalizeSelections(names).stream()
+				.map(this::getOrCreateInterest)
 				.map(interest -> UserInterest.builder()
 						.user(user)
 						.interest(interest)
@@ -279,6 +280,18 @@ public class UserProfileService {
 	private Interest getOrCreateInterest(String name) {
 		return interestRepository.findFirstByName(name)
 				.orElseGet(() -> interestRepository.save(Interest.builder().name(name).build()));
+	}
+
+	private List<String> normalizeSelections(List<String> values) {
+		if (values == null) {
+			return List.of();
+		}
+		Set<String> uniqueValues = new LinkedHashSet<>();
+		values.stream()
+				.filter(StringUtils::hasText)
+				.map(String::trim)
+				.forEach(uniqueValues::add);
+		return new ArrayList<>(uniqueValues);
 	}
 
 	private <T extends Enum<T>> T parseEnum(Class<T> enumType, String value) {
