@@ -82,11 +82,11 @@ public class AuthService {
 		if (!PasswordValidator.isValid(request.password(), request.email())) {
 			throw new CustomException(ErrorCode.INVALID_PASSWORD_FORMAT);
 		}
-		if (userRepository.existsByEmailAndLoginType(request.email(), LoginType.LOCAL)) {
+		if (userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
 		String loginId = normalizeLoginId(request.loginId());
-		if (userRepository.existsByLoginId(loginId)) {
+		if (userRepository.existsByLoginIdAndDeletedAtIsNull(loginId)) {
 			throw new CustomException(ErrorCode.DUPLICATE_LOGIN_ID);
 		}
 		validateRequiredAgreements(request.agreements());
@@ -106,11 +106,9 @@ public class AuthService {
 	/** 기본 로그인. */
 	@Transactional(readOnly = true)
 	public LoginResponse login(LoginRequest request) {
-		User user = userRepository.findByEmailAndLoginType(request.email(), LoginType.LOCAL)
+		// 탈퇴 회원은 조회 단계에서 걸러진다 → 미가입과 동일한 응답(계정 존재 여부를 흘리지 않는다).
+		User user = userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-		if (user.isDeleted()) {
-			throw new CustomException(ErrorCode.LOGIN_FAILED);
-		}
 
 		if (!StringUtils.hasText(user.getPassword())
 				|| !passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -132,12 +130,11 @@ public class AuthService {
 		KakaoUserResponse kakaoUser = kakaoApiClient.getUserInfo(token.accessToken());
 		Long kakaoId = kakaoUser.id();
 
-		User existing = userRepository.findByKakaoId(kakaoId).orElse(null);
+		// 탈퇴 회원은 제외하고 찾는다. 같은 카카오 계정으로 다시 들어오면 신규 가입으로 처리된다
+		// (소셜은 로그인이 곧 가입이라, 탈퇴 행을 그대로 집어오면 재가입 경로가 아예 없어진다).
+		User existing = userRepository.findByKakaoIdAndDeletedAtIsNull(kakaoId).orElse(null);
 		boolean isNewUser = (existing == null);
 		User user = isNewUser ? registerKakaoUser(kakaoUser) : existing;
-		if (user.isDeleted()) {
-			throw new CustomException(ErrorCode.LOGIN_FAILED);
-		}
 		// 비즈 앱 전환 전에 가입한 회원은 자리표시자 이메일을 갖고 있어 알림 메일을 받을 수 없다.
 		// 이제 카카오가 실제 이메일을 내려주므로 다시 로그인할 때 채워 넣는다.
 		if (!isNewUser) {
@@ -179,14 +176,13 @@ public class AuthService {
 
 	private SocialLoginResponse socialLogin(LoginType loginType, String providerId,
 			String email, String name, String emailPrefix) {
-		User existing = userRepository.findByLoginTypeAndProviderId(loginType, providerId).orElse(null);
+		// 카카오와 같은 이유로 탈퇴 회원을 제외하고 찾는다(재가입 = 신규 가입).
+		User existing = userRepository.findByLoginTypeAndProviderIdAndDeletedAtIsNull(loginType, providerId)
+				.orElse(null);
 		boolean isNewUser = (existing == null);
 		User user = isNewUser
 				? registerSocialUser(loginType, providerId, email, name, emailPrefix)
 				: existing;
-		if (user.isDeleted()) {
-			throw new CustomException(ErrorCode.LOGIN_FAILED);
-		}
 
 		TokenPair tokens = issueTokens(user);
 		return SocialLoginResponse.of(user, tokens.accessToken(), tokens.refreshToken(), isNewUser);
@@ -289,7 +285,7 @@ public class AuthService {
 	/** 회원가입 화면의 아이디 "중복 확인" 버튼. 사용 가능하면 true. */
 	@Transactional(readOnly = true)
 	public boolean isLoginIdAvailable(String loginId) {
-		return !userRepository.existsByLoginId(normalizeLoginId(loginId));
+		return !userRepository.existsByLoginIdAndDeletedAtIsNull(normalizeLoginId(loginId));
 	}
 
 	private String normalizeRegionName(String value) {

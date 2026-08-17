@@ -82,6 +82,10 @@ public class JwtProvider {
 		return UUID.fromString(parseClaims(token).getSubject());
 	}
 
+	public long getAccessTokenValidity() {
+		return accessTokenValidity;
+	}
+
 	public long getRefreshTokenValidity() {
 		return refreshTokenValidity;
 	}

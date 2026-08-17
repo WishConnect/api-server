@@ -28,6 +28,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private static final String DEFAULT_ROLE = "USER";
 
 	private final JwtProvider jwtProvider;
+	private final WithdrawnTokenStore withdrawnTokenStore;
 
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
@@ -35,9 +36,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		String token = resolveToken(request);
 		if (token != null && jwtProvider.validateToken(token)) {
 			UUID userId = jwtProvider.getUserId(token);
-			UsernamePasswordAuthenticationToken authentication =
-					new UsernamePasswordAuthenticationToken(userId.toString(), null, resolveAuthorities(token));
-			SecurityContextHolder.getContext().setAuthentication(authentication);
+			// 서명이 유효해도 탈퇴한 계정의 토큰이면 인증하지 않는다.
+			// (인증 정보를 넣지 않으면 EntryPoint 가 401 로 응답한다)
+			if (!withdrawnTokenStore.isWithdrawn(userId)) {
+				UsernamePasswordAuthenticationToken authentication =
+						new UsernamePasswordAuthenticationToken(userId.toString(), null, resolveAuthorities(token));
+				SecurityContextHolder.getContext().setAuthentication(authentication);
+			}
 		}
 		filterChain.doFilter(request, response);
 	}

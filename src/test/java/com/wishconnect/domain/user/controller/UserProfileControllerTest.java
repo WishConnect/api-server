@@ -10,6 +10,7 @@ import com.wishconnect.domain.user.service.UserProfileService;
 import com.wishconnect.global.config.SecurityConfig;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
 import com.wishconnect.global.jwt.JwtProvider;
+import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,10 @@ class UserProfileControllerTest {
 
 	@MockBean
 	private JwtProvider jwtProvider;
+
+	/** SecurityConfig 가 JwtAuthenticationFilter 에 넘기는 협력자. 슬라이스에는 Redis 가 없다. */
+	@MockBean
+	private WithdrawnTokenStore withdrawnTokenStore;
 
 	@Test
 	@DisplayName("온보딩 완료 시 추천 job id 없이 완료 여부만 반환한다")

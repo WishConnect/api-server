@@ -18,6 +18,7 @@ import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
 import com.wishconnect.global.jwt.JwtProvider;
+import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -41,6 +42,10 @@ class AuthControllerTest {
 
 	@MockBean
 	private JwtProvider jwtProvider;
+
+	/** SecurityConfig 가 JwtAuthenticationFilter 에 넘기는 협력자. 슬라이스에는 Redis 가 없다. */
+	@MockBean
+	private WithdrawnTokenStore withdrawnTokenStore;
 
 	@Nested
 	@DisplayName("POST /api/v1/auth/signup")

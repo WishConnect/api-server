@@ -145,8 +145,20 @@ public class User extends BaseEntity {
 		this.onboardingCompleted = true;
 	}
 
-	public void softDelete() {
+	/**
+	 * 회원 탈퇴. deletedAt 만 남기고 조회 쿼리에서 제외한다.
+	 *
+	 * <p>loginId 와 kakaoId 는 DB UNIQUE 라, 탈퇴 행이 값을 계속 점유하면 같은 아이디·같은
+	 * 카카오 계정으로는 재가입이 영구히 불가능해진다(재가입 INSERT 가 제약 위반으로 실패).
+	 * 그래서 탈퇴 시점에 비워 다음 가입자가 쓸 수 있게 돌려준다.
+	 *
+	 * <p>email/name/phone 은 보관 기간·파기 정책이 정해지면 함께 익명화 대상이다.
+	 * 지금은 지우지 않아도 재가입을 막지 않으므로(조회가 deletedAt 으로 걸러진다) 남겨둔다.
+	 */
+	public void withdraw() {
 		this.deletedAt = LocalDateTime.now();
+		this.loginId = null;
+		this.kakaoId = null;
 	}
 
 	public boolean isDeleted() {
