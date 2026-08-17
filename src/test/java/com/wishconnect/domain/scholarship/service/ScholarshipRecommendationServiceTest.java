@@ -20,7 +20,9 @@ import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.Scholar
 import com.wishconnect.domain.scholarship.dto.CuratedSort;
 import com.wishconnect.domain.scholarship.dto.CuratedViewMode;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.wishconnect.domain.scholarship.entity.ConditionRef;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
@@ -29,8 +31,12 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.user.entity.Interest;
 import com.wishconnect.domain.user.entity.User;
+import com.wishconnect.domain.user.entity.UserInterest;
 import com.wishconnect.domain.user.entity.UserProfile;
+import com.wishconnect.domain.user.repository.UserFamilyTypeRepository;
+import com.wishconnect.domain.user.repository.UserInterestRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
 import java.math.BigDecimal;
@@ -60,6 +66,13 @@ class ScholarshipRecommendationServiceTest {
 
 	@Mock
 	private UserProfileRepository userProfileRepository;
+
+	/** 조건이 마스터 ID 로 저장돼 있어 사용자 쪽 값도 ID 집합으로 필요하다. 기본값은 빈 목록. */
+	@Mock
+	private UserFamilyTypeRepository userFamilyTypeRepository;
+
+	@Mock
+	private UserInterestRepository userInterestRepository;
 
 	@Mock
 	private ScrapRepository scrapRepository;
@@ -212,6 +225,42 @@ class ScholarshipRecommendationServiceTest {
 		// 지원 가능 1건은 마감 임박 배너로 올라간다
 		assertThat(idsOf(response.featured())).containsExactly(1L);
 		assertThat(response.featured().get(0).matchReasons()).anyMatch(r -> r.contains("소득분위 충족"));
+	}
+
+	@Test
+	@DisplayName("우대사항은 안 맞아도 탈락시키지 않는다 — 게이트는 자격요건뿐이다")
+	void preferredMismatchDoesNotExclude() {
+		Scholarship target = scholarship(1L, "생활비 지원", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30));
+
+		// 자격요건은 충족하고, 우대사항(지원 성격)만 어긋난 상태.
+		ScholarshipCondition required = incomeCondition(target, 8);
+		ScholarshipCondition preferred = ScholarshipCondition.builder()
+				.scholarship(target)
+				.conditionType(ConditionType.FINANCIAL_AID_TYPE)
+				.operator(ConditionOperator.EQ)
+				.necessity(ConditionNecessity.PREFERRED)
+				.valueString("생활비 지원")
+				.autoExtracted(false)
+				.build();
+		preferred.applyRefs(List.of(ConditionRef.ofId(7L)));
+
+		given(userInterestRepository.findAllByUserProfile_User_Id(USER_ID))
+				.willReturn(List.of(userInterest(9L)));
+		stubScholarships(UserProfile.builder().incomeLevel(5).build(), List.of(target),
+				List.of(required, preferred));
+
+		CuratedScholarshipResponse response = curate();
+
+		assertThat(idsOf(response.ineligibleScholarships())).doesNotContain(1L);
+		// 우대 불충족이 충족 비율에 반영돼 점수는 만점이 아니다.
+		assertThat(response.featured().get(0).matchScore()).isLessThan(100);
+	}
+
+	private UserInterest userInterest(long interestId) {
+		Interest interest = Interest.builder().name("등록금 지원").build();
+		ReflectionTestUtils.setField(interest, "id", interestId);
+		return UserInterest.builder().interest(interest).build();
 	}
 
 	@Test

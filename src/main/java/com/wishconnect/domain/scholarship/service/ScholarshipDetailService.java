@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.ConditionCheck;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.RequiredDocument;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.ScheduleStep;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.Summary;
@@ -84,8 +85,28 @@ public class ScholarshipDetailService {
 				buildSummary(scholarship, conditions),
 				schedule,
 				documents,
-				scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions)
+				scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions),
+				buildConditionChecks(userId, conditions)
 		);
+	}
+
+	/**
+	 * 조건별 판정을 그대로 내려준다.
+	 *
+	 * <p>요약 테이블({@link Summary})은 조건 <b>원문</b>만 보여준다. 사용자가 정작 알고 싶은 건
+	 * "그래서 내가 되는가" 인데, 지금은 충족 사유만 몇 줄 나가고 탈락 이유는 화면에 없다.
+	 * 충족/불충족/판정 불가 세 값을 조건마다 붙여 보낸다 — 판정 불가를 불충족처럼 그리면
+	 * 자격이 있는데도 포기하게 된다.
+	 */
+	private List<ConditionCheck> buildConditionChecks(UUID userId, List<ScholarshipCondition> conditions) {
+		return scholarshipRecommendationService.judgeConditions(userId, conditions).stream()
+				.map(judgement -> new ConditionCheck(
+						judgement.conditionType().name(),
+						judgement.necessity() == null ? null : judgement.necessity().name(),
+						judgement.requirement(),
+						judgement.result().name(),
+						judgement.description()))
+				.toList();
 	}
 
 	/** 조건 원문을 유형별로 묶어 요약 테이블 필드에 매핑한다. 데이터가 없는 항목은 null. */

@@ -18,11 +18,16 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher;
+import com.wishconnect.domain.scholarship.util.MatchProfile;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Evaluation;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Result;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserProfile;
+import com.wishconnect.domain.user.repository.UserFamilyTypeRepository;
+import com.wishconnect.domain.user.repository.UserInterestRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
 import java.time.LocalDate;
@@ -50,12 +55,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 PERSONALIZED 의 규칙:
 - 조건별 판정은 충족/불충족/판정불가 3값(ConditionMatcher). 판정불가는 탈락 사유로 쓰지 않는다.
-- 불충족 조건이 있으면 eligible=false로 "조건 미충족" 분류(ineligibleScholarships 로 분리 노출).
+- 게이트는 자격요건(REQUIRED)의 불충족뿐이다. 우대사항(PREFERRED)은 안 맞아도 지원할 수 있어
+  탈락시키지 않고 순위만 낮춘다. 이 구분이 없으면 조건을 성실히 채울수록 추천이 비어간다 —
+  공고문에는 자격요건만큼 우대사항이 많다.
 - 점수 = 충족 비율(최대 70) + 판정 가능 조건 존재 가점(10) + 마감 임박 가점(20).
 - featured = 지원 가능 공고 중 마감 임박순 상위 5건(캐러셀). campus = 소속 학교의 교내(INTERNAL).
 
-이 점수식은 조건 데이터가 있는 공고만 변별하고 나머지는 전부 동점이 된다는 한계가 있다.
-추천 방식 자체는 별도로 검토 중이다.
+조건 데이터가 아예 없는 공고는 여전히 전부 동점이다. 랭킹 방식 자체는 별도로 검토 중이다.
  */
 @Service
 @RequiredArgsConstructor
@@ -73,6 +79,9 @@ public class ScholarshipRecommendationService {
 	private final InsightRepository insightRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final UserProfileRepository userProfileRepository;
+	// 조건이 마스터 ID 로 저장돼 있어(scholarship_condition_ref) 사용자 쪽 값도 ID 집합으로 필요하다.
+	private final UserFamilyTypeRepository userFamilyTypeRepository;
+	private final UserInterestRepository userInterestRepository;
 	private final UserRepository userRepository;
 	private final ScrapRepository scrapRepository;
 	// 카드 그리드가 포스터 중심이라 목록에서도 이미지를 함께 내려준다.
@@ -161,7 +170,7 @@ public class ScholarshipRecommendationService {
 
 	private CuratedScholarshipResponse personalizedCurated(
 			UUID userId, UserProfile profile, int page, int size) {
-		List<ScoredScholarship> scored = scoreOpenScholarships(profile);
+		List<ScoredScholarship> scored = scoreOpenScholarships(matchProfileOf(userId, profile));
 
 		// 화면에 노출되는 카드(featured/교내/그외)의 스크랩 여부를 한 번에 조회한다.
 		// 상세·검색과 달리 큐레이팅 카드에 isScrapped 가 없어, 뒤로가기 시 스크랩 상태가 사라지던 문제 해결.
@@ -301,8 +310,7 @@ public class ScholarshipRecommendationService {
 
 	@Transactional(readOnly = true)
 	public HomeSummaryResponse getHomeSummary(UUID userId) {
-		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
-		List<ScoredScholarship> eligibleList = scoreOpenScholarships(profile).stream()
+		List<ScoredScholarship> eligibleList = scoreOpenScholarships(matchProfileOf(userId)).stream()
 				.filter(ScoredScholarship::eligible)
 				.toList();
 
@@ -337,14 +345,14 @@ public class ScholarshipRecommendationService {
 		if (candidates.isEmpty()) {
 			return Set.of();
 		}
-		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+		MatchProfile matchProfile = matchProfileOf(userId);
 		Map<Long, List<ScholarshipCondition>> conditionsByScholarshipId =
 				scholarshipConditionRepository.findAllByScholarshipIn(candidates).stream()
 						.collect(Collectors.groupingBy(condition -> condition.getScholarship().getId()));
 
 		return candidates.stream()
 				.filter(scholarship -> score(scholarship,
-						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), profile).eligible())
+						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), matchProfile).eligible())
 				.map(Scholarship::getId)
 				.collect(Collectors.toSet());
 	}
@@ -353,11 +361,10 @@ public class ScholarshipRecommendationService {
 	@Transactional(readOnly = true)
 	public List<String> getMatchReasons(UUID userId, Scholarship scholarship,
 			List<ScholarshipCondition> conditions) {
-		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
-		return score(scholarship, conditions, profile).matchReasons();
+		return score(scholarship, conditions, matchProfileOf(userId)).matchReasons();
 	}
 
-	private List<ScoredScholarship> scoreOpenScholarships(UserProfile profile) {
+	private List<ScoredScholarship> scoreOpenScholarships(MatchProfile matchProfile) {
 		List<Scholarship> openScholarships =
 				scholarshipRepository.findAllOpenForRecommendation(RecruitmentStatus.OPEN, LocalDateTime.now());
 		if (openScholarships.isEmpty()) {
@@ -368,20 +375,79 @@ public class ScholarshipRecommendationService {
 						.collect(Collectors.groupingBy(condition -> condition.getScholarship().getId()));
 		return openScholarships.stream()
 				.map(scholarship -> score(scholarship,
-						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), profile))
+						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), matchProfile))
 				.toList();
 	}
 
+	/**
+	 * 조건 하나하나의 판정. 상세 화면이 "왜 이 장학금이 되고 안 되는지" 를 보여주는 데 쓴다.
+	 *
+	 * <p>충족만 내려주면 사용자는 탈락 이유를 알 수 없고, 판정 불가를 불충족처럼 보여주면
+	 * 자격이 있는데도 포기하게 만든다. 그래서 세 값을 그대로 내린다.
+	 */
+	@Transactional(readOnly = true)
+	public List<ConditionJudgement> judgeConditions(UUID userId, List<ScholarshipCondition> conditions) {
+		if (conditions.isEmpty()) {
+			return List.of();
+		}
+		MatchProfile matchProfile = matchProfileOf(userId);
+		return conditions.stream()
+				.map(condition -> {
+					Evaluation evaluation = ConditionMatcher.evaluate(condition, matchProfile);
+					return new ConditionJudgement(
+							condition.getConditionType(), condition.getNecessity(),
+							condition.getValueString(), evaluation.result(), evaluation.description());
+				})
+				.toList();
+	}
+
+	/** 조건 1건의 판정 결과. 상세 화면용이라 DTO 로 옮기기 쉬운 값만 담는다. */
+	public record ConditionJudgement(ConditionType conditionType, ConditionNecessity necessity,
+			String requirement, Result result, String description) {
+	}
+
+	/** 프로필과 매칭에 쓰는 사용자 값들을 한 번에 모은다. 없으면 모든 참조 대조가 판정 불가로 넘어간다. */
+	private MatchProfile matchProfileOf(UUID userId) {
+		return matchProfileOf(userId, userProfileRepository.findByUserId(userId).orElse(null));
+	}
+
+	private MatchProfile matchProfileOf(UUID userId, UserProfile profile) {
+		if (profile == null) {
+			return MatchProfile.of(null);
+		}
+		return MatchProfile.of(profile,
+				userFamilyTypeRepository.findAllByUserProfile_User_Id(userId),
+				userInterestRepository.findAllByUserProfile_User_Id(userId));
+	}
+
+	/**
+	 * 조건 판정을 점수와 지원 가능 여부로 바꾼다.
+	 *
+	 * <p>게이트는 <b>필수 조건의 불충족</b>만이다. 우대사항은 안 맞아도 지원할 수 있으므로
+	 * 탈락시키지 않고 순위만 낮춘다. 이 구분이 없으면 조건을 성실히 채울수록 추천이 비어간다 —
+	 * 공고문에는 자격요건만큼 우대사항이 많다.
+	 *
+	 * <p>부수 효과로 점수가 다시 변별력을 갖는다. 예전에는 지원 가능한 공고면 불충족이 0 이라
+	 * {@code matchCount / evaluableCount} 가 항상 1.0 이었고, 결국 나올 수 있는 점수가
+	 * 네 가지뿐이었다. 이제 우대사항 불충족이 이 비율에 반영된다.
+	 */
 	private ScoredScholarship score(Scholarship scholarship, List<ScholarshipCondition> conditions,
-			UserProfile profile) {
+			MatchProfile matchProfile) {
 		List<Evaluation> evaluations = conditions.stream()
-				.map(condition -> ConditionMatcher.evaluate(condition, profile))
+				.map(condition -> ConditionMatcher.evaluate(condition, matchProfile))
 				.toList();
 		long matchCount = evaluations.stream().filter(e -> e.result() == Result.MATCH).count();
 		long mismatchCount = evaluations.stream().filter(e -> e.result() == Result.MISMATCH).count();
 		long evaluableCount = matchCount + mismatchCount;
 
-		boolean eligible = mismatchCount == 0;
+		boolean eligible = true;
+		for (int i = 0; i < conditions.size(); i++) {
+			if (evaluations.get(i).result() == Result.MISMATCH
+					&& conditions.get(i).getNecessity() == ConditionNecessity.REQUIRED) {
+				eligible = false;
+				break;
+			}
+		}
 		Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());
 		int score = 0;
 		if (evaluableCount > 0) {
