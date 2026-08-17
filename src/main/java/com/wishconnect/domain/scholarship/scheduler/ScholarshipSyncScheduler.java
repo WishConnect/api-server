@@ -4,12 +4,15 @@ import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
+import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,7 +20,8 @@ import org.springframework.stereotype.Component;
 
 /*
 장학금 공공데이터 자동 수집 배치입니다. 매일 정해진 시각(기본 오전 11시 KST)에
-동기화를 실행해 최신 공고를 반영하고, 이어서 LLM 조건 구조화 추출을 시도합니다.
+동기화를 실행해 최신 공고를 반영하고, 이어서 LLM 조건 구조화 추출과
+상세페이지·첨부·포스터 자동 보완을 시도합니다.
 - 시각 변경: scholarship.sync.cron (스프링 cron 6필드)
 - 배치 비활성화: scholarship.sync.scheduled=false (로컬에서 외부 API 호출을 원치 않을 때)
 - 추출 실패(LLM 키 미설정 등)는 수집 결과에 영향을 주지 않도록 분리 처리한다.
@@ -34,6 +38,17 @@ public class ScholarshipSyncScheduler {
 	private final ScholarshipRepository scholarshipRepository;
 	private final UnivNoticeCollector univNoticeCollector;
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
+	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
+
+	/**
+	 * 한 배치에서 보완할 최대 건수.
+	 *
+	 * <p>외부 검색·크롤링이라 건당 수 초가 걸린다(요청 간 지연 포함). 50건이면 2~5분쯤이고,
+	 * 검색 API 쿼터도 인사이트 수집과 나눠 쓰므로 한 번에 몰지 않는다.
+	 * 못 채운 건은 다음 날 배치가 이어서 가져간다.
+	 */
+	@Value("${scholarship.enrich.batch-limit:50}")
+	private int enrichBatchLimit;
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
@@ -82,6 +97,16 @@ public class ScholarshipSyncScheduler {
 					extraction.targetCount(), extraction.extractedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 조건 추출 실패(동기화 결과에는 영향 없음): {}", e.getMessage());
+		}
+		try {
+			// 수집 직후에 돌려야 새로 들어온 공고가 그날 바로 상세 URL·첨부·포스터를 갖는다.
+			// 공공데이터에 이 세 가지가 아예 없어서 이 단계가 없으면 영영 비어 있다.
+			EnrichmentResult enrichment = scholarshipEnrichmentService.enrich(enrichBatchLimit);
+			log.info("[SyncBatch] 자동 보완 완료 target={} 상세URL={} 이미지={} 첨부={} 건너뜀={}",
+					enrichment.targetCount(), enrichment.detailUrlFound(), enrichment.imageSaved(),
+					enrichment.documentLinked(), enrichment.skippedCount());
+		} catch (Exception e) {
+			log.warn("[SyncBatch] 자동 보완 실패(다른 스텝에 영향 없음): {}", e.getMessage());
 		}
 	}
 }

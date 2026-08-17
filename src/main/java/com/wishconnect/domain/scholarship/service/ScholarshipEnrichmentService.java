@@ -77,8 +77,9 @@ public class ScholarshipEnrichmentService {
 
 	@Transactional
 	public EnrichmentResult enrich(int limit) {
+		LocalDateTime now = LocalDateTime.now();
 		List<Scholarship> targets = scholarshipRepository.findEnrichmentTargets(
-				LocalDateTime.now().minusDays(RETRY_AFTER_DAYS), PageRequest.of(0, Math.max(1, limit)));
+				now, now.minusDays(RETRY_AFTER_DAYS), PageRequest.of(0, Math.max(1, limit)));
 		if (targets.isEmpty()) {
 			return EnrichmentResult.empty();
 		}

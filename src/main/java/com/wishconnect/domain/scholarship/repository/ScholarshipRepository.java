@@ -132,7 +132,17 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 										   @Param("to") LocalDateTime to);
 
 	/**
-	 * 자동 보완 대상: 상세 URL 이 아직 없는 활성 공고.
+	 * 자동 보완 대상: 상세 URL 이 아직 없는 <b>살아있는</b> 공고.
+	 *
+	 * <p>"살아있는"의 정의를 세 겹으로 잡는다. 이미 끝난 공고를 보완해봐야 아무도 안 보는데
+	 * 외부 검색·크롤링 비용만 나간다.
+	 * <ul>
+	 *   <li>{@code active = true} — 소프트 삭제·마감 처리분 제외</li>
+	 *   <li>{@code recruitmentStatus <> CLOSED} — 상태값으로 한 번 더</li>
+	 *   <li>마감일 가드 — 마감일이 지났는데 상태가 갱신되기 전인 좀비를 거른다.
+	 *       추천 조회({@link #findAllOpenForRecommendation})가 쓰는 방식과 같다.
+	 *       마감일이 아예 없는 상시모집분은 살아있는 것으로 본다.</li>
+	 * </ul>
 	 *
 	 * <p>이미 시도한 건은 재시도 주기가 지나야 다시 본다. 안 그러면 매 배치가 "못 찾은 건" 만
 	 * 계속 붙잡아 검색 API 쿼터를 태운다. 마감 임박순으로 훑어 사용자가 볼 확률이 높은 것부터 채운다.
@@ -141,11 +151,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			select s from Scholarship s
 			where s.active = true
 			  and s.deletedAt is null
+			  and s.recruitmentStatus <> com.wishconnect.domain.scholarship.entity.RecruitmentStatus.CLOSED
+			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
 			  and (s.detailUrl is null or s.detailUrl = '')
 			  and (s.enrichedAt is null or s.enrichedAt < :retryBefore)
 			order by s.applicationEndAt asc nulls last
 			""")
-	List<Scholarship> findEnrichmentTargets(@Param("retryBefore") LocalDateTime retryBefore,
+	List<Scholarship> findEnrichmentTargets(@Param("now") LocalDateTime now,
+											@Param("retryBefore") LocalDateTime retryBefore,
 											Pageable pageable);
 
 	// --- 관리자 화면 집계 -------------------------------------------------
