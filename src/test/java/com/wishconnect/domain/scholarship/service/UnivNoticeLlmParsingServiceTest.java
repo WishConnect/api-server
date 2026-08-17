@@ -18,11 +18,15 @@ import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import org.mockito.ArgumentCaptor;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
+import com.wishconnect.domain.user.repository.FamilyTypeRepository;
+import com.wishconnect.domain.user.repository.InterestRepository;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
@@ -75,6 +79,9 @@ class UnivNoticeLlmParsingServiceTest {
 	@Mock private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock private LlmClient llmClient;
 	@Mock private NoticeParseLogRepository noticeParseLogRepository;
+	@Mock private RegionResolver regionResolver;
+	@Mock private FamilyTypeRepository familyTypeRepository;
+	@Mock private InterestRepository interestRepository;
 
 	private UnivNoticeLlmParsingService service;
 
@@ -87,7 +94,8 @@ class UnivNoticeLlmParsingServiceTest {
 				noticeParseLogRepository,
 				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
 						"claude-haiku-4-5", "claude-haiku-4-5", 4096),
-				new ObjectMapper());
+				new ObjectMapper(),
+				new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository));
 	}
 
 	// --- Fixture ---
@@ -200,7 +208,7 @@ class UnivNoticeLlmParsingServiceTest {
 	정규식은 "가계 곤란으로 학업 유지가 어려운 자" 같은 서술형 요건을 아예 못 잡았다.
 	 */
 	@Test
-	@DisplayName("LLM 이 뽑은 조건을 유형·원문 그대로 저장하고, 수치 추출 대기열에 남긴다")
+	@DisplayName("LLM 이 뽑은 조건을 유형·원문·수치·필수여부까지 한 번에 저장한다")
 	void storesLlmExtractedConditions() {
 		String body = """
 				2026학년도 2학기 성적우수 장학생을 모집합니다.
@@ -211,9 +219,12 @@ class UnivNoticeLlmParsingServiceTest {
 				{"title":"성적우수 장학","provider":"경희대학교","scholarshipType":"INTERNAL",
 				 "documents":[],
 				 "conditions":[
-				   {"type":"ACADEMIC_CRITERIA","evidence":"직전학기 평점평균 3.5 이상인 자"},
-				   {"type":"SPECIFIC_QUALIFICATION","evidence":"가계 곤란으로 학업 유지가 어려운 자"},
-				   {"type":"INCOME_CRITERIA","evidence":"소득 3분위 이하만 지원할 수 있습니다"}]}
+				   {"type":"ACADEMIC_CRITERIA","evidence":"직전학기 평점평균 3.5 이상인 자",
+				    "necessity":"REQUIRED","refLabels":[],"operator":"GTE","valueInt":350,"valueIntMax":null},
+				   {"type":"SPECIFIC_QUALIFICATION","evidence":"가계 곤란으로 학업 유지가 어려운 자",
+				    "necessity":"PREFERRED","refLabels":[],"operator":null,"valueInt":null,"valueIntMax":null},
+				   {"type":"INCOME_CRITERIA","evidence":"소득 3분위 이하만 지원할 수 있습니다",
+				    "necessity":"REQUIRED","refLabels":[],"operator":"LTE","valueInt":3,"valueIntMax":null}]}
 				""";
 		givenPendingTargets(List.of(raw(7L, html(body), null, ParseStatus.PENDING)));
 		given(llmClient.chat(any())).willReturn(response);
@@ -231,9 +242,51 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(saved).extracting(ScholarshipCondition::getConditionType)
 				.containsExactly(ConditionType.ACADEMIC_CRITERIA, ConditionType.SPECIFIC_QUALIFICATION);
 		assertThat(saved.get(0).getValueString()).isEqualTo("직전학기 평점평균 3.5 이상인 자");
-		assertThat(saved.get(0).getOperator()).isEqualTo(ConditionOperator.EQ);
-		// false 여야 ConditionExtractionService 가 수치 구조화 대상으로 집어간다
-		assertThat(saved.get(0).isAutoExtracted()).isFalse();
+
+		// 1단계가 본문 맥락을 보며 수치까지 뽑는다 (평점은 100배 정수 규약)
+		assertThat(saved.get(0).getOperator()).isEqualTo(ConditionOperator.GTE);
+		assertThat(saved.get(0).getValueInt()).isEqualTo(350);
+
+		// 우대사항은 게이트가 아니다 — 없으면 자격 있는 학생이 탈락한다
+		assertThat(saved.get(0).getNecessity()).isEqualTo(ConditionNecessity.REQUIRED);
+		assertThat(saved.get(1).getNecessity()).isEqualTo(ConditionNecessity.PREFERRED);
+
+		/*
+		true 로 둬야 2단계(ConditionExtractionService)가 다시 집어가지 않는다.
+		1단계는 본문 전체를 보고 뽑지만 2단계는 evidence 텍스트만 봐서, 다시 태우면
+		맥락 없이 없는 숫자를 만들어낼 위험이 있다. 대학공지는 여기서 끝낸다.
+		 */
+		assertThat(saved.get(0).isAutoExtracted()).isTrue();
+	}
+
+	@Test
+	@DisplayName("FINANCIAL_AID_TYPE 은 LLM 답변과 무관하게 우대로 강제한다 — 자격이 아니라 지원 성격이다")
+	void financialAidTypeIsAlwaysPreferred() {
+		String body = """
+				2026학년도 2학기 생활비 지원 장학생을 모집합니다.
+				지원 내용은 생활비 지원입니다. 학기당 100만원을 지급합니다.
+				신청기간 : 2026. 8. 1. ~ 2026. 8. 14.
+				""";
+		String response = """
+				{"title":"생활비 장학","provider":"경희대학교","scholarshipType":"INTERNAL","documents":[],
+				 "conditions":[{"type":"FINANCIAL_AID_TYPE","evidence":"지원 내용은 생활비 지원입니다",
+				   "necessity":"REQUIRED","refLabels":["생활비 지원"],
+				   "operator":null,"valueInt":null,"valueIntMax":null}]}
+				""";
+		givenPendingTargets(List.of(raw(30L, html(body), null, ParseStatus.PENDING)));
+		given(llmClient.chat(any())).willReturn(response);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		var captor = org.mockito.ArgumentCaptor.forClass(List.class);
+		verify(scholarshipConditionRepository).saveAll(captor.capture());
+		List<ScholarshipCondition> saved = captor.getValue();
+
+		// LLM 이 REQUIRED 라고 답해도 우대로 내린다
+		assertThat(saved.get(0).getNecessity()).isEqualTo(ConditionNecessity.PREFERRED);
 	}
 
 	@Test

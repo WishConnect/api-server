@@ -5,6 +5,8 @@ import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmMessage;
 import com.wishconnect.domain.application.client.dto.LlmModel;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
@@ -80,13 +82,14 @@ public class UnivNoticeLlmParser {
 	 * <p>파싱 이력에 함께 저장한다. 이게 없으면 "프롬프트를 고쳤더니 좋아졌나"를 판단할 수 없다 —
 	 * 결과만 쌓여 있고 무엇과 비교하는지 알 수 없기 때문이다.
 	 */
-	public static final String PROMPT_VERSION = "v1";
+	public static final String PROMPT_VERSION = "v2";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
 	private static final List<String> CONDITION_TYPE_NAMES = List.of(
 			"INCOME_CRITERIA", "ACADEMIC_CRITERIA", "GRADE_LEVEL", "REGION_RESIDENCY",
-			"MAJOR_FIELD", "SPECIFIC_QUALIFICATION", "RESTRICTION", "RECOMMENDATION_REQUIRED");
+			"MAJOR_FIELD", "SPECIFIC_QUALIFICATION", "RESTRICTION", "RECOMMENDATION_REQUIRED",
+			"UNIVERSITY_TYPE", "FINANCIAL_AID_TYPE");
 
 	/**
 	 * 응답 형식을 강제하는 JSON Schema.
@@ -126,10 +129,22 @@ public class UnivNoticeLlmParser {
 				"items", Map.of(
 						"type", "object",
 						"additionalProperties", false,
-						"required", List.of("type", "evidence"),
-						"properties", Map.of(
-								"type", Map.of("type", "string", "enum", CONDITION_TYPE_NAMES),
-								"evidence", Map.of("type", "string")))));
+						"required", List.of("type", "evidence", "necessity", "refLabels",
+								"operator", "valueInt", "valueIntMax"),
+						"properties", conditionProperties())));
+		return properties;
+	}
+
+	private static Map<String, Object> conditionProperties() {
+		Map<String, Object> properties = new LinkedHashMap<>();
+		properties.put("type", Map.of("type", "string", "enum", CONDITION_TYPE_NAMES));
+		properties.put("evidence", Map.of("type", "string"));
+		properties.put("necessity", Map.of("type", "string", "enum", List.of("REQUIRED", "PREFERRED")));
+		properties.put("refLabels", Map.of("type", "array", "items", Map.of("type", "string")));
+		properties.put("operator", Map.of("type", List.of("string", "null"),
+				"enum", asList("GTE", "LTE", "BETWEEN", "EQ", null)));
+		properties.put("valueInt", nullable("integer"));
+		properties.put("valueIntMax", nullable("integer"));
 		return properties;
 	}
 
@@ -185,7 +200,9 @@ public class UnivNoticeLlmParser {
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
 			  "documents": [문자열],
-			  "conditions": [{"type": 문자열, "evidence": 문자열}]
+			  "conditions": [{"type": 문자열, "evidence": 문자열, "necessity": "REQUIRED"|"PREFERRED",
+			                  "refLabels": [문자열], "operator": 문자열|null,
+			                  "valueInt": 정수|null, "valueIntMax": 정수|null}]
 			}
 
 			절대 규칙:
@@ -216,6 +233,33 @@ public class UnivNoticeLlmParser {
 			- SPECIFIC_QUALIFICATION: 한부모·장애·다문화·국가유공·봉사·수상·자격증 등 특수 자격
 			- RESTRICTION: 지원 제한 (중복수혜 불가, 휴학생 제외, 기수혜자 제외 등)
 			- RECOMMENDATION_REQUIRED: 지도교수·학교장 추천 등 추천이 필요한 요건
+			- UNIVERSITY_TYPE: 대학 구분 요건 (4년제·전문대·대학원·해외대학 등)
+			- FINANCIAL_AID_TYPE: 지원 성격 (등록금·생활비·해외연수·창업·취업 등)
+
+			necessity: 자격요건이면 REQUIRED, 우대사항·가산점이면 PREFERRED.
+			- "우대", "가산점", "우선 선발", "~하면 유리" 는 PREFERRED 다.
+			- FINANCIAL_AID_TYPE 은 자격이 아니라 지원 성격이므로 언제나 PREFERRED 다.
+			- 판단이 서지 않으면 REQUIRED 로 둔다.
+
+			refLabels: 조건이 가리키는 대상을 아래 목록의 표기 그대로 적는다. 목록에 없으면 빈 배열.
+			- REGION_RESIDENCY: 본문에 쓰인 지역명 그대로 (예: "대구광역시 서구", "경기도").
+			  "도내"·"관내"처럼 지역명이 없으면 빈 배열.
+			- SPECIFIC_QUALIFICATION: 기초생활수급자 / 한부모 가정 / 국가유공자 / 차상위 계층 /
+			  다문화 가정 / 장애인 가정 / 다자녀 가정 / 독립유공자 후손 /
+			  공상 및 순직 군인/경찰/소방/공무원 가정 / 조손 가정 / 북한이탈주민 /
+			  중소기업 제작자 / 장애인 / 자립준비청년 / 예체능 특기자
+			- MAJOR_FIELD: 인문사회계열 / 공학계열 / 자연과학계열 / 예체능계열 / 의학계열 / 광역계열
+			- FINANCIAL_AID_TYPE: 해외연수 / 교환학생, 등록금 지원, 생활비 지원, 대외활동 / 봉사활동,
+			  예체능 / 특기 지원, 창업지원, 학업 / 연구 / 프로젝트, 취업 / 진로 지원
+			- RESTRICTION: 휴학생을 제외한다면 "ON_LEAVE". 그 외에는 빈 배열.
+			- 나머지 유형은 빈 배열.
+
+			operator/valueInt/valueIntMax: 수치 기준이 있는 조건만 채운다. 없으면 전부 null.
+			- INCOME_CRITERIA: 분위 숫자(1~10). "N분위 이하" -> LTE, valueInt N.
+			- ACADEMIC_CRITERIA: 평점은 100배 정수(2.75 -> 275, 4.5 만점). "이상" -> GTE.
+            - GRADE_LEVEL: 학기 단위. "대학N~M학기" -> BETWEEN. "N학년"은 학기로 2N-1~2N.
+              "N학년 이상" -> GTE, valueInt 2N-1.
+            - 숫자가 evidence 안에 실제로 있어야 한다. 없으면 null 로 둔다. 추측 금지.
 
 			조건 규칙:
 			- '지원 자격'에 해당하는 것만 넣는다. 제출서류·문의처·지급방법·선발일정은 조건이 아니다.
@@ -420,10 +464,45 @@ public class UnivNoticeLlmParser {
 					? evidence.substring(0, MAX_SNIPPET_CHARS)
 					: evidence;
 			if (seen.add(type + "|" + snippet)) {
-				resolved.add(new ResolvedCondition(type, snippet));
+				resolved.add(new ResolvedCondition(type, snippet,
+						parseNecessity(condition.safeNecessity(), type),
+						condition.safeRefLabels(),
+						parseOperator(condition.operator()),
+						condition.valueInt(), condition.valueIntMax()));
 			}
 		}
 		return resolved;
+	}
+
+
+	/**
+	 * 자격요건인지 우대사항인지 읽는다. 알 수 없는 값은 {@code REQUIRED} 로 둔다 —
+	 * 우대를 자격으로 잘못 보면 추천이 좁아질 뿐이지만, 반대는 지원할 수 없는 장학금을 추천하게 된다.
+	 *
+	 * <p>{@code FINANCIAL_AID_TYPE} 은 지원 성격이지 자격이 아니라 LLM 답변과 무관하게 우대로 강제한다.
+	 */
+	private static ConditionNecessity parseNecessity(String value, ConditionType type) {
+		if (type == ConditionType.FINANCIAL_AID_TYPE) {
+			return ConditionNecessity.PREFERRED;
+		}
+		try {
+			return ConditionNecessity.valueOf(value.toUpperCase());
+		} catch (IllegalArgumentException e) {
+			return ConditionNecessity.REQUIRED;
+		}
+	}
+
+	/** 알 수 없는 연산자는 EQ 로 둔다(기존 저장 규약). */
+	private static ConditionOperator parseOperator(String value) {
+		if (value == null || value.isBlank()) {
+			return ConditionOperator.EQ;
+		}
+		try {
+			return ConditionOperator.valueOf(value.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			log.warn("[UnivLlmParser] 알 수 없는 연산자 '{}' → EQ 로 둠", value);
+			return ConditionOperator.EQ;
+		}
 	}
 
 	/** 프롬프트에 없는 값이나 오타가 오면 조건을 만들지 않는다(틀린 조건보다 없는 편이 낫다). */
@@ -475,7 +554,20 @@ public class UnivNoticeLlmParser {
 	public record Period(LocalDateTime start, LocalDateTime end) {
 	}
 
-	/** 검증을 통과한 자격조건. {@code snippet} 은 본문 원문이라 그대로 valueString 이 된다. */
-	public record ResolvedCondition(ConditionType type, String snippet) {
+	/**
+	 * 검증을 통과한 자격조건. {@code snippet} 은 본문 원문이라 그대로 valueString 이 된다.
+	 *
+	 * @param refLabels 마스터에서 찾을 라벨. ID 해석은 서버가 한다 — LLM 에게 검증할 수 없는
+	 *                  숫자를 고르게 하지 않는다.
+	 */
+	public record ResolvedCondition(
+			ConditionType type,
+			String snippet,
+			ConditionNecessity necessity,
+			List<String> refLabels,
+			ConditionOperator operator,
+			Integer valueInt,
+			Integer valueIntMax
+	) {
 	}
 }

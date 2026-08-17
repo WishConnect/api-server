@@ -48,11 +48,45 @@ public record ParsedNotice(
 	 * 실제로 없으면 그 조건은 버린다. 인용문은 그대로 {@code valueString} 이 되어,
 	 * 이후 수치 구조화(ConditionExtractionService)의 입력이자 사람의 검증 자료로 남는다.
 	 *
-	 * @param type     {@code ConditionType} 이름
-	 * @param evidence 조건의 근거가 된 본문 문장 원문
+	 * <p>1단계가 값까지 뽑는 이유는 본문 맥락을 볼 수 있어서다. 2단계(ConditionExtractionService)는
+	 * evidence 텍스트만 받아 본문을 못 보므로, "이건 소득 조건" 이라는 전제가 틀리면 없는 숫자를
+	 * 만들어낸다. 대학공지는 여기서 끝내고 2단계는 공공데이터 전용으로 남긴다.
+	 *
+	 * @param type         {@code ConditionType} 이름
+	 * @param evidence     조건의 근거가 된 본문 문장 원문
+	 * @param necessity    REQUIRED(자격요건) / PREFERRED(우대사항)
+	 * @param refLabels    마스터에서 찾을 라벨. 지역명·가정형태명·전공계열명 등
+	 * @param operator     수치 비교 방식 (GTE/LTE/BETWEEN/EQ)
+	 * @param valueInt     수치 기준. 평점은 100배 정수, 소득은 분위, 학년은 학기
+	 * @param valueIntMax  BETWEEN 의 상한
 	 */
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	public record Condition(String type, String evidence) {
+	public record Condition(
+			String type,
+			String evidence,
+			String necessity,
+			List<String> refLabels,
+			String operator,
+			Integer valueInt,
+			Integer valueIntMax
+	) {
+
+		/**
+		 * 자격요건인지 우대사항인지. 값이 없으면 자격요건으로 본다 — 우대를 자격으로 잘못 보면
+		 * 추천이 좁아질 뿐이지만, 반대는 지원할 수 없는 장학금을 추천하게 된다.
+		 */
+		public String safeNecessity() {
+			return necessity == null || necessity.isBlank() ? "REQUIRED" : necessity.trim();
+		}
+
+		public List<String> safeRefLabels() {
+			return refLabels == null ? List.of() : refLabels;
+		}
+
+		/** 유형과 근거만 있는 조건. 수치·참조가 없는 서술형 요건이 실제로 이 형태로 온다. */
+		public static Condition of(String type, String evidence) {
+			return new Condition(type, evidence, null, null, null, null, null);
+		}
 	}
 
 	public List<String> safeDocuments() {
