@@ -6,11 +6,19 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.application.repository.EssayRepository;
+import com.wishconnect.domain.common.repository.ImageRepository;
+import com.wishconnect.domain.common.service.ImageStorageService;
+import com.wishconnect.domain.insight.repository.InsightRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
+import com.wishconnect.domain.scholarship.dto.CuratedSort;
+import com.wishconnect.domain.scholarship.dto.CuratedViewMode;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
@@ -21,8 +29,10 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
+import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserProfile;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
+import com.wishconnect.domain.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -54,9 +64,24 @@ class ScholarshipRecommendationServiceTest {
 	@Mock
 	private ScrapRepository scrapRepository;
 
+	/** 포스터 조회용. 기본 스텁이 빈 목록을 돌려주므로 대부분 지정하지 않는다. */
+	@Mock
+	private ImageRepository imageRepository;
+
+	@Mock
+	private ImageStorageService imageStorageService;
+
 	/** 홈 요약의 "작성 중인 지원서" 집계용. 기본 스텁이 0 을 돌려주므로 별도 지정은 필요 없다. */
 	@Mock
 	private EssayRepository essayRepository;
+
+	/** 홈 요약의 "새로운 인사이트" 집계용. 위와 같은 이유로 기본값 0 을 그대로 쓴다. */
+	@Mock
+	private InsightRepository insightRepository;
+
+	/** 인사말 이름 조회용. 이름이 없어도 카드는 그려져야 해서 대부분 비워 둔다. */
+	@Mock
+	private UserRepository userRepository;
 
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
@@ -111,13 +136,25 @@ class ScholarshipRecommendationServiceTest {
 		return School.builder().name(name).build();
 	}
 
+	/**
+	 * 개인화 응답을 보는 기본 스텁.
+	 *
+	 * <p>프로필을 넘기면 온보딩까지 끝난 것으로 본다. 온보딩 전에는 화면이 달라져
+	 * (교내·조건미충족 섹션이 잠긴다) 추천 규칙을 검증할 수 없기 때문이다.
+	 * 온보딩 전 화면은 {@code onboardingRequired...} 테스트에서 따로 본다.
+	 */
 	private void stubScholarships(UserProfile profile, List<Scholarship> scholarships,
 			List<ScholarshipCondition> conditions) {
+		if (profile != null) {
+			profile.completeOnboarding();
+		}
 		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.ofNullable(profile));
 		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
 				.willReturn(scholarships);
 		if (!scholarships.isEmpty()) {
-			given(scholarshipConditionRepository.findAllByScholarshipIn(scholarships)).willReturn(conditions);
+			// 온보딩 전 화면은 조건을 읽지 않으므로 lenient. 개인화 경로에서만 쓰인다.
+			lenient().when(scholarshipConditionRepository.findAllByScholarshipIn(scholarships))
+					.thenReturn(conditions);
 		}
 		// 기본: 스크랩 없음. 스크랩 케이스 테스트에서 개별 override.
 		lenient().when(scrapRepository.findScrappedScholarshipIds(eq(USER_ID), anyList()))
@@ -125,7 +162,8 @@ class ScholarshipRecommendationServiceTest {
 	}
 
 	private CuratedScholarshipResponse curate() {
-		return scholarshipRecommendationService.getCuratedScholarships(USER_ID, 1, 10);
+		return scholarshipRecommendationService.getCuratedScholarships(
+				USER_ID, CuratedSort.DEADLINE, 1, 10);
 	}
 
 	private static List<Long> idsOf(List<ScholarshipCard> cards) {
@@ -184,7 +222,7 @@ class ScholarshipRecommendationServiceTest {
 			scholarships.add(scholarship(i, "장학금" + i, ScholarshipType.EXTERNAL,
 					LocalDateTime.now().plusDays(i), LocalDateTime.now().minusDays(30)));
 		}
-		stubScholarships(null, scholarships, List.of());
+		stubScholarships(UserProfile.builder().build(), scholarships, List.of());
 
 		CuratedScholarshipResponse response = curate();
 
@@ -220,8 +258,8 @@ class ScholarshipRecommendationServiceTest {
 	}
 
 	@Test
-	@DisplayName("프로필이 없으면 배제 없이 노출되고 완성도는 0, 교내는 판단 불가라 비어 있다")
-	void fallbackWithoutProfile() {
+	@DisplayName("온보딩 전에는 마감 임박 배너만 주고 나머지 섹션은 잠근다")
+	void onboardingRequiredKeepsOnlyFeatured() {
 		Scholarship campus = scholarship(1L, "교내", ScholarshipType.INTERNAL,
 				LocalDateTime.now().plusDays(10), LocalDateTime.now().minusDays(30), "연세대학교");
 		Scholarship external = scholarship(2L, "교외", ScholarshipType.EXTERNAL,
@@ -230,12 +268,135 @@ class ScholarshipRecommendationServiceTest {
 
 		CuratedScholarshipResponse response = curate();
 
-		assertThat(response.profileCompletionRate()).isZero();
-		assertThat(response.featured()).isNotEmpty();
-		assertThat(response.featured()).allMatch(ScholarshipCard::eligible);
-		assertThat(response.ineligibleScholarships()).isEmpty();
-		// 소속 학교를 모르므로 교내 섹션은 비운다(남의 학교 장학금 노출 방지)
+		assertThat(response.viewMode()).isEqualTo(CuratedViewMode.ONBOARDING_REQUIRED);
+		assertThat(idsOf(response.featured())).containsExactly(1L, 2L);
+		// 화면에서 흐리게 잠기는 자리라 데이터를 싣지 않는다. "없음" 과의 구분은 viewMode 가 한다.
 		assertThat(response.campusScholarships()).isEmpty();
+		assertThat(response.otherScholarships()).isEmpty();
+		assertThat(response.ineligibleScholarships()).isEmpty();
+		assertThat(response.profileCompletionRate()).isZero();
+	}
+
+	@Test
+	@DisplayName("온보딩 전에는 판정 근거가 없으므로 매칭 사유를 지어내지 않는다")
+	void onboardingRequiredHasNoMatchReasons() {
+		Scholarship external = scholarship(1L, "교외", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(20), LocalDateTime.now().minusDays(30));
+		stubScholarships(null, List.of(external), List.of(incomeCondition(external, 3)));
+
+		assertThat(curate().featured()).allSatisfy(card -> {
+			assertThat(card.matchReasons()).isEmpty();
+			assertThat(card.matchScore()).isZero();
+		});
+	}
+
+	@Test
+	@DisplayName("프로필은 있지만 온보딩을 안 끝냈으면 개인화하지 않는다")
+	void onboardingRequiredWhenProfileIncomplete() {
+		Scholarship mine = scholarship(1L, "교내", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(10), LocalDateTime.now().minusDays(30), "연세대학교");
+		// completeOnboarding() 을 부르지 않은 프로필 = STEP 진행 중
+		UserProfile inProgress = UserProfile.builder().school(school("연세대학교")).build();
+		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.of(inProgress));
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(List.of(mine));
+		lenient().when(scrapRepository.findScrappedScholarshipIds(eq(USER_ID), anyList()))
+				.thenReturn(List.of());
+
+		CuratedScholarshipResponse response = curate();
+
+		assertThat(response.viewMode()).isEqualTo(CuratedViewMode.ONBOARDING_REQUIRED);
+		// 학교를 알고 있어도 온보딩이 안 끝났으면 교내 섹션은 잠긴 채로 둔다
+		assertThat(response.campusScholarships()).isEmpty();
+	}
+
+	// ---------- 비로그인 ----------
+
+	@Test
+	@DisplayName("비로그인은 추천 없이 마감 임박순으로만 준다")
+	void guestSortsByDeadline() {
+		Scholarship late = scholarship(1L, "늦게 마감", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(1));
+		Scholarship soon = scholarship(2L, "곧 마감", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(2), LocalDateTime.now().minusDays(30));
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(List.of(late, soon));
+
+		CuratedScholarshipResponse response = scholarshipRecommendationService
+				.getCuratedScholarships(null, CuratedSort.DEADLINE, 1, 10);
+
+		assertThat(response.viewMode()).isEqualTo(CuratedViewMode.GUEST);
+		assertThat(idsOf(response.otherScholarships())).containsExactly(2L, 1L);
+		// 비로그인 화면에는 히어로 배너도, 교내/조건미충족 섹션도 없다
+		assertThat(response.featured()).isEmpty();
+		assertThat(response.campusScholarships()).isEmpty();
+		assertThat(response.ineligibleScholarships()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("비로그인 최신 등록순은 등록이 늦은 것부터 준다")
+	void guestSortsByLatest() {
+		Scholarship old = scholarship(1L, "옛날 등록", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(2), LocalDateTime.now().minusDays(30));
+		Scholarship fresh = scholarship(2L, "최근 등록", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(1));
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(List.of(old, fresh));
+
+		CuratedScholarshipResponse response = scholarshipRecommendationService
+				.getCuratedScholarships(null, CuratedSort.LATEST, 1, 10);
+
+		assertThat(idsOf(response.otherScholarships())).containsExactly(2L, 1L);
+	}
+
+	@Test
+	@DisplayName("비로그인은 마감일 없는 공고를 뒤로 밀되 빠뜨리지는 않는다")
+	void guestKeepsScholarshipsWithoutDeadlineAtTheEnd() {
+		Scholarship noDeadline = scholarship(1L, "마감 미상", ScholarshipType.EXTERNAL,
+				null, LocalDateTime.now().minusDays(30));
+		Scholarship dated = scholarship(2L, "마감 있음", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(30));
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(List.of(noDeadline, dated));
+
+		CuratedScholarshipResponse response = scholarshipRecommendationService
+				.getCuratedScholarships(null, CuratedSort.DEADLINE, 1, 10);
+
+		// 마감일 파싱이 안 된 공고가 많아, 뒤로 미는 것과 버리는 것은 결과가 크게 다르다
+		assertThat(idsOf(response.otherScholarships())).containsExactly(2L, 1L);
+	}
+
+	@Test
+	@DisplayName("비로그인 목록도 page/size 로 페이지네이션된다")
+	void guestPaginates() {
+		List<Scholarship> pool = new java.util.ArrayList<>();
+		for (int i = 1; i <= 3; i++) {
+			pool.add(scholarship(i, "장학금" + i, ScholarshipType.EXTERNAL,
+					LocalDateTime.now().plusDays(i), LocalDateTime.now().minusDays(30)));
+		}
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(pool);
+
+		CuratedScholarshipResponse response = scholarshipRecommendationService
+				.getCuratedScholarships(null, CuratedSort.DEADLINE, 2, 2);
+
+		assertThat(idsOf(response.otherScholarships())).containsExactly(3L);
+		assertThat(response.pagination().totalCount()).isEqualTo(3);
+		assertThat(response.pagination().totalPages()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("비로그인은 조건 데이터를 아예 읽지 않는다")
+	void guestSkipsConditionLookup() {
+		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+				.willReturn(List.of(scholarship(1L, "장학금", ScholarshipType.EXTERNAL,
+						LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(30))));
+
+		scholarshipRecommendationService.getCuratedScholarships(null, CuratedSort.DEADLINE, 1, 10);
+
+		// 프로필이 없으면 모든 조건이 판정 불가라 점수가 전부 같아진다. 읽어도 쓸 데가 없다.
+		verify(scholarshipConditionRepository, never()).findAllByScholarshipIn(anyList());
+		verifyNoInteractions(scrapRepository);
 	}
 
 	@Test
@@ -248,7 +409,8 @@ class ScholarshipRecommendationServiceTest {
 				List.of(incomeCondition(s1, 8), incomeCondition(s2, 8), incomeCondition(s3, 8)));
 
 		CuratedScholarshipResponse response =
-				scholarshipRecommendationService.getCuratedScholarships(USER_ID, 2, 1);
+				scholarshipRecommendationService.getCuratedScholarships(
+						USER_ID, CuratedSort.DEADLINE, 2, 1);
 
 		// 마감일이 없으면 featured 대상이 아니다 -> others 3건 중 2페이지
 		assertThat(response.featured()).isEmpty();
@@ -275,6 +437,32 @@ class ScholarshipRecommendationServiceTest {
 	}
 
 	@Test
+	@DisplayName("홈 요약: 인사말 이름과 새로운 인사이트 건수를 함께 준다")
+	void homeSummaryCarriesNameAndInsightCount() {
+		stubScholarships(null, List.of(), List.of());
+		given(userRepository.findById(USER_ID)).willReturn(Optional.of(
+				User.createLocal("u@example.com", "user01", "encoded", "김위시", "010-1111-2222")));
+		given(insightRepository.countByCreatedAtAfter(any())).willReturn(3L);
+
+		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
+
+		assertThat(summary.userName()).isEqualTo("김위시");
+		assertThat(summary.newInsightCount()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("홈 요약: 회원 정보를 못 찾아도 이름만 비우고 카드는 내려준다")
+	void homeSummaryToleratesMissingUser() {
+		stubScholarships(null, List.of(), List.of());
+		given(userRepository.findById(USER_ID)).willReturn(Optional.empty());
+
+		HomeSummaryResponse summary = scholarshipRecommendationService.getHomeSummary(USER_ID);
+
+		assertThat(summary.userName()).isNull();
+		assertThat(summary.newMatchedCount()).isZero();
+	}
+
+	@Test
 	@DisplayName("OPEN 장학금이 없으면 빈 응답")
 	void emptyWhenNoOpenScholarships() {
 		stubScholarships(null, List.of(), List.of());
@@ -285,7 +473,7 @@ class ScholarshipRecommendationServiceTest {
 		assertThat(response.featured()).isEmpty();
 		assertThat(response.otherScholarships()).isEmpty();
 		assertThat(response.ineligibleScholarships()).isEmpty();
-		assertThat(summary).isEqualTo(new HomeSummaryResponse(0, 0, 0, false));
+		assertThat(summary).isEqualTo(new HomeSummaryResponse(null, 0, 0, 0, 0, false));
 	}
 
 	/**

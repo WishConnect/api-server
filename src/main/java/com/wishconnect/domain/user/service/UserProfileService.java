@@ -5,7 +5,7 @@ import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
-import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.common.repository.SchoolRepository;
 import com.wishconnect.domain.user.dto.request.ProfileAcademicRequest;
 import com.wishconnect.domain.user.dto.request.ProfileBasicRequest;
@@ -35,7 +35,9 @@ import com.wishconnect.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,7 +61,7 @@ public class UserProfileService {
 
 	private final UserRepository userRepository;
 	private final UserProfileRepository userProfileRepository;
-	private final RegionRepository regionRepository;
+	private final RegionResolver regionResolver;
 	private final SchoolRepository schoolRepository;
 	private final MajorRepository majorRepository;
 	private final FamilyTypeRepository familyTypeRepository;
@@ -114,9 +116,8 @@ public class UserProfileService {
 				request.familySize()
 		);
 
-		replaceFamilyTypes(user, request.familyTypes(), FamilyCategory.FAMILY);
-		replaceFamilyTypes(user, request.personalStatuses(), FamilyCategory.PERSONAL);
-		replaceInterests(user, request.interests());
+		replaceFamilyTypes(profile, request.familyTypes(), request.personalStatuses());
+		replaceInterests(profile, request.interests());
 		return new OnboardingStepResponse(3, true);
 	}
 
@@ -139,7 +140,7 @@ public class UserProfileService {
 	public ProfileResponse getProfile(UUID userId) {
 		User user = getUser(userId);
 		UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
-		List<UserFamilyType> familyMappings = userFamilyTypeRepository.findAllByUser_Id(userId);
+		List<UserFamilyType> familyMappings = userFamilyTypeRepository.findAllByUserProfile_User_Id(userId);
 		List<String> familyTypes = familyMappings.stream()
 				.filter(mapping -> mapping.getFamilyType().getCategory() == FamilyCategory.FAMILY)
 				.map(mapping -> mapping.getFamilyType().getName())
@@ -148,7 +149,7 @@ public class UserProfileService {
 				.filter(mapping -> mapping.getFamilyType().getCategory() == FamilyCategory.PERSONAL)
 				.map(mapping -> mapping.getFamilyType().getName())
 				.toList();
-		List<String> interests = userInterestRepository.findAllByUser_Id(userId)
+		List<String> interests = userInterestRepository.findAllByUserProfile_User_Id(userId)
 				.stream()
 				.map(mapping -> mapping.getInterest().getName())
 				.toList();
@@ -180,10 +181,19 @@ public class UserProfileService {
 				.orElseGet(() -> userProfileRepository.save(UserProfile.createFor(user)));
 	}
 
+	/**
+	 * 거주지역을 찾는다. 시도만 올 수도 있고 시군구까지 올 수도 있다.
+	 *
+	 * <p>{@code 중구} 처럼 여러 시도에 있는 이름은 단독으로는 특정할 수 없으므로,
+	 * 프론트는 {@code "서울 중구"} 형태로 보내거나 목록 API 의 regionId 를 쓰는 게 확실하다.
+	 * 특정하지 못하면 조용히 넘기지 않고 400 으로 알려 준다.
+	 */
 	private Region getRegion(String name) {
-		String normalized = normalizeRegionName(name);
-		return regionRepository.findByName(normalized)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		Region region = regionResolver.byName(name);
+		if (region == null) {
+			throw new CustomException(ErrorCode.INVALID_REGION);
+		}
+		return region;
 	}
 
 	private School getOrCreateSchool(String name) {
@@ -225,42 +235,42 @@ public class UserProfileService {
 				.build());
 	}
 
-	private void replaceFamilyTypes(User user, List<String> names, FamilyCategory category) {
-		if (names == null) {
-			names = List.of();
-		}
-		if (category == FamilyCategory.FAMILY) {
-			userFamilyTypeRepository.deleteByUser(user);
-		}
-		List<UserFamilyType> mappings = names.stream()
-				.filter(StringUtils::hasText)
-				.map(name -> getOrCreateFamilyType(name.trim(), category))
-				.map(familyType -> UserFamilyType.builder()
-						.user(user)
-						.familyType(familyType)
-						.build())
-				.toList();
+	private void replaceFamilyTypes(UserProfile profile, List<String> familyNames, List<String> personalNames) {
+		userFamilyTypeRepository.deleteByUserProfile(profile);
+		userFamilyTypeRepository.flush();
+
+		List<UserFamilyType> mappings = new ArrayList<>();
+		mappings.addAll(toFamilyTypeMappings(profile, familyNames, FamilyCategory.FAMILY));
+		mappings.addAll(toFamilyTypeMappings(profile, personalNames, FamilyCategory.PERSONAL));
 		userFamilyTypeRepository.saveAll(mappings);
 	}
 
+	private List<UserFamilyType> toFamilyTypeMappings(UserProfile profile, List<String> names, FamilyCategory category) {
+		return normalizeSelections(names).stream()
+				.map(name -> getOrCreateFamilyType(name, category))
+				.map(familyType -> UserFamilyType.builder()
+						.userProfile(profile)
+						.familyType(familyType)
+						.build())
+				.toList();
+	}
+
 	private FamilyType getOrCreateFamilyType(String name, FamilyCategory category) {
-		return familyTypeRepository.findFirstByName(name)
+		return familyTypeRepository.findFirstByNameAndCategory(name, category)
 				.orElseGet(() -> familyTypeRepository.save(FamilyType.builder()
 						.name(name)
 						.category(category)
 						.build()));
 	}
 
-	private void replaceInterests(User user, List<String> names) {
-		userInterestRepository.deleteByUser(user);
-		if (names == null) {
-			return;
-		}
-		List<UserInterest> mappings = names.stream()
-				.filter(StringUtils::hasText)
-				.map(name -> getOrCreateInterest(name.trim()))
+	private void replaceInterests(UserProfile profile, List<String> names) {
+		userInterestRepository.deleteByUserProfile(profile);
+		userInterestRepository.flush();
+
+		List<UserInterest> mappings = normalizeSelections(names).stream()
+				.map(this::getOrCreateInterest)
 				.map(interest -> UserInterest.builder()
-						.user(user)
+						.userProfile(profile)
 						.interest(interest)
 						.build())
 				.toList();
@@ -270,6 +280,18 @@ public class UserProfileService {
 	private Interest getOrCreateInterest(String name) {
 		return interestRepository.findFirstByName(name)
 				.orElseGet(() -> interestRepository.save(Interest.builder().name(name).build()));
+	}
+
+	private List<String> normalizeSelections(List<String> values) {
+		if (values == null) {
+			return List.of();
+		}
+		Set<String> uniqueValues = new LinkedHashSet<>();
+		values.stream()
+				.filter(StringUtils::hasText)
+				.map(String::trim)
+				.forEach(uniqueValues::add);
+		return new ArrayList<>(uniqueValues);
 	}
 
 	private <T extends Enum<T>> T parseEnum(Class<T> enumType, String value) {
@@ -330,29 +352,6 @@ public class UserProfileService {
 		return value.trim();
 	}
 
-	private String normalizeRegionName(String value) {
-		String normalized = normalizeRequired(value);
-		return switch (normalized) {
-			case "서울특별시" -> "서울";
-			case "부산광역시" -> "부산";
-			case "대구광역시" -> "대구";
-			case "인천광역시" -> "인천";
-			case "광주광역시" -> "광주";
-			case "대전광역시" -> "대전";
-			case "울산광역시" -> "울산";
-			case "세종특별자치시" -> "세종";
-			case "경기도" -> "경기";
-			case "강원특별자치도", "강원도" -> "강원";
-			case "충청북도" -> "충북";
-			case "충청남도" -> "충남";
-			case "전북특별자치도", "전라북도" -> "전북";
-			case "전라남도" -> "전남";
-			case "경상북도" -> "경북";
-			case "경상남도" -> "경남";
-			case "제주특별자치도", "제주도" -> "제주";
-			default -> normalized;
-		};
-	}
 
 	private ProfileResponse.Academic toAcademic(UserProfile profile) {
 		if (profile == null) {

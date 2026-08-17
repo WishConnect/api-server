@@ -13,5 +13,11 @@ public enum LlmModel {
 	DRAFT,
 
 	/** 인사이트 콘텐츠 요약/분류 (기본: claude-haiku-4-5) */
-	SUMMARY
+	SUMMARY,
+
+	/**
+	 * 대학 장학공지 본문 구조화 파싱 (기본: claude-haiku-4-5).
+	 * 공고 한 건당 한 번 호출하므로 건수가 많다. 저가 모델을 쓰고 응답 길이를 짧게 유지한다.
+	 */
+	PARSING
 }

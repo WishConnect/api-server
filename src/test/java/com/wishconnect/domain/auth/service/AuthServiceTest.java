@@ -27,7 +27,7 @@ import com.wishconnect.domain.auth.dto.response.LoginResponse;
 import com.wishconnect.domain.auth.dto.response.SignupResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.dto.request.AgreementItem;
-import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.user.entity.AgreementType;
 import com.wishconnect.domain.user.entity.Gender;
 import com.wishconnect.domain.user.entity.LoginType;
@@ -63,7 +63,7 @@ class AuthServiceTest {
 	@Mock
 	private UserAgreementRepository userAgreementRepository;
 	@Mock
-	private RegionRepository regionRepository;
+	private RegionResolver regionResolver;
 	@Mock
 	private PasswordEncoder passwordEncoder;
 	@Mock
@@ -114,7 +114,7 @@ class AuthServiceTest {
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(false);
 			given(passwordEncoder.encode(request.password())).willReturn("encoded");
-			given(regionRepository.findByName("서울")).willReturn(Optional.empty());
+			given(regionResolver.byName("서울")).willReturn(null);
 			given(userRepository.save(any(User.class)))
 					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
 			stubTokenIssue();

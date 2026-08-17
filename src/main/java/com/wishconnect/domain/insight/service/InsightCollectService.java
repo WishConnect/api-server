@@ -40,7 +40,13 @@ public class InsightCollectService {
     @Transactional
     public int collectByKeyword(String keyword) {
         List<NaverSearchItem> items = new ArrayList<>();
-        items.addAll(naverSearchClient.searchBlog(keyword, 10).items());
+
+        // 검색 호출이 실패하면 CustomException(NAVER_SEARCH_FAILED) 이 그대로 올라간다.
+        // 예전처럼 빈 결과로 삼키면 "수집 0건" 과 구분되지 않아 키가 죽은 걸 알아채지 못한다.
+        NaverSearchResponse blogResponse = naverSearchClient.searchBlog(keyword, 10);
+        if (blogResponse.items() != null) {
+            items.addAll(blogResponse.items());
+        }
 
         NaverSearchResponse webResponse = naverSearchClient.searchWeb(keyword, 30);
         if (webResponse != null && webResponse.items() != null) {

@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.service;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipReportRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
+import com.wishconnect.domain.scholarship.entity.ReportReason;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipReport;
@@ -12,7 +13,9 @@ import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,11 +56,13 @@ public class ScholarshipReportService {
 
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+		// 화면이 체크박스라 같은 값이 두 번 실려 올 수 있다. 저장 전에 접어 둔다.
+		Set<ReportReason> reasons = new LinkedHashSet<>(request.reasons());
 		ScholarshipReport report = scholarshipReportRepository.save(
-				ScholarshipReport.create(scholarship, user, request.reason(), request.detail()));
+				ScholarshipReport.create(scholarship, user, reasons, request.detail()));
 
-		log.info("[Scholarship] 오등록 신고 접수 (reportId={}, scholarshipId={}, reason={})",
-				report.getId(), scholarshipId, request.reason());
+		log.info("[Scholarship] 오등록 신고 접수 (reportId={}, scholarshipId={}, reasons={})",
+				report.getId(), scholarshipId, reasons);
 		return ScholarshipReportResponse.from(report);
 	}
 

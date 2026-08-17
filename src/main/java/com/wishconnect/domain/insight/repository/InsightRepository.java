@@ -1,5 +1,6 @@
 package com.wishconnect.domain.insight.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import com.wishconnect.domain.insight.entity.Insight;
@@ -13,6 +14,9 @@ import org.springframework.data.repository.query.Param;
 public interface InsightRepository extends JpaRepository<Insight, Long> {
 
     boolean existsByOriginalUrl(String originalUrl);
+
+    /** 홈 "새로운 인사이트" 칸. 원문 작성일이 아니라 수집 시각 기준이다(HomeSummaryResponse 참고). */
+    long countByCreatedAtAfter(LocalDateTime since);
 
     // 필터 없이 전체 조회
     @Query("SELECT i FROM Insight i " +

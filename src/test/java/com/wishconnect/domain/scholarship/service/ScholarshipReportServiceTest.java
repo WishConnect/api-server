@@ -21,6 +21,7 @@ import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -66,11 +67,31 @@ class ScholarshipReportServiceTest {
 				.willAnswer(invocation -> invocation.getArgument(0));
 
 		ScholarshipReportResponse response = scholarshipReportService.report(
-				USER_ID, 1L, new ScholarshipReportRequest(ReportReason.WRONG_DEADLINE, "마감일이 다릅니다"));
+				USER_ID, 1L, new ScholarshipReportRequest(
+						List.of(ReportReason.ALREADY_CLOSED, ReportReason.WRONG_CONDITION), "마감일이 다릅니다"));
 
 		assertThat(response.status()).isEqualTo(ReportStatus.PENDING);
-		assertThat(response.reason()).isEqualTo(ReportReason.WRONG_DEADLINE);
+		assertThat(response.reasons())
+				.containsExactly(ReportReason.ALREADY_CLOSED, ReportReason.WRONG_CONDITION);
 		assertThat(response.resolvedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("같은 사유가 두 번 실려 와도 한 번만 저장한다")
+	void report_collapsesDuplicateReasons() {
+		given(scholarshipRepository.findById(1L)).willReturn(Optional.of(scholarship()));
+		given(scholarshipReportRepository.existsByScholarship_IdAndUser_IdAndStatus(
+				1L, USER_ID, ReportStatus.PENDING)).willReturn(false);
+		given(userRepository.findById(USER_ID)).willReturn(Optional.of(user()));
+		given(scholarshipReportRepository.save(any(ScholarshipReport.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		// (report_id, reason) 이 복합 PK 라, 걸러내지 않으면 제약 위반으로 접수가 통째로 실패한다.
+		ScholarshipReportResponse response = scholarshipReportService.report(
+				USER_ID, 1L, new ScholarshipReportRequest(
+						List.of(ReportReason.DUPLICATE, ReportReason.DUPLICATE), null));
+
+		assertThat(response.reasons()).containsExactly(ReportReason.DUPLICATE);
 	}
 
 	@Test
@@ -81,7 +102,7 @@ class ScholarshipReportServiceTest {
 				1L, USER_ID, ReportStatus.PENDING)).willReturn(true);
 
 		assertThatThrownBy(() -> scholarshipReportService.report(
-				USER_ID, 1L, new ScholarshipReportRequest(ReportReason.OTHER, "중복")))
+				USER_ID, 1L, new ScholarshipReportRequest(List.of(ReportReason.OTHER), "중복")))
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.REPORT_ALREADY_EXISTS);
 		verify(scholarshipReportRepository, never()).save(any(ScholarshipReport.class));
@@ -95,7 +116,7 @@ class ScholarshipReportServiceTest {
 		given(scholarshipRepository.findById(1L)).willReturn(Optional.of(deleted));
 
 		assertThatThrownBy(() -> scholarshipReportService.report(
-				USER_ID, 1L, new ScholarshipReportRequest(ReportReason.OTHER, null)))
+				USER_ID, 1L, new ScholarshipReportRequest(List.of(ReportReason.OTHER), null)))
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.SCHOLARSHIP_NOT_FOUND);
 	}
@@ -104,7 +125,7 @@ class ScholarshipReportServiceTest {
 	@DisplayName("처리하면 상태와 처리 시각이 남는다")
 	void resolve_recordsStatusAndTime() {
 		ScholarshipReport report = ScholarshipReport.create(
-				scholarship(), user(), ReportReason.BROKEN_LINK, "링크 깨짐");
+				scholarship(), user(), List.of(ReportReason.WRONG_INFO), "링크 깨짐");
 		given(scholarshipReportRepository.findById(1L)).willReturn(Optional.of(report));
 
 		ScholarshipReportResponse response = scholarshipReportService.resolve(

@@ -23,5 +23,14 @@ public enum AdminAction {
 	CONDITION_EXTRACT_TRIGGER,
 
 	/** 상세페이지·첨부·포스터 자동 보완. 외부 검색·크롤링을 유발한다. */
-	ENRICH_TRIGGER
+	ENRICH_TRIGGER,
+
+	/** 중복 장학금 후보 탐지 배치 실행. */
+	MERGE_DETECT_TRIGGER,
+
+	/** 중복 장학금 병합 승인. 사용자 데이터(스크랩·자소서)가 옮겨지는 파괴적 작업이라 반드시 남긴다. */
+	SCHOLARSHIP_MERGE,
+
+	/** 중복 후보 반려("중복 아님" 판정). */
+	SCHOLARSHIP_MERGE_REJECT
 }

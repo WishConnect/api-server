@@ -15,11 +15,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 사용자-가구유형 매핑.
- * ERD 상 user_family_type.user_id 는 user_profile 을 참조하지만,
- * user_interest 와 일관성을 위해 User 를 참조한다.
- */
+/** 사용자 프로필-가구유형 매핑. ERD 기준으로 user_profile을 참조합니다. */
 @Entity
 @Getter
 @Table(name = "user_family_type")
@@ -34,7 +30,7 @@ public class UserFamilyType extends BaseCreatedEntity {
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "user_id", nullable = false)
-	private User user;
+	private UserProfile userProfile;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "family_type_id", nullable = false)

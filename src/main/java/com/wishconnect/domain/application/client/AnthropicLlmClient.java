@@ -76,6 +76,7 @@ public class AnthropicLlmClient implements LlmClient {
 			case INTERVIEW -> properties.interviewModel();
 			case DRAFT -> properties.draftModel();
 			case SUMMARY -> properties.summaryModel();
+			case PARSING -> properties.parserModel();
 		};
 	}
 }
