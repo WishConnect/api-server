@@ -5,11 +5,14 @@ import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmMessage;
 import com.wishconnect.domain.application.client.dto.LlmModel;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +56,12 @@ public class UnivNoticeLlmParser {
 	/** 선발 인원 상한. 이보다 크면 지원자 수나 무관한 숫자다. */
 	private static final int MAX_SELECTION_COUNT = 10_000;
 
+	/** 저장할 조건 최대 개수. 정규식 추출기(NoticeConditionExtractor)와 같은 상한을 쓴다. */
+	private static final int MAX_CONDITIONS = 12;
+
+	/** 조건 원문 최대 길이. 길면 조건과 무관한 내용이 섞여 들어온다. */
+	private static final int MAX_SNIPPET_CHARS = 300;
+
 	/**
 	 * 신청기간이 아닌 기간을 가리키는 라벨.
 	 *
@@ -93,7 +102,8 @@ public class UnivNoticeLlmParser {
 			  "selectionCount": 정수|null,
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
-			  "documents": [문자열]
+			  "documents": [문자열],
+			  "conditions": [{"type": 문자열, "evidence": 문자열}]
 			}
 
 			절대 규칙:
@@ -101,6 +111,8 @@ public class UnivNoticeLlmParser {
 			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.
 			- 마감일만 있고 시작일이 없으면 applicationStart 만 null 로 둔다.
+			- conditions 의 evidence 도 마찬가지로 본문 문장을 그대로 인용한다. 요약·재작성 금지.
+			  인용할 문장이 없으면 그 조건을 아예 넣지 마라.
 
 			판별 기준:
 			- 신청기간은 '학생이 지원서를 내는 기간'이다. 다음은 신청기간이 아니다.
@@ -112,6 +124,23 @@ public class UnivNoticeLlmParser {
 			- selectionCount: 선발 인원. 지원자 수·경쟁률은 넣지 마라.
 			- summary: 한 문장(80자 이내). 본문 내용만으로 쓴다.
 			- documents: 제출서류 이름만. 부수(1부)·설명·괄호 주석은 제외한다.
+
+			conditions 의 type 은 아래 중 하나만 쓴다. 해당 없으면 그 조건을 넣지 마라.
+			- INCOME_CRITERIA: 소득분위·학자금 지원구간·기초생활·차상위 등 경제 요건
+			- ACADEMIC_CRITERIA: 평점·백분위·이수학점 등 성적 요건
+			- GRADE_LEVEL: 학년·학기 요건 (예: 2학년 이상, 대학 3~7학기, 신입생)
+			- REGION_RESIDENCY: 본인·보호자의 거주지 또는 출신지 요건
+			- MAJOR_FIELD: 학과·전공·계열 요건
+			- SPECIFIC_QUALIFICATION: 한부모·장애·다문화·국가유공·봉사·수상·자격증 등 특수 자격
+			- RESTRICTION: 지원 제한 (중복수혜 불가, 휴학생 제외, 기수혜자 제외 등)
+			- RECOMMENDATION_REQUIRED: 지도교수·학교장 추천 등 추천이 필요한 요건
+
+			조건 규칙:
+			- '지원 자격'에 해당하는 것만 넣는다. 제출서류·문의처·지급방법·선발일정은 조건이 아니다.
+			- 한 문장에 조건이 둘이면(예: "3학년 이상, 평점 3.0 이상") 유형별로 나눠 각각 넣는다.
+			  이때 evidence 는 각 조건이 포함된 본문 문장을 인용하면 된다.
+			- 같은 조건을 여러 번 넣지 마라. 최대 12개.
+			- 자격 요건이 본문에 없으면 conditions 를 빈 배열로 둔다. 억지로 만들지 마라.
 			""";
 
 	private final ObjectMapper objectMapper;
@@ -255,6 +284,58 @@ public class UnivNoticeLlmParser {
 		return NON_APPLICATION_LABEL.matcher(evidence).find();
 	}
 
+	/**
+	 * 자격조건을 검증해 저장할 것만 남긴다.
+	 *
+	 * <p>기간과 같은 근거 인용 방식을 쓴다. 잘못된 조건은 기간 오류만큼 해롭다 —
+	 * 없는 조건을 만들어내면 자격 있는 학생이 추천에서 조용히 탈락하고, 화면에는 근거 없는
+	 * 자격 문구가 노출된다. 그래서 <b>본문에 없는 인용문은 통째로 버린다.</b>
+	 *
+	 * <p>거르는 것: 알 수 없는 유형, 본문에 없는 인용(환각), 너무 짧아 근거가 못 되는 인용,
+	 * 유형·문장이 같은 중복, {@value #MAX_CONDITIONS} 개 초과분.
+	 *
+	 * @param bodyText LLM 에 넘긴 본문. 인용문 대조에 쓴다
+	 */
+	public List<ResolvedCondition> resolveConditions(ParsedNotice notice, String bodyText) {
+		List<ResolvedCondition> resolved = new ArrayList<>();
+		LinkedHashSet<String> seen = new LinkedHashSet<>();
+
+		for (ParsedNotice.Condition condition : notice.safeConditions()) {
+			if (resolved.size() >= MAX_CONDITIONS) {
+				break;
+			}
+			ConditionType type = parseConditionType(condition.type());
+			if (type == null) {
+				continue;
+			}
+			String evidence = condition.evidence() == null ? "" : condition.evidence().replaceAll("\\s+", " ").trim();
+			if (!isEvidenceGrounded(evidence, bodyText)) {
+				log.warn("[UnivLlmParser] 조건 근거 미확인 → 폐기. type={} evidence={}", type, evidence);
+				continue;
+			}
+			String snippet = evidence.length() > MAX_SNIPPET_CHARS
+					? evidence.substring(0, MAX_SNIPPET_CHARS)
+					: evidence;
+			if (seen.add(type + "|" + snippet)) {
+				resolved.add(new ResolvedCondition(type, snippet));
+			}
+		}
+		return resolved;
+	}
+
+	/** 프롬프트에 없는 값이나 오타가 오면 조건을 만들지 않는다(틀린 조건보다 없는 편이 낫다). */
+	private static ConditionType parseConditionType(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return ConditionType.valueOf(value.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			log.warn("[UnivLlmParser] 알 수 없는 조건 유형 '{}' → 조건 폐기", value);
+			return null;
+		}
+	}
+
 	/** 금액·인원처럼 범위를 벗어나면 오추출이 분명한 값을 걸러낸다. */
 	public Long resolveAmount(Long amount) {
 		return amount != null && amount > 0 && amount <= MAX_AMOUNT ? amount : null;
@@ -289,5 +370,9 @@ public class UnivNoticeLlmParser {
 	}
 
 	public record Period(LocalDateTime start, LocalDateTime end) {
+	}
+
+	/** 검증을 통과한 자격조건. {@code snippet} 은 본문 원문이라 그대로 valueString 이 된다. */
+	public record ResolvedCondition(ConditionType type, String snippet) {
 	}
 }
