@@ -11,6 +11,14 @@ java {
 	sourceCompatibility = '17'
 }
 
+// 로컬 JDK 는 22, CI 와 운영은 17 이다. sourceCompatibility 만으로는 문법만 17 로 맞출 뿐
+// 표준 라이브러리는 로컬 JDK 것을 그대로 쓴다. 그래서 Math.clamp(21+) 처럼 나중에 생긴 API 를
+// 써도 로컬에서는 통과하고 CI 에서만 "cannot find symbol" 로 터진다(실제로 겪었다).
+// --release 는 17 에 없는 API 를 컴파일 시점에 막는다.
+tasks.withType(JavaCompile).configureEach {
+	options.release = 17
+}
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
