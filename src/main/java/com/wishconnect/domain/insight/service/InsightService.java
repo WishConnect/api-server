@@ -37,7 +37,6 @@ public class InsightService {
         // 2. 조회 (태그 유무로 분기)
         Page<Insight> insightPage;
         if (tag != null && !tag.isBlank()) {
-            // 태그 필터는 JPQL의 ORDER BY를 그대로 쓰기 위해 Sort 없는 Pageable 사용
             Pageable pageableWithoutSort = PageRequest.of(page - 1, size);
             insightPage = insightRepository.findAllByTag(tag, categoryName, sourceEnum, pageableWithoutSort);
         } else if (keyword != null && !keyword.isBlank()) {
@@ -66,7 +65,10 @@ public class InsightService {
                 insightPage.getTotalPages()
         );
 
-        return new InsightResponse(articles, pagination);
+        // 6. 인기 태그 조회 (필터와 무관하게 항상 전체 기준)
+        List<String> popularTags = getPopularTags();
+
+        return new InsightResponse(articles, popularTags, pagination);
     }
 
     private String validateAndResolveCategory(String category) {
@@ -122,4 +124,12 @@ public class InsightService {
                 tags.stream().map(t -> "#" + t).toList()
         );
     }
+
+    private List<String> getPopularTags() {
+        return insightRepository.findPopularTagNames(PageRequest.of(0, 6))
+                .stream()
+                .map(t -> "#" + t)
+                .toList();
+    }
+
 }

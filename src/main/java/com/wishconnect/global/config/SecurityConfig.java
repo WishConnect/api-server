@@ -3,6 +3,7 @@ package com.wishconnect.global.config;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
 import com.wishconnect.global.jwt.JwtAuthenticationFilter;
 import com.wishconnect.global.jwt.JwtProvider;
+import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -74,6 +75,7 @@ public class SecurityConfig {
 
 	private final JwtProvider jwtProvider;
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+	private final WithdrawnTokenStore withdrawnTokenStore;
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -90,7 +92,7 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.exceptionHandling(handler ->
 						handler.authenticationEntryPoint(authenticationEntryPoint))
-				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider),
+				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore),
 						UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}

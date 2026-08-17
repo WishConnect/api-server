@@ -41,6 +41,11 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260816_03__users_login_id_birth_date_region.sql` | `users.login_id`, `user_profile.birth_date`, 지역 마스터 17건 시드 | ✅ 2026-08-16 |
 | `V20260816_04__drop_scholarship_tag.sql` | `scholarship_tag` 테이블 제거 (태그 기능 철회) | ✅ 2026-08-17 (배포 후 적용) |
 | `V20260817_01__scholarship_enrichment.sql` | `scholarship.detail_url`·`enriched_at`, `image.source_url` (자동 보완) | ✅ 2026-08-17 |
+| `V20260817_02__release_withdrawn_user_unique_keys.sql` | 탈퇴 회원이 점유한 `users.login_id`·`kakao_id` 해제 (재가입 차단 해소) | ⬜ 미적용 |
+
+> `V20260817_02` 는 **스키마 변경이 아니라 데이터 정정**이다. `validate` 와 무관하므로
+> 배포 순서를 지키지 않아도 기동은 깨지지 않는다. 다만 적용 전까지는 수정 이전에 탈퇴한
+> 회원이 같은 아이디·카카오 계정으로 재가입할 수 없으니, 배포와 함께 적용하는 편이 좋다.
 
 > `V20260815_01` 은 2026-08-16 점검에서 **운영 제약에 `WORK_STUDY` 가 이미 들어 있음을 확인**했다.
 > (`pg_get_constraintdef` 로 `ARRAY['INTERNAL','EXTERNAL','WORK_STUDY']` 확인)

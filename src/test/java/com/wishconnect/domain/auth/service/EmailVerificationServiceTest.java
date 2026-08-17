@@ -108,10 +108,10 @@ class EmailVerificationServiceTest {
 	@Test
 	@DisplayName("이메일 사용 가능 여부: LOCAL 계정 존재하면 false")
 	void isEmailAvailable() {
-		given(userRepository.existsByEmailAndLoginType(EMAIL, LoginType.LOCAL)).willReturn(true);
+		given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL)).willReturn(true);
 		assertThat(service.isEmailAvailable(EMAIL)).isFalse();
 
-		given(userRepository.existsByEmailAndLoginType(EMAIL, LoginType.LOCAL)).willReturn(false);
+		given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(EMAIL, LoginType.LOCAL)).willReturn(false);
 		assertThat(service.isEmailAvailable(EMAIL)).isTrue();
 	}
 

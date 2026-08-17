@@ -11,6 +11,7 @@ import com.wishconnect.domain.common.service.UniversitySearchService;
 import com.wishconnect.global.config.SecurityConfig;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
 import com.wishconnect.global.jwt.JwtProvider;
+import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,10 @@ class UniversityControllerTest {
 
 	@MockBean
 	private JwtProvider jwtProvider;
+
+	/** SecurityConfig 가 JwtAuthenticationFilter 에 넘기는 협력자. 슬라이스에는 Redis 가 없다. */
+	@MockBean
+	private WithdrawnTokenStore withdrawnTokenStore;
 
 	@Test
 	@DisplayName("학교 검색 API는 명세 경로로 인증 없이 조회할 수 있다")
