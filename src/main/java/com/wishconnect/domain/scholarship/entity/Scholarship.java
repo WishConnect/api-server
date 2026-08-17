@@ -272,6 +272,48 @@ public class Scholarship extends BaseEntity {
 		this.verified = true;
 	}
 
+	/**
+	 * 대학 장학공지를 LLM 으로 재파싱한 결과를 덮어쓴다.
+	 *
+	 * <p>{@link #updateFromApi} 와 달리 공공데이터 응답이 아니라 공고 본문 파싱 결과를 받는다.
+	 * 기존 값이 정규식으로 잘못 파싱된 것일 수 있으므로 <b>null 도 그대로 덮어쓴다.</b>
+	 * 예를 들어 근무기간을 신청기간으로 잘못 넣어둔 행은, 재파싱에서 기간을 찾지 못하면
+	 * null 로 비워야 맞다. null 을 무시하면 잘못된 옛 값이 영구히 남는다.
+	 *
+	 * <p>{@code verified} 는 건드리지 않는다. 사람이 검수한 표시를 기계 파싱이 되돌리면 안 된다.
+	 */
+	public void applyLlmParsed(
+		String title,
+		String provider,
+		String summary,
+		String description,
+		ScholarshipType scholarshipType,
+		LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt,
+		Integer selectionCount,
+		Long amount,
+		String homepageUrl
+	) {
+		this.title = title;
+		this.provider = provider;
+		this.summary = summary;
+		this.description = description;
+		this.scholarshipType = scholarshipType;
+		this.applicationStartAt = applicationStartAt;
+		this.applicationEndAt = applicationEndAt;
+		this.selectionCount = selectionCount;
+		this.amount = amount;
+		if (homepageUrl != null) {
+			this.homepageUrl = homepageUrl;
+		}
+		this.recruitmentStatus = resolveStatus(applicationStartAt, applicationEndAt);
+		// 마감된 공고는 목록에서 내린다. 마감일을 못 찾은 경우(null)는 노출을 유지한다 —
+		// 기간을 모른다는 것이 끝났다는 뜻은 아니고, 숨기는 쪽이 더 해롭다.
+		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+		this.deletedAt = null;
+		this.lastSyncedAt = LocalDateTime.now();
+	}
+
 	/** 오등록으로 확인된 장학금을 목록에서 내린다. 이력 추적을 위해 행은 남긴다. */
 	public void softDelete() {
 		this.deletedAt = LocalDateTime.now();
