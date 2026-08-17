@@ -21,7 +21,6 @@ import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
-import com.wishconnect.domain.scholarship.repository.ScholarshipTagRepository;
 import com.wishconnect.domain.scholarship.util.ScholarshipMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -62,8 +61,6 @@ class ScholarshipSyncServiceTest {
 	@Mock
 	private ScholarshipConditionRepository scholarshipConditionRepository;
 	@Mock
-	private ScholarshipTagRepository scholarshipTagRepository;
-	@Mock
 	private ScholarshipMapper scholarshipMapper;
 	@Mock
 	private TransactionTemplate transactionTemplate;
@@ -78,8 +75,7 @@ class ScholarshipSyncServiceTest {
 	void setUp() {
 		scholarshipSyncService = new ScholarshipSyncService(
 				scholarshipApiClient, PROPERTIES, rawScholarshipRepository, scholarshipRepository,
-				scholarshipDocumentRepository, scholarshipConditionRepository, scholarshipTagRepository,
-				scholarshipMapper,
+				scholarshipDocumentRepository, scholarshipConditionRepository, scholarshipMapper,
 				transactionTemplate, objectMapper);
 
 		// 트랜잭션 템플릿은 콜백을 그대로 실행하도록 둔다(단위 테스트라 실제 트랜잭션은 없다).
@@ -187,7 +183,6 @@ class ScholarshipSyncServiceTest {
 		given(rawScholarshipRepository.countByScholarship(previous)).willReturn(0L);
 		given(scholarshipMapper.toDocuments(any(), any())).willReturn(List.of());
 		given(scholarshipMapper.toConditions(any(), any())).willReturn(List.of());
-		given(scholarshipMapper.toTags(any(), any())).willReturn(List.of());
 
 		scholarshipSyncService.sync();
 
@@ -233,7 +228,6 @@ class ScholarshipSyncServiceTest {
 		given(rawScholarshipRepository.countByScholarship(previous)).willReturn(2L);
 		given(scholarshipMapper.toDocuments(any(), any())).willReturn(List.of());
 		given(scholarshipMapper.toConditions(any(), any())).willReturn(List.of());
-		given(scholarshipMapper.toTags(any(), any())).willReturn(List.of());
 
 		scholarshipSyncService.sync();
 
