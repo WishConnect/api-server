@@ -12,6 +12,7 @@ import com.wishconnect.domain.user.repository.FamilyTypeRepository;
 import com.wishconnect.domain.user.repository.InterestRepository;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,22 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ConditionRefResolver {
+
+	/** 공공데이터 계열명 → 마스터 6종. 공백·가운뎃점을 지운 형태로 견준다. */
+	private static final Map<String, MajorCategory> MAJOR_ALIASES = Map.ofEntries(
+			Map.entry("인문계열", MajorCategory.HUMANITIES_SOCIAL),
+			Map.entry("사회계열", MajorCategory.HUMANITIES_SOCIAL),
+			Map.entry("인문사회계열", MajorCategory.HUMANITIES_SOCIAL),
+			Map.entry("상경계열", MajorCategory.HUMANITIES_SOCIAL),
+			Map.entry("어문계열", MajorCategory.HUMANITIES_SOCIAL),
+			Map.entry("자연계열", MajorCategory.NATURAL_SCIENCE),
+			Map.entry("이학계열", MajorCategory.NATURAL_SCIENCE),
+			Map.entry("의약계열", MajorCategory.MEDICAL),
+			Map.entry("보건계열", MajorCategory.MEDICAL),
+			Map.entry("간호계열", MajorCategory.MEDICAL),
+			Map.entry("예술계열", MajorCategory.ARTS_AND_SPORTS),
+			Map.entry("체육계열", MajorCategory.ARTS_AND_SPORTS),
+			Map.entry("예체능계열", MajorCategory.ARTS_AND_SPORTS));
 
 	private final RegionResolver regionResolver;
 	private final FamilyTypeRepository familyTypeRepository;
@@ -98,14 +115,24 @@ public class ConditionRefResolver {
 				.orElse(null);
 	}
 
-	/** 전공 계열은 enum 이라 ID 가 없다. 이름을 코드로 넣는다. */
+	/**
+	 * 전공 계열은 enum 이라 ID 가 없다. 이름을 코드로 넣는다.
+	 *
+	 * <p>마스터는 대학알리미 대계열 6종인데 <b>한국장학재단 공공데이터는 다른 이름을 쓴다</b>
+	 * ({@code 자연계열}·{@code 의약계열}·{@code 인문계열}). 표기만 다르고 같은 것을 가리키므로
+	 * 별칭으로 이어준다. 이걸 안 하면 공공데이터 쪽 전공 조건이 통째로 해석되지 않는다.
+	 *
+	 * <p>{@code 교육계열}·{@code 이공계열} 처럼 6종 어디에도 딱 맞지 않는 이름은 <b>버린다.</b>
+	 * 이공계열은 자연과 공학에 걸쳐 있어 하나를 고르면 나머지 학생이 탈락한다.
+	 */
 	private ConditionRef resolveMajorCategory(String label) {
 		for (MajorCategory category : MajorCategory.values()) {
 			if (category.name().equalsIgnoreCase(label) || category.getLabel().equals(label)) {
 				return ConditionRef.ofCode(category.name());
 			}
 		}
-		return null;
+		MajorCategory alias = MAJOR_ALIASES.get(label.replaceAll("[\\s·]", ""));
+		return alias == null ? null : ConditionRef.ofCode(alias.name());
 	}
 
 	/** 지원 제한 중 재학상태로 판정 가능한 것만 코드화한다(예: "휴학생 제외"). */
