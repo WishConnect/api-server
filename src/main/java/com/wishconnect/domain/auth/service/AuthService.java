@@ -19,7 +19,7 @@ import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.util.PasswordValidator;
 import com.wishconnect.domain.common.entity.Region;
-import com.wishconnect.domain.common.repository.RegionRepository;
+import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.user.entity.AgreementType;
 import com.wishconnect.domain.user.entity.LoginType;
 import com.wishconnect.domain.user.entity.User;
@@ -64,7 +64,7 @@ public class AuthService {
 	private final UserRepository userRepository;
 	private final UserProfileRepository userProfileRepository;
 	private final UserAgreementRepository userAgreementRepository;
-	private final RegionRepository regionRepository;
+	private final RegionResolver regionResolver;
 	private final PasswordEncoder passwordEncoder;
 	private final JwtProvider jwtProvider;
 	private final RefreshTokenService refreshTokenService;
@@ -252,9 +252,9 @@ public class AuthService {
 	}
 
 	private void saveProfile(User user, SignupRequest request) {
-		Region region = StringUtils.hasText(request.region())
-				? regionRepository.findByName(normalizeRegionName(request.region())).orElse(null)
-				: null;
+		// 시군구까지 올 수 있어 이름 해석을 RegionResolver 로 위임한다.
+		// 특정하지 못하면 null 로 두고 가입은 계속한다(거주지역은 선택 입력).
+		Region region = regionResolver.byName(request.region());
 		UserProfile profile = UserProfile.builder()
 				.user(user)
 				.region(region)
@@ -288,29 +288,6 @@ public class AuthService {
 		return !userRepository.existsByLoginIdAndDeletedAtIsNull(normalizeLoginId(loginId));
 	}
 
-	private String normalizeRegionName(String value) {
-		String normalized = value.trim();
-		return switch (normalized) {
-			case "서울특별시" -> "서울";
-			case "부산광역시" -> "부산";
-			case "대구광역시" -> "대구";
-			case "인천광역시" -> "인천";
-			case "광주광역시" -> "광주";
-			case "대전광역시" -> "대전";
-			case "울산광역시" -> "울산";
-			case "세종특별자치시" -> "세종";
-			case "경기도" -> "경기";
-			case "강원특별자치도", "강원도" -> "강원";
-			case "충청북도" -> "충북";
-			case "충청남도" -> "충남";
-			case "전북특별자치도", "전라북도" -> "전북";
-			case "전라남도" -> "전남";
-			case "경상북도" -> "경북";
-			case "경상남도" -> "경남";
-			case "제주특별자치도", "제주도" -> "제주";
-			default -> normalized;
-		};
-	}
 
 	private void saveAgreements(User user, List<AgreementItem> agreements) {
 		List<UserAgreement> entities = agreements.stream()

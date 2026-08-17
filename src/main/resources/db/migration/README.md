@@ -35,6 +35,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260731_01__create_scholarship_report.sql` | `scholarship_report` 테이블 추가 (오등록 신고) | ✅ 2026-07-31 |
 | `V20260805_01__fix_enum_check_constraints.sql` | 옛 enum 이 남은 CHECK 제약 정정 (`essay.status`, `user_profile.dual_major`) | ✅ 2026-08-05 |
 | `V20260806_01__insight_schema_updates.sql` | insight.source 컬럼 추가, 컬럼 길이 확장 | ✅ 2026-08-06 |
+| `V20260816_01__seed_sigungu_regions.sql` | 거주지역 시군구 228건 시딩 + `(name, parent_id)` UNIQUE | ⬜ 미적용 |
 | `V20260815_01__fix_scholarship_type_check.sql` | `scholarship.scholarship_type` CHECK 제약에 `WORK_STUDY` 추가 | ✅ 2026-08-16 확인 |
 | `V20260816_01__create_admin_audit_log.sql` | `admin_audit_log` 테이블 추가 (관리자 쓰기 작업 기록) | ✅ 2026-08-16 |
 | `V20260816_02__scholarship_tag_and_document_url.sql` | `scholarship_tag` 테이블 + `scholarship_document.download_url` | ✅ 2026-08-16 |
