@@ -49,10 +49,11 @@ class UnivNoticeLlmParserTest {
 		var body = parser.extractBody(html);
 
 		assertThat(body).isPresent();
-		assertThat(body.get()).contains("2026학년도 2학기 운연장학 장학생을 모집합니다");
-		assertThat(body.get()).doesNotContain("전체메뉴");
-		assertThat(body.get()).doesNotContain("COPYRIGHT");
-		assertThat(body.get()).doesNotContain("var x=1");
+		assertThat(body.get().text()).contains("2026학년도 2학기 운연장학 장학생을 모집합니다");
+		assertThat(body.get().text()).doesNotContain("전체메뉴");
+		assertThat(body.get().text()).doesNotContain("COPYRIGHT");
+		assertThat(body.get().text()).doesNotContain("var x=1");
+		assertThat(body.get().truncated()).isFalse();
 	}
 
 	@Test
@@ -70,7 +71,9 @@ class UnivNoticeLlmParserTest {
 		var body = parser.extractBody("<html><body>" + long텍스트 + "</body></html>");
 
 		assertThat(body).isPresent();
-		assertThat(body.get().length()).isEqualTo(6_000);
+		assertThat(body.get().text().length()).isEqualTo(6_000);
+		assertThat(body.get().truncated()).isTrue();
+		assertThat(body.get().originalLength()).isGreaterThan(6_000);
 	}
 
 	// --- 응답 파싱 ---

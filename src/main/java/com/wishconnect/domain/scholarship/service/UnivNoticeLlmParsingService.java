@@ -4,7 +4,13 @@ import com.wishconnect.domain.application.client.LlmClient;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wishconnect.domain.application.config.LlmProperties;
+import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
@@ -73,6 +79,10 @@ public class UnivNoticeLlmParsingService {
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final UnivNoticeLlmParser parser;
 	private final LlmClient llmClient;
+	// 파싱 1회를 기록해 정확도 측정·실패 원인 추적에 쓴다.
+	private final NoticeParseLogRepository noticeParseLogRepository;
+	private final LlmProperties llmProperties;
+	private final ObjectMapper objectMapper;
 
 	/**
 	 * 대학 장학공지를 LLM 으로 파싱한다.
@@ -120,10 +130,68 @@ public class UnivNoticeLlmParsingService {
 		return new NoticeParsingResponse(targets.size(), parsed, skipped, failed, dryRun, items);
 	}
 
+
+	/**
+	 * LLM 호출. 형식 오류로 보이는 실패만 한 번 더 시도한다.
+	 *
+	 * <p>재시도가 의미 있는 실패와 없는 실패를 나눈다. 응답이 {@code max_tokens} 에서 잘린 경우는
+	 * 같은 요청이 같은 지점에서 다시 잘리므로 재시도가 토큰만 태운다. 반면 형식이 깨지거나
+	 * 일시적 오류로 실패한 경우는 모델이 매번 조금씩 다르게 답하므로 한 번 더 부르면 대개 풀린다.
+	 */
+	private String callWithRetry(String bodyText, Long rawId) {
+		try {
+			return llmClient.chat(parser.buildRequest(bodyText));
+		} catch (CustomException e) {
+			if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
+				throw e;
+			}
+			log.info("[UnivLlmParsing] LLM 호출 실패, 1회 재시도합니다. rawId={} reason={}",
+					rawId, e.getErrorCode());
+			return llmClient.chat(parser.buildRequest(bodyText));
+		}
+	}
+
+	/** 실패 사유를 사람이 읽고 조치할 수 있는 문장으로 만든다. */
+	private String describeLlmFailure(CustomException e, UnivNoticeLlmParser.ExtractedBody extracted) {
+		if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
+			return "LLM 응답이 토큰 상한에서 잘렸습니다(재시도 무의미, max_tokens 상향 필요).";
+		}
+		if (extracted.truncated()) {
+			return "본문이 상한을 넘어 잘린 상태에서 LLM 호출 실패: " + e.getErrorCode();
+		}
+		return "LLM 호출 실패: " + e.getErrorCode();
+	}
+
+	/**
+	 * 파싱 1회를 기록한다. 실패해도 배치를 멈추지 않는다 — 기록이 본 작업을 막으면 안 된다.
+	 *
+	 * <p>성공은 정제 결과를, 실패는 응답 원문을 남긴다. 실패 시엔 정제 객체가 없으므로
+	 * 원문이 유일한 단서다.
+	 */
+	private void saveLog(RawScholarship raw, UnivNoticeLlmParser.ExtractedBody extracted,
+			ParseStatus status, ParsedNotice notice, String rawResponse, String message) {
+		try {
+			String parsedJson = notice == null ? null : objectMapper.writeValueAsString(notice);
+			noticeParseLogRepository.save(NoticeParseLog.builder()
+					.rawScholarshipId(raw.getId())
+					.status(status)
+					.modelId(llmProperties.parserModel())
+					.promptVersion(UnivNoticeLlmParser.PROMPT_VERSION)
+					.bodyTruncated(extracted.truncated())
+					.bodyLength(extracted.originalLength())
+					.parsedJson(parsedJson)
+					.rawResponse(rawResponse)
+					.errorMessage(message)
+					.build());
+		} catch (Exception e) {
+			log.warn("[UnivLlmParsing] 파싱 이력 저장 실패 rawId={} : {}", raw.getId(), e.getMessage());
+		}
+	}
+
 	private Outcome parseOne(RawScholarship raw, boolean dryRun) {
 		String beforePeriod = describePeriod(raw.getScholarship());
 
-		Optional<String> body = parser.extractBody(raw.getRawHtml());
+		Optional<UnivNoticeLlmParser.ExtractedBody> body = parser.extractBody(raw.getRawHtml());
 		if (body.isEmpty()) {
 			if (!dryRun) {
 				raw.markSkipped("본문을 추출할 수 없습니다(첨부·이미지 전용 공지로 추정).");
@@ -132,15 +200,34 @@ public class UnivNoticeLlmParsingService {
 					item(raw, "SKIPPED", null, beforePeriod, "본문 없음"));
 		}
 
-		String bodyText = body.get();
-		String response = llmClient.chat(parser.buildRequest(bodyText));
+		UnivNoticeLlmParser.ExtractedBody extracted = body.get();
+		String bodyText = extracted.text();
+		if (extracted.truncated()) {
+			log.info("[UnivLlmParsing] 본문이 잘렸습니다. rawId={} 원본={}자", raw.getId(), extracted.originalLength());
+		}
+
+		String response;
+		try {
+			response = callWithRetry(bodyText, raw.getId());
+		} catch (CustomException e) {
+			String reason = describeLlmFailure(e, extracted);
+			if (!dryRun) {
+				raw.markFailed(reason);
+				saveLog(raw, extracted, ParseStatus.FAILED, null, null, reason);
+			}
+			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
+		}
+
 		Optional<ParsedNotice> maybeNotice = parser.readResponse(response);
 		if (maybeNotice.isEmpty()) {
+			String reason = extracted.truncated()
+					? "본문이 상한을 넘어 잘린 상태에서 응답 파싱 실패(재시도 무의미)."
+					: "LLM 응답을 JSON 으로 읽지 못했습니다.";
 			if (!dryRun) {
-				raw.markFailed("LLM 응답을 JSON 으로 읽지 못했습니다.");
+				raw.markFailed(reason);
+				saveLog(raw, extracted, ParseStatus.FAILED, null, response, reason);
 			}
-			return new Outcome(ParseStatus.FAILED,
-					item(raw, "FAILED", null, beforePeriod, "응답 파싱 실패"));
+			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
 		}
 
 		ParsedNotice notice = maybeNotice.get();
@@ -156,6 +243,7 @@ public class UnivNoticeLlmParsingService {
 
 		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null));
 		raw.markParsed(scholarship);
+		saveLog(raw, extracted, ParseStatus.PARSED, notice, null, note);
 		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
 		storeDocuments(scholarship, notice.safeDocuments());
 

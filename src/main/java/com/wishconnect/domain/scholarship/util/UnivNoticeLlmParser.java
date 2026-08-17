@@ -13,7 +13,11 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +65,84 @@ public class UnivNoticeLlmParser {
 
 	/** 조건 원문 최대 길이. 길면 조건과 무관한 내용이 섞여 들어온다. */
 	private static final int MAX_SNIPPET_CHARS = 300;
+
+	/**
+	 * 파서 전용 응답 토큰 상한.
+	 *
+	 * <p>공용 기본값(4,096)으로는 조건 12개 + 각 조건의 원문 인용이 들어가면 잘린다.
+	 * 잘린 응답은 재시도해도 같은 지점에서 잘리므로, 상한을 넉넉히 두는 편이 싸다.
+	 */
+	private static final int PARSER_MAX_TOKENS = 12_000;
+
+	/**
+	 * 프롬프트 개정 번호. 프롬프트를 고칠 때마다 올린다.
+	 *
+	 * <p>파싱 이력에 함께 저장한다. 이게 없으면 "프롬프트를 고쳤더니 좋아졌나"를 판단할 수 없다 —
+	 * 결과만 쌓여 있고 무엇과 비교하는지 알 수 없기 때문이다.
+	 */
+	public static final String PROMPT_VERSION = "v1";
+
+
+	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
+	private static final List<String> CONDITION_TYPE_NAMES = List.of(
+			"INCOME_CRITERIA", "ACADEMIC_CRITERIA", "GRADE_LEVEL", "REGION_RESIDENCY",
+			"MAJOR_FIELD", "SPECIFIC_QUALIFICATION", "RESTRICTION", "RECOMMENDATION_REQUIRED");
+
+	/**
+	 * 응답 형식을 강제하는 JSON Schema.
+	 *
+	 * <p>이걸 걸면 코드펜스·앞뒤 설명·타입 불일치가 <b>구조적으로 발생할 수 없다</b>.
+	 * 아래 {@code readResponse} 의 방어 코드는 그래도 남겨 둔다 — 스키마는 형식만 보장하고
+	 * 토큰 잘림과 거부는 여전히 막지 못하기 때문이다.
+	 *
+	 * <p>모든 필드를 nullable 로 두는 것이 이 파서의 원칙이라, 스키마에서도 각 타입에
+	 * {@code null} 을 허용하고 {@code required} 로 전 필드를 요구한다. 구조화 출력은
+	 * required 에 없는 필드를 아예 못 내보내므로, "값이 없으면 null" 을 표현하려면
+	 * 이 조합이어야 한다.
+	 */
+	private static final Map<String, Object> RESPONSE_SCHEMA = Map.of(
+			"type", "object",
+			"additionalProperties", false,
+			"required", List.of("title", "provider", "scholarshipType", "applicationStart",
+					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
+					"documents", "conditions"),
+			"properties", buildProperties());
+
+	private static Map<String, Object> buildProperties() {
+		Map<String, Object> properties = new LinkedHashMap<>();
+		properties.put("title", nullable("string"));
+		properties.put("provider", nullable("string"));
+		properties.put("scholarshipType", Map.of("type", List.of("string", "null"),
+				"enum", asList("INTERNAL", "EXTERNAL", "WORK_STUDY", null)));
+		properties.put("applicationStart", nullable("string"));
+		properties.put("applicationEnd", nullable("string"));
+		properties.put("periodEvidence", nullable("string"));
+		properties.put("selectionCount", nullable("integer"));
+		properties.put("amount", nullable("integer"));
+		properties.put("summary", nullable("string"));
+		properties.put("documents", Map.of("type", "array", "items", Map.of("type", "string")));
+		properties.put("conditions", Map.of(
+				"type", "array",
+				"items", Map.of(
+						"type", "object",
+						"additionalProperties", false,
+						"required", List.of("type", "evidence"),
+						"properties", Map.of(
+								"type", Map.of("type", "string", "enum", CONDITION_TYPE_NAMES),
+								"evidence", Map.of("type", "string")))));
+		return properties;
+	}
+
+	private static Map<String, Object> nullable(String type) {
+		return Map.of("type", List.of(type, "null"));
+	}
+
+	/** {@code Map.of} 는 null 원소를 허용하지 않아 enum 에 null 을 넣으려면 이쪽이 필요하다. */
+	private static List<Object> asList(Object... values) {
+		return Collections.unmodifiableList(Arrays.asList(values));
+	}
+
+
 
 	/**
 	 * 신청기간이 아닌 기간을 가리키는 라벨.
@@ -153,7 +235,7 @@ public class UnivNoticeLlmParser {
 	 *
 	 * @return 본문 텍스트. 파싱할 내용이 없으면 {@code Optional.empty()}
 	 */
-	public Optional<String> extractBody(String rawHtml) {
+	public Optional<ExtractedBody> extractBody(String rawHtml) {
 		if (rawHtml == null || rawHtml.isBlank()) {
 			return Optional.empty();
 		}
@@ -164,12 +246,33 @@ public class UnivNoticeLlmParser {
 		if (text.length() < MIN_BODY_CHARS) {
 			return Optional.empty();
 		}
-		return Optional.of(text.length() > MAX_BODY_CHARS ? text.substring(0, MAX_BODY_CHARS) : text);
+		if (text.length() <= MAX_BODY_CHARS) {
+			return Optional.of(new ExtractedBody(text, false, text.length()));
+		}
+		return Optional.of(new ExtractedBody(text.substring(0, MAX_BODY_CHARS), true, text.length()));
+	}
+
+	/**
+	 * LLM 에 넣을 본문과 그 가공 이력.
+	 *
+	 * <p>{@code truncated} 가 중요한 이유는 <b>잘린 채 성공한 경우</b>다. 앞 6,000자에 핵심이
+	 * 있으면 파싱은 성공하지만 뒷부분의 제출서류·조건 일부를 조용히 잃는다. 실패했을 때만
+	 * 기록하면 이 손실이 영영 드러나지 않는다.
+	 *
+	 * <p>잘림이 잦다면 상한을 올리기 전에 {@code NOISE_SELECTOR} 를 먼저 의심해야 한다.
+	 * 메뉴·푸터가 안 걷힌 탓이라면 상한을 올려도 토큰만 더 쓰고 본문은 여전히 밀려난다.
+	 *
+	 * @param text           LLM 입력 텍스트 (상한 적용 후)
+	 * @param truncated      상한을 넘어 잘렸는지
+	 * @param originalLength 자르기 전 정제 본문 길이
+	 */
+	public record ExtractedBody(String text, boolean truncated, int originalLength) {
 	}
 
 	/** 파싱 요청을 조립한다. 모델은 PARSING 프로필(기본 Haiku)을 쓴다. */
 	public LlmChatRequest buildRequest(String bodyText) {
-		return LlmChatRequest.of(LlmModel.PARSING, SYSTEM_PROMPT, List.of(LlmMessage.user(bodyText)));
+		return LlmChatRequest.structured(LlmModel.PARSING, SYSTEM_PROMPT,
+				List.of(LlmMessage.user(bodyText)), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
 	}
 
 	/**
