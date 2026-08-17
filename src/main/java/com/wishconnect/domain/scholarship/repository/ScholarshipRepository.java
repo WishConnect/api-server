@@ -144,6 +144,12 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	 *       마감일이 아예 없는 상시모집분은 살아있는 것으로 본다.</li>
 	 * </ul>
 	 *
+	 * <p><b>출처를 KOSAF 로 한정한다.</b> 대학 크롤링분은 {@code homepageUrl} 이 이미 공고 상세페이지
+	 * (예: {@code .../artclView.do})라 보완할 것이 없다. 예전에는 {@code detailUrl is null} 만 보고
+	 * 크롤링분 455건까지 대상에 넣어, 이미 멀쩡한 링크를 두고 검색을 돌려 전부 실패했다.
+	 * 상세 응답은 {@code detailUrl} 이 없으면 {@code homepageUrl} 로 폴백하므로 사용자에게는 문제가 없다.
+	 * (값을 복제하지 않는 이유: 수집기가 homepageUrl 을 갱신하면 복제본만 낡는다)
+	 *
 	 * <p>이미 시도한 건은 재시도 주기가 지나야 다시 본다. 안 그러면 매 배치가 "못 찾은 건" 만
 	 * 계속 붙잡아 검색 API 쿼터를 태운다. 마감 임박순으로 훑어 사용자가 볼 확률이 높은 것부터 채운다.
 	 */
@@ -151,13 +157,15 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			select s from Scholarship s
 			where s.active = true
 			  and s.deletedAt is null
+			  and s.primarySource = :source
 			  and s.recruitmentStatus <> com.wishconnect.domain.scholarship.entity.RecruitmentStatus.CLOSED
 			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
 			  and (s.detailUrl is null or s.detailUrl = '')
 			  and (s.enrichedAt is null or s.enrichedAt < :retryBefore)
 			order by s.applicationEndAt asc nulls last
 			""")
-	List<Scholarship> findEnrichmentTargets(@Param("now") LocalDateTime now,
+	List<Scholarship> findEnrichmentTargets(@Param("source") String source,
+											@Param("now") LocalDateTime now,
 											@Param("retryBefore") LocalDateTime retryBefore,
 											Pageable pageable);
 
