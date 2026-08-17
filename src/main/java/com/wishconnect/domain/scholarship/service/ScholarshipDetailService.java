@@ -3,8 +3,6 @@ package com.wishconnect.domain.scholarship.service;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.RequiredDocument;
-import com.wishconnect.domain.scholarship.entity.ScholarshipTag;
-import com.wishconnect.domain.scholarship.repository.ScholarshipTagRepository;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.ScheduleStep;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.Summary;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
@@ -46,7 +44,6 @@ public class ScholarshipDetailService {
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ScrapRepository scrapRepository;
-	private final ScholarshipTagRepository scholarshipTagRepository;
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
 	private final ImageRepository imageRepository;
 	private final ImageStorageService imageStorageService;
@@ -75,9 +72,7 @@ public class ScholarshipDetailService {
 				scholarship.getApplicationEndAt(),
 				CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt()),
 				scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),
-				scholarshipTagRepository.findByScholarshipOrderByDisplayOrderAsc(scholarship).stream()
-						.map(ScholarshipTag::getName)
-						.toList(),
+				List.of(),
 				imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
 								ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId)
 						.map(image -> imageStorageService.publicUrl(image.getS3Key()))

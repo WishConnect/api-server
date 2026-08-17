@@ -16,7 +16,6 @@ import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
-import com.wishconnect.domain.scholarship.repository.ScholarshipTagRepository;
 import com.wishconnect.domain.scholarship.util.ScholarshipMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -51,7 +50,6 @@ public class ScholarshipSyncService {
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
-	private final ScholarshipTagRepository scholarshipTagRepository;
 	private final ScholarshipMapper scholarshipMapper;
 	private final TransactionTemplate transactionTemplate;
 	private final ObjectMapper objectMapper;
@@ -63,7 +61,6 @@ public class ScholarshipSyncService {
 		ScholarshipRepository scholarshipRepository,
 		ScholarshipDocumentRepository scholarshipDocumentRepository,
 		ScholarshipConditionRepository scholarshipConditionRepository,
-		ScholarshipTagRepository scholarshipTagRepository,
 		ScholarshipMapper scholarshipMapper,
 		TransactionTemplate transactionTemplate,
 		ObjectMapper objectMapper
@@ -74,7 +71,6 @@ public class ScholarshipSyncService {
 		this.scholarshipRepository = scholarshipRepository;
 		this.scholarshipDocumentRepository = scholarshipDocumentRepository;
 		this.scholarshipConditionRepository = scholarshipConditionRepository;
-		this.scholarshipTagRepository = scholarshipTagRepository;
 		this.scholarshipMapper = scholarshipMapper;
 		this.transactionTemplate = transactionTemplate;
 		this.objectMapper = objectMapper;
@@ -140,7 +136,6 @@ public class ScholarshipSyncService {
 		deactivatePreviousParsedDataIfUnused(previouslyLinkedScholarship, scholarship);
 		replaceDocuments(scholarship, item.payload());
 		replaceConditions(scholarship, item.payload());
-		replaceTags(scholarship, item.payload());
 	}
 
 	private void deactivatePreviousParsedDataIfUnused(Scholarship previousScholarship, Scholarship currentScholarship) {
@@ -177,7 +172,6 @@ public class ScholarshipSyncService {
 		}
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
 		scholarshipConditionRepository.deleteByScholarship(scholarship);
-		scholarshipTagRepository.deleteByScholarship(scholarship);
 		scholarship.softDelete();
 		scholarshipRepository.save(scholarship);
 	}
@@ -185,11 +179,6 @@ public class ScholarshipSyncService {
 	private void replaceDocuments(Scholarship scholarship, JsonNode item) {
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
 		scholarshipDocumentRepository.saveAll(scholarshipMapper.toDocuments(scholarship, item));
-	}
-
-	private void replaceTags(Scholarship scholarship, JsonNode item) {
-		scholarshipTagRepository.deleteByScholarship(scholarship);
-		scholarshipTagRepository.saveAll(scholarshipMapper.toTags(scholarship, item));
 	}
 
 	private void replaceConditions(Scholarship scholarship, JsonNode item) {
