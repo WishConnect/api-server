@@ -43,6 +43,12 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260816_04__drop_scholarship_tag.sql` | `scholarship_tag` 테이블 제거 (태그 기능 철회) | ✅ 2026-08-17 (배포 후 적용) |
 | `V20260817_01__scholarship_enrichment.sql` | `scholarship.detail_url`·`enriched_at`, `image.source_url` (자동 보완) | ✅ 2026-08-17 |
 | `V20260817_02__release_withdrawn_user_unique_keys.sql` | 탈퇴 회원이 점유한 `users.login_id`·`kakao_id` 해제 (재가입 차단 해소) | ⬜ 미적용 |
+| `V20260817_03__scholarship_report_multi_reason.sql` | 신고 사유 다중 선택 (`scholarship_report_reason` 테이블 + `reason` 컬럼 제거) | ⬜ 미적용 |
+
+> `V20260817_03` 은 **반드시 배포보다 먼저** 적용해야 한다. 엔티티에서 `reason` 필드가
+> 사라지므로, 적용 전에 새 코드가 뜨면 NOT NULL 인 `scholarship_report.reason` 에 값을 못 넣어
+> **신고 접수가 전부 실패**한다. 반대로 SQL 만 먼저 적용하고 옛 코드가 떠 있는 동안에도
+> 같은 이유로 신고가 실패하므로, 이 둘 사이 간격을 짧게 가져가는 편이 좋다.
 
 > `V20260817_02` 는 **스키마 변경이 아니라 데이터 정정**이다. `validate` 와 무관하므로
 > 배포 순서를 지키지 않아도 기동은 깨지지 않는다. 다만 적용 전까지는 수정 이전에 탈퇴한
