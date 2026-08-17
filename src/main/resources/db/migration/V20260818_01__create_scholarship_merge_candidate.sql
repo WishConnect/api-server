@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS scholarship_merge_candidate (
         CHECK (primary_scholarship_id <> duplicate_scholarship_id),
     -- 제약 이름을 Hibernate 생성 규칙과 맞춰, update 모드 환경에서 중복 생성되지 않게 한다.
     CONSTRAINT scholarship_merge_candidate_status_check
-        CHECK (status IN ('PENDING', 'REJECTED', 'MERGED', 'FAILED'))
+        CHECK (status IN ('PENDING', 'REJECTED', 'MERGED'))
 );
 
 -- 어드민 화면이 승인 대기 목록을 상태로 필터링해 조회한다.

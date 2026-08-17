@@ -5,6 +5,11 @@ import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
+import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
+import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
+import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
+import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
+import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
@@ -77,6 +82,7 @@ public class ScholarshipAdminController {
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
+	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
@@ -176,6 +182,86 @@ public class ScholarshipAdminController {
 				"대상 %d건, 상세URL %d건, 이미지 %d건, 첨부 %d건, 건너뜀 %d건".formatted(
 						result.targetCount(), result.detailUrlFound(), result.imageSaved(),
 						result.documentLinked(), result.skippedCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 장학금 후보 탐지",
+			description = """
+					같은 장학금이 중복 등록된 것을 찾아 승인 큐에 올린다.
+					**이 단계에서는 아무것도 병합하지 않는다.** 사람이 승인해야 실제 병합이 일어난다.
+
+					제목을 정규화해 같은 공고일 가능성이 있는 것끼리 먼저 묶고(규칙), 묶인 그룹만
+					LLM 에 넘긴다. 모든 쌍을 LLM 에 물으면 호출이 O(n^2) 로 폭발하기 때문이다.
+					실측(로컬 86건): 후보그룹 5개 → LLM 호출 5회.
+
+					**주의**: 그룹 수만큼 LLM 크레딧을 소모한다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/detect")
+	public ApiResponse<MergeDetectionResponse> detectMergeCandidates(
+			@AuthenticationPrincipal String actorId,
+			@RequestParam(defaultValue = "200") int limit) {
+		MergeDetectionResponse result = scholarshipDedupService.detect(limit);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_DETECT_TRIGGER,
+				null, null, "검사 %d건, 그룹 %d개, 신규후보 %d건, 실패 %d건".formatted(
+						result.scannedCount(), result.groupCount(),
+						result.candidateCount(), result.failedCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 장학금 후보 목록",
+			description = """
+					승인 대기(PENDING) 또는 처리 완료된 병합 후보를 조회한다.
+					두 장학금의 제목·기관·기간·금액·출처를 나란히 반환하므로 사람이 비교해 판단할 수 있다.
+
+					캠퍼스만 다른 별개 모집이 후보로 올라오는 경우가 있다(실측: 복지장학금 서울/다빈치).
+					승인 전에 반드시 눈으로 확인할 것. (ADMIN 전용)
+					""")
+	@GetMapping("/merge/candidates")
+	public ApiResponse<MergeCandidateResponse> listMergeCandidates(
+			@RequestParam(defaultValue = "PENDING") MergeCandidateStatus status,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size) {
+		return ApiResponse.ok(scholarshipDedupService.list(status, page, size));
+	}
+
+	@Operation(summary = "중복 장학금 병합 승인",
+			description = """
+					후보를 승인해 실제로 병합한다. **되돌리기 어려운 작업이다.**
+
+					duplicate 를 참조하던 스크랩·자소서·신고·알림이력·추천·원본·일정이 primary 로 옮겨가고,
+					duplicate 는 소프트 삭제된다(행은 남아 이력 추적 가능). 조건·서류는 재파싱으로 다시
+					만들어지는 파생 데이터라 옮기지 않고 지운다.
+
+					같은 사용자가 양쪽을 스크랩했다면 중복 행을 지운 뒤 옮긴다. 자소서는 사용자가 직접 쓴
+					글이므로 중복을 지우지 않고 둘 다 남긴다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/{candidateId}/approve")
+	public ApiResponse<MergeResultResponse> approveMerge(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long candidateId) {
+		UUID reviewer = UUID.fromString(actorId);
+		MergeResultResponse result = scholarshipDedupService.approve(candidateId, reviewer);
+		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE,
+				"SCHOLARSHIP", result.primaryId(),
+				"중복 %d 를 %d 로 병합. %s".formatted(
+						result.duplicateId(), result.primaryId(), result.moved()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 장학금 후보 반려",
+			description = "중복이 아니라고 판정한다. 같은 쌍이 다음 탐지 배치에서 다시 올라오지 않는다. (ADMIN 전용)")
+	@PostMapping("/merge/candidates/{candidateId}/reject")
+	public ApiResponse<MergeResultResponse> rejectMerge(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long candidateId,
+			@RequestParam(required = false) String note) {
+		UUID reviewer = UUID.fromString(actorId);
+		MergeResultResponse result = scholarshipDedupService.reject(candidateId, reviewer, note);
+		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE_REJECT,
+				"SCHOLARSHIP", result.primaryId(),
+				"중복 후보 %d 반려 (%d vs %d). %s".formatted(
+						candidateId, result.primaryId(), result.duplicateId(),
+						note == null ? "" : note));
 		return ApiResponse.ok(result);
 	}
 

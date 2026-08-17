@@ -93,12 +93,6 @@ public class ScholarshipMergeCandidate extends BaseEntity {
 		review(reviewer);
 	}
 
-	public void markFailed(UUID reviewer, String note) {
-		this.status = MergeCandidateStatus.FAILED;
-		this.note = note;
-		review(reviewer);
-	}
-
 	private void review(UUID reviewer) {
 		this.reviewedBy = reviewer;
 		this.reviewedAt = LocalDateTime.now();
