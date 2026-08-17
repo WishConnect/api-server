@@ -85,6 +85,17 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "homepage_url", length = 1000)
 	private String homepageUrl;
 
+	/**
+	 * 장학금 상세페이지. 공공데이터 원문에는 이 필드가 없고 {@code homepageUrl} 이 기관 메인이라,
+	 * 검색으로 찾아 채운다({@code ScholarshipEnrichmentService}). 사람이 확인해 넣기도 한다.
+	 */
+	@Column(name = "detail_url", length = 1000)
+	private String detailUrl;
+
+	/** 자동 보완을 마지막으로 시도한 시각. 매 배치마다 같은 건을 다시 검색하지 않으려고 둔다. */
+	@Column(name = "enriched_at")
+	private LocalDateTime enrichedAt;
+
 	@Builder
 	private Scholarship(
 		String title,
@@ -153,6 +164,14 @@ public class Scholarship extends BaseEntity {
 		// (조회 쿼리가 전부 deletedAt IS NULL 로 거른다)
 		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
+	}
+
+	/** 자동 보완 결과 반영. 상세 URL 을 못 찾았어도 시도 시각은 남겨 재시도 주기를 지킨다. */
+	public void applyEnrichment(String detailUrl) {
+		if (org.springframework.util.StringUtils.hasText(detailUrl)) {
+			this.detailUrl = detailUrl;
+		}
+		this.enrichedAt = LocalDateTime.now();
 	}
 
 	public void updateActive(boolean active) {

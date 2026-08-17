@@ -50,4 +50,16 @@ public class Image extends BaseCreatedEntity {
 	/** 이미지 용도(썸네일/본문 등). 값 확정 필요 시 enum 으로 승격 */
 	@Column
 	private String imageType;
+
+	/**
+	 * 원본 이미지 주소. 자동 수집한 포스터의 출처를 남긴다.
+	 * 저작권 문의가 오면 어디서 가져왔는지 확인하고 개별 삭제할 수 있어야 한다.
+	 */
+	@Column(name = "source_url", length = 1000)
+	private String sourceUrl;
+
+	/** 자동 수집한 포스터의 출처. 저작권 문의 대응과 개별 삭제를 위해 남긴다. */
+	public void updateSourceUrl(String sourceUrl) {
+		this.sourceUrl = sourceUrl;
+	}
 }

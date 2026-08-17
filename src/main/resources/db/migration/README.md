@@ -40,6 +40,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260816_02__scholarship_tag_and_document_url.sql` | `scholarship_tag` 테이블 + `scholarship_document.download_url` | ✅ 2026-08-16 |
 | `V20260816_03__users_login_id_birth_date_region.sql` | `users.login_id`, `user_profile.birth_date`, 지역 마스터 17건 시드 | ✅ 2026-08-16 |
 | `V20260816_04__drop_scholarship_tag.sql` | `scholarship_tag` 테이블 제거 (태그 기능 철회) | ✅ 2026-08-17 (배포 후 적용) |
+| `V20260817_01__scholarship_enrichment.sql` | `scholarship.detail_url`·`enriched_at`, `image.source_url` (자동 보완) | ✅ 2026-08-17 |
 
 > `V20260815_01` 은 2026-08-16 점검에서 **운영 제약에 `WORK_STUDY` 가 이미 들어 있음을 확인**했다.
 > (`pg_get_constraintdef` 로 `ARRAY['INTERNAL','EXTERNAL','WORK_STUDY']` 확인)
