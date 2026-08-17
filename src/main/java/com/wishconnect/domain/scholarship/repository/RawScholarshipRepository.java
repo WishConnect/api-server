@@ -3,7 +3,9 @@ package com.wishconnect.domain.scholarship.repository;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /*
@@ -21,4 +23,16 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 
 	/** 관리자 화면: 원본 수집 데이터의 파싱 상태 분포. */
 	long countByParseStatus(ParseStatus parseStatus);
+
+	/**
+	 * LLM 파싱 대상: 아직 파싱되지 않은 대학 공고.
+	 * source 가 UNIV_ 로 시작하는 것만 — 공공데이터(KOSAF 등)는 기존 방식으로 파싱하므로 제외한다.
+	 */
+	List<RawScholarship> findBySourceStartingWithAndParseStatusOrderByIdAsc(
+			String sourcePrefix, ParseStatus parseStatus, Pageable pageable);
+
+	/** 재파싱 대상: 상태와 무관하게 대학 공고 전체. 잘못 파싱된 기존 데이터를 덮어쓸 때 쓴다. */
+	List<RawScholarship> findBySourceStartingWithOrderByIdAsc(String sourcePrefix, Pageable pageable);
+
+	long countBySourceStartingWithAndParseStatus(String sourcePrefix, ParseStatus parseStatus);
 }

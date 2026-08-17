@@ -28,7 +28,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -294,11 +293,6 @@ public class CauNoticeCollector {
 				.source(SOURCE)
 				.sourceId(article.bbsSeq())
 				.sourceUrl(detailUrl)
-				.rawJson(Map.of(
-						"title", title,
-						"category", article.category(),
-						"writeDate", article.writeDate(),
-						"writer", data.path("WRITER_NM").asText("")))
 				.rawHtml(contentHtml)
 				.parseStatus(closed ? ParseStatus.SKIPPED : ParseStatus.PENDING)
 				.parseError(closed ? "모집종료일이 지난 공지입니다." : null)

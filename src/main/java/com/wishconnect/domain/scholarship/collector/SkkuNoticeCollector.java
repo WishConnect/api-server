@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -188,7 +187,6 @@ public class SkkuNoticeCollector {
 				.source(SOURCE)
 				.sourceId(articleNo)
 				.sourceUrl(detailUrl)
-				.rawJson(Map.of("title", title, "period", period == null ? "" : period.toString()))
 				.rawHtml(doc.outerHtml())
 				.parseStatus(closed ? ParseStatus.SKIPPED : ParseStatus.PENDING)
 				.parseError(closed ? "모집종료일이 지난 공지입니다." : null)

@@ -5,6 +5,7 @@ import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
+import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
@@ -15,6 +16,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
@@ -74,6 +76,7 @@ public class ScholarshipAdminController {
 	private final UnivNoticeCollector univNoticeCollector;
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
+	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
@@ -174,6 +177,30 @@ public class ScholarshipAdminController {
 						result.targetCount(), result.detailUrlFound(), result.imageSaved(),
 						result.documentLinked(), result.skippedCount()));
 		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "대학 장학공지 LLM 파싱",
+			description = """
+					대학 크롤링 공고(source=UNIV_*)의 raw_html 본문을 LLM(Haiku)으로 구조화해
+					scholarship 으로 정제한다. 공공데이터 포털은 응답이 이미 구조화돼 있어
+					이 경로를 타지 않는다(기존 /sync 가 처리).
+
+					**파라미터**
+					- limit: 처리 건수 (1~100, 기본 20). 크레딧 소진을 막는 상한이다.
+					- reparse: true 면 이미 파싱된 것까지 다시 파싱해 덮어쓴다.
+					  정규식으로 잘못 파싱된 기존 데이터를 정정할 때 쓴다.
+					- dryRun: true 면 DB 에 쓰지 않고 결과만 반환한다.
+					  응답의 beforePeriod(기존 정규식) / afterPeriod(LLM) 를 사람이 비교해
+					  전환 여부를 판단하는 용도다.
+
+					**주의**: LLM 크레딧을 소모한다. dryRun 도 호출은 실제로 일어난다. (ADMIN 전용)
+					""")
+	@PostMapping("/parse/univ-llm")
+	public ApiResponse<NoticeParsingResponse> parseUnivNoticesWithLlm(
+			@RequestParam(defaultValue = "20") int limit,
+			@RequestParam(defaultValue = "false") boolean reparse,
+			@RequestParam(defaultValue = "false") boolean dryRun) {
+		return ApiResponse.ok(univNoticeLlmParsingService.parse(limit, reparse, dryRun));
 	}
 
 	@Operation(summary = "LLM 조건 구조화 추출",
