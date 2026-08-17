@@ -3,6 +3,7 @@ package com.wishconnect.domain.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,8 +17,13 @@ import com.wishconnect.domain.common.repository.SchoolRepository;
 import com.wishconnect.domain.user.dto.request.ProfileAcademicRequest;
 import com.wishconnect.domain.user.dto.request.ProfileHouseholdRequest;
 import com.wishconnect.domain.user.dto.response.OnboardingCompleteResponse;
+import com.wishconnect.domain.user.entity.FamilyCategory;
+import com.wishconnect.domain.user.entity.FamilyType;
+import com.wishconnect.domain.user.entity.Interest;
 import com.wishconnect.domain.user.entity.SecondMajorType;
 import com.wishconnect.domain.user.entity.User;
+import com.wishconnect.domain.user.entity.UserFamilyType;
+import com.wishconnect.domain.user.entity.UserInterest;
 import com.wishconnect.domain.user.entity.UserProfile;
 import com.wishconnect.domain.user.repository.FamilyTypeRepository;
 import com.wishconnect.domain.user.repository.InterestRepository;
@@ -31,6 +37,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -242,7 +249,51 @@ class UserProfileServiceTest {
 		assertThat(profile.getIncomeLevel()).isNull();
 		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_3");
 		verify(userFamilyTypeRepository).deleteByUser(user);
+		verify(userFamilyTypeRepository).flush();
 		verify(userInterestRepository).deleteByUser(user);
+		verify(userInterestRepository).flush();
+	}
+
+	@Test
+	@DisplayName("STEP3 재저장 시 기존 매핑 삭제를 먼저 반영하고 중복 선택값은 한 번만 저장한다")
+	void saveHousehold_flushesDeletesAndDeduplicatesSelections() {
+		given(familyTypeRepository.findFirstByNameAndCategory("기초생활수급자", FamilyCategory.FAMILY))
+				.willReturn(Optional.of(FamilyType.builder()
+						.name("기초생활수급자")
+						.category(FamilyCategory.FAMILY)
+						.build()));
+		given(familyTypeRepository.findFirstByNameAndCategory("한부모 가정", FamilyCategory.FAMILY))
+				.willReturn(Optional.of(FamilyType.builder()
+						.name("한부모 가정")
+						.category(FamilyCategory.FAMILY)
+						.build()));
+		given(familyTypeRepository.findFirstByNameAndCategory("장애인", FamilyCategory.PERSONAL))
+				.willReturn(Optional.of(FamilyType.builder()
+						.name("장애인")
+						.category(FamilyCategory.PERSONAL)
+						.build()));
+		given(interestRepository.findFirstByName("생활비 지원"))
+				.willReturn(Optional.of(Interest.builder().name("생활비 지원").build()));
+		given(interestRepository.findFirstByName("창업지원"))
+				.willReturn(Optional.of(Interest.builder().name("창업지원").build()));
+
+		userProfileService.saveHousehold(userId, new ProfileHouseholdRequest(
+				"모름",
+				3L,
+				List.of("기초생활수급자", "기초생활수급자", " 한부모 가정 "),
+				List.of("장애인", "장애인", " "),
+				List.of("생활비 지원", "생활비 지원", "창업지원")
+		));
+
+		assertThat(profile.getIncomeLevel()).isNull();
+		verify(userFamilyTypeRepository).deleteByUser(user);
+		verify(userFamilyTypeRepository).flush();
+		verify(userFamilyTypeRepository).saveAll(argThat((Iterable<UserFamilyType> mappings) ->
+				iterableSize(mappings) == 3));
+		verify(userInterestRepository).deleteByUser(user);
+		verify(userInterestRepository).flush();
+		verify(userInterestRepository).saveAll(argThat((Iterable<UserInterest> mappings) ->
+				iterableSize(mappings) == 2));
 	}
 
 	@Test
@@ -264,5 +315,9 @@ class UserProfileServiceTest {
 		assertThat(profile.getOnboardingStep()).isEqualTo("STEP_4");
 		verify(userFamilyTypeRepository).deleteByUser(user);
 		verify(userInterestRepository).deleteByUser(user);
+	}
+
+	private long iterableSize(Iterable<?> values) {
+		return StreamSupport.stream(values.spliterator(), false).count();
 	}
 }
