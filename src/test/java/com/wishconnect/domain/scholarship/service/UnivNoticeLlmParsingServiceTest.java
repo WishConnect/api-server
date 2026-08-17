@@ -6,11 +6,19 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
+import com.wishconnect.domain.application.config.LlmProperties;
+import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
+import org.mockito.ArgumentCaptor;
+import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
@@ -66,6 +74,7 @@ class UnivNoticeLlmParsingServiceTest {
 	@Mock private ScholarshipConditionRepository scholarshipConditionRepository;
 	@Mock private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock private LlmClient llmClient;
+	@Mock private NoticeParseLogRepository noticeParseLogRepository;
 
 	private UnivNoticeLlmParsingService service;
 
@@ -74,7 +83,11 @@ class UnivNoticeLlmParsingServiceTest {
 		service = new UnivNoticeLlmParsingService(
 				rawScholarshipRepository, scholarshipRepository,
 				scholarshipConditionRepository, scholarshipDocumentRepository,
-				new UnivNoticeLlmParser(new ObjectMapper()), llmClient);
+				new UnivNoticeLlmParser(new ObjectMapper()), llmClient,
+				noticeParseLogRepository,
+				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
+						"claude-haiku-4-5", "claude-haiku-4-5", 4096),
+				new ObjectMapper());
 	}
 
 	// --- Fixture ---
@@ -288,6 +301,80 @@ class UnivNoticeLlmParsingServiceTest {
 
 		assertThat(result.failedCount()).isEqualTo(1);
 		assertThat(target.getParseStatus()).isEqualTo(ParseStatus.FAILED);
+	}
+
+	@Test
+	@DisplayName("형식 실패는 1회 재시도한다 — 모델이 매번 조금씩 다르게 답하므로 대개 풀린다")
+	void retriesOnceOnRecoverableFailure() {
+		RawScholarship target = raw(20L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any()))
+				.willThrow(new CustomException(ErrorCode.LLM_EMPTY_RESPONSE))
+				.willReturn(LLM_RESPONSE);
+
+		var result = service.parse(20, false, false);
+
+		assertThat(result.parsedCount()).isEqualTo(1);
+		verify(llmClient, times(2)).chat(any());
+	}
+
+	@Test
+	@DisplayName("토큰 상한에서 잘린 응답은 재시도하지 않는다 — 같은 지점에서 다시 잘린다")
+	void doesNotRetryOnTruncatedResponse() {
+		RawScholarship target = raw(21L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willThrow(new CustomException(ErrorCode.LLM_RESPONSE_TRUNCATED));
+
+		var result = service.parse(20, false, false);
+
+		assertThat(result.failedCount()).isEqualTo(1);
+		verify(llmClient, times(1)).chat(any());
+		assertThat(target.getParseError()).contains("토큰 상한");
+	}
+
+	@Test
+	@DisplayName("본문이 잘린 채 실패하면 사유에 그 사실을 남긴다 — 재시도 대상에서 빼기 위함")
+	void recordsBodyTruncationInFailureReason() {
+		String longBody = "장학금 신청 안내입니다. ".repeat(2000);
+		RawScholarship target = raw(22L, html(longBody), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn("JSON 이 아닙니다");
+
+		service.parse(20, false, false);
+
+		assertThat(target.getParseError()).contains("잘린 상태");
+	}
+
+	@Test
+	@DisplayName("성공하면 파싱 이력에 정제 결과를, 실패하면 응답 원문을 남긴다")
+	void savesParseLog() {
+		RawScholarship ok = raw(23L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(ok));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+
+		service.parse(20, false, false);
+
+		ArgumentCaptor<NoticeParseLog> captor = ArgumentCaptor.forClass(NoticeParseLog.class);
+		verify(noticeParseLogRepository).save(captor.capture());
+		NoticeParseLog log = captor.getValue();
+		assertThat(log.getStatus()).isEqualTo(ParseStatus.PARSED);
+		assertThat(log.getParsedJson()).contains("운연장학");
+		// 성공 건은 정제 결과에서 언제든 되돌릴 수 있어 원문을 중복 저장하지 않는다
+		assertThat(log.getRawResponse()).isNull();
+		assertThat(log.getPromptVersion()).isEqualTo(UnivNoticeLlmParser.PROMPT_VERSION);
+		assertThat(log.isBodyTruncated()).isFalse();
+	}
+
+	@Test
+	@DisplayName("dryRun 은 파싱 이력도 남기지 않는다")
+	void dryRunSavesNoLog() {
+		RawScholarship target = raw(24L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+
+		service.parse(20, false, true);
+
+		verify(noticeParseLogRepository, never()).save(any());
 	}
 
 	@Test
