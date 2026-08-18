@@ -21,12 +21,10 @@ import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -282,7 +280,7 @@ public class UnivNoticeLlmParsingService {
 			return existing;
 		}
 
-		String dedupKey = dedupKey(raw.getSource(), title, startAt, endAt);
+		String dedupKey = ScholarshipDedupKey.of(raw.getSource(), raw.getSourceId());
 		return scholarshipRepository.findByDedupKey(dedupKey).orElseGet(() ->
 				scholarshipRepository.save(Scholarship.builder()
 						.title(cleanTitle(title))
@@ -450,19 +448,6 @@ public class UnivNoticeLlmParsingService {
 		return existing;
 	}
 
-	private static String dedupKey(String source, String title,
-			LocalDateTime startAt, LocalDateTime endAt) {
-		String seed = source + "|" + title + "|"
-				+ (startAt == null && endAt == null ? "" : startAt + "~" + endAt);
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			return HexFormat.of()
-					.formatHex(digest.digest(seed.getBytes(StandardCharsets.UTF_8)))
-					.substring(0, 64);
-		} catch (Exception e) {
-			throw new IllegalStateException("SHA-256 사용 불가", e);
-		}
-	}
 
 	private record Outcome(ParseStatus status, NoticeParsingResponse.Item item) {
 	}
