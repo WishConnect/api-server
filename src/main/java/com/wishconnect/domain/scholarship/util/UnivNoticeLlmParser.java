@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.RequirementLevel;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -106,7 +107,8 @@ public class UnivNoticeLlmParser {
 	private static final Map<String, Object> RESPONSE_SCHEMA = Map.of(
 			"type", "object",
 			"additionalProperties", false,
-			"required", List.of("title", "provider", "scholarshipType", "applicationStart",
+			"required", List.of("title", "provider", "scholarshipType", "essayRequirement",
+					"essayEvidence", "interviewRequirement", "interviewEvidence", "applicationStart",
 					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
 					"documents", "conditions"),
 			"properties", buildProperties());
@@ -122,6 +124,10 @@ public class UnivNoticeLlmParser {
 		properties.put("selectionCount", nullable("integer"));
 		properties.put("amount", nullable("integer"));
 		properties.put("summary", nullable("string"));
+		properties.put("essayRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
+		properties.put("essayEvidence", nullable("string"));
+		properties.put("interviewRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
+		properties.put("interviewEvidence", nullable("string"));
 		properties.put("documents", Map.of("type", "array", "items", Map.of("type", "string")));
 		properties.put("conditions", Map.of(
 				"type", "array",
@@ -209,6 +215,10 @@ public class UnivNoticeLlmParser {
 			  "selectionCount": 정수|null,
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
+			  "essayRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
+			  "essayEvidence": 문자열|null,
+			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
+			  "interviewEvidence": 문자열|null,
 			  "documents": [문자열],
 			  "conditions": [{"type": 문자열, "evidence": 문자열, "necessity": "REQUIRED"|"PREFERRED",
 			                  "refLabels": [문자열], "operator": 문자열|null,
@@ -237,6 +247,15 @@ public class UnivNoticeLlmParser {
 			- selectionCount: 선발 인원. 지원자 수·경쟁률은 넣지 마라.
 			- summary: 한 문장(80자 이내). 본문 내용만으로 쓴다.
 			- documents: 제출서류 이름만. 부수(1부)·설명·괄호 주석은 제외한다.
+			- essayRequirement / interviewRequirement: 아래 넷 중 하나다.
+			  REQUIRED     모두가 내야 한다 — "자기소개서 제출", "면접전형 진행"
+			  CONDITIONAL  일부만 — "서류 합격자에 한해 면접", "1차 통과자만 자기소개서 제출"
+			  NOT_REQUIRED 공고가 없다고 밝힌 경우 — "면접 없이 서류로만 선발"
+			  null         공고에 아무 언급이 없을 때. 없다고 단정하지 마라.
+			  자기소개서는 이름이 달라도 같은 것으로 본다 — 학업계획서·수학계획서·지원동기서·에세이.
+			- essayEvidence / interviewEvidence: 위 판단의 근거가 된 본문 문장을 그대로 인용한다.
+			  값을 REQUIRED·CONDITIONAL·NOT_REQUIRED 로 정했으면 반드시 채운다. 인용할 문장이
+			  없으면 판단을 null 로 되돌린다.
 
 			conditions 의 type 은 아래 중 하나만 쓴다. 해당 없으면 그 조건을 넣지 마라.
 			- INCOME_CRITERIA: 소득분위·학자금 지원구간·기초생활·차상위 등 경제 요건
@@ -366,6 +385,50 @@ public class UnivNoticeLlmParser {
 				: "[제목]\n" + noticeTitle + "\n\n[본문]\n" + bodyText;
 		return LlmChatRequest.structured(LlmModel.PARSING, SYSTEM_PROMPT,
 				List.of(LlmMessage.user(message)), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
+	}
+
+	/**
+	 * 자소서·면접 판단을 근거와 함께 확정한다.
+	 *
+	 * <p>기간·조건과 같은 규칙을 적용한다 — <b>인용문이 본문에 실제로 없으면 판단을 버린다.</b>
+	 * 여기서 지어낸 값은 사용자가 면접이 있는 줄 모르고 지원하거나, 자소서를 준비하지 않게 만든다.
+	 *
+	 * @return 검증을 통과한 값. 근거가 없거나 값이 이상하면 빈 결과(둘 다 null)
+	 */
+	public Requirement resolveRequirement(String level, String evidence, String bodyText,
+			String noticeTitle) {
+		if (level == null || level.isBlank()) {
+			return Requirement.unknown();
+		}
+		RequirementLevel parsed;
+		try {
+			parsed = RequirementLevel.valueOf(level.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			return Requirement.unknown();
+		}
+		if (evidence == null || evidence.isBlank()
+				|| !isEvidenceGrounded(evidence, bodyText, noticeTitle)) {
+			log.debug("[UnivNoticeLlmParser] 근거 없는 전형 판단이라 버림. level={}", level);
+			return Requirement.unknown();
+		}
+		return new Requirement(parsed, evidence.replaceAll("\\s+", " ").trim());
+	}
+
+	/** 자소서·면접 판단과 그 근거. */
+	public record Requirement(RequirementLevel level, String evidence) {
+		static Requirement unknown() {
+			return new Requirement(null, null);
+		}
+	}
+
+	/** 근거 문장이 본문이나 제목에 실제로 있는가. 제목까지 보는 건 제목에만 적힌 공고가 있어서다. */
+	private boolean isEvidenceGrounded(String evidence, String bodyText, String noticeTitle) {
+		String needle = normalizeForMatch(evidence);
+		if (needle.length() < 6) {
+			return false;
+		}
+		return normalizeForMatch(bodyText).contains(needle)
+				|| (noticeTitle != null && normalizeForMatch(noticeTitle).contains(needle));
 	}
 
 	/** 게시판에서 공고 제목만 뽑는다. LLM 에 함께 넘기고, 폴백으로도 쓴다. */
