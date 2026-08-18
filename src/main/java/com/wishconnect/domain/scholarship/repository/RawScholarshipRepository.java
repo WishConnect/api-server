@@ -71,7 +71,9 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	 * <p>이미 제목과 마감일이 제대로 들어간 공고를 다시 LLM 에 태우는 건 돈만 쓰고 얻는 게 없다.
 	 * 결과가 좋아질 여지가 있는 것부터 처리한다.
 	 *
-	 * <p>"제대로" 의 기준은 둘이다 — 마감일이 있고, 제목이 지어낸 이름이 아닐 것.
+	 * <p>"제대로" 의 기준은 셋이다 — 마감일이 있고, 제목이 지어낸 이름이 아니고, 공지 종류가
+	 * 매겨져 있을 것. 종류가 없다는 건 그 기능이 생기기 전에 파싱됐다는 뜻이라, 제목·마감일이
+	 * 멀쩡해도 다시 봐야 한다. 안 그러면 연락처 변경 안내(GUIDE)가 분류되지 않은 채 목록에 남는다.
 	 * {@code "UNIV_KONKUK 공고 1200120"} 은 LLM 도 게시판도 제목을 못 줬을 때 쓰는 마지막 수단이라,
 	 * 그게 남아 있다는 건 아직 정제가 안 됐다는 뜻이다.
 	 */
@@ -83,6 +85,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 			        where l.rawScholarshipId = r.id and l.promptVersion = :promptVersion)
 			   and (r.scholarship is null
 			        or r.scholarship.applicationEndAt is null
+			        or r.scholarship.noticeKind is null
 			        or r.scholarship.title like concat(r.source, ' 공고 %'))
 			 order by r.id asc
 			""")
