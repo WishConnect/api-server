@@ -111,6 +111,18 @@ class UserAccountServiceTest {
 		}
 
 		@Test
+		@DisplayName("이메일은 보존하되 활성 계정 부분 UNIQUE로 재가입을 허용한다")
+		void retainsEmailForRetentionPolicy() {
+			User user = localUser();
+			given(userRepository.findById(user.getId())).willReturn(Optional.of(user));
+
+			userAccountService.deleteMe(user.getId());
+
+			assertThat(user.getEmail()).isEqualTo("user@example.com");
+			assertThat(user.isDeleted()).isTrue();
+		}
+
+		@Test
 		@DisplayName("이미 탈퇴한 계정이면 WITHDRAWN_USER(401)")
 		void alreadyWithdrawn() {
 			User user = localUser();
