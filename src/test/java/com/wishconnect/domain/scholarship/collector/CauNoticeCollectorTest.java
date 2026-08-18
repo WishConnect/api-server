@@ -128,36 +128,8 @@ class CauNoticeCollectorTest {
 
 	// --- 분류 ---
 
-	@Test
-	@DisplayName("근로장학은 분류값과 무관하게 WORK_STUDY 로 나눈다")
-	void classifiesWorkStudy() {
-		var classification = CauNoticeCollector.classify(
-				"(통합) 2026학년도 2학기 2차 국가근로장학금 신청 안내", "통합");
 
-		assertThat(classification.type()).isEqualTo(ScholarshipType.WORK_STUDY);
-		assertThat(classification.provider()).isEqualTo("중앙대학교");
-	}
 
-	@Test
-	@DisplayName("분류가 '외부'면 EXTERNAL 이며 제목에서 운영기관명을 뽑는다")
-	void classifiesExternalWithProvider() {
-		var classification = CauNoticeCollector.classify(
-				"서암윤세영재단 2026년도 윤세영 스칼라십 신규 장학생 선발 안내", "외부");
-
-		assertThat(classification.type()).isEqualTo(ScholarshipType.EXTERNAL);
-		assertThat(classification.provider()).isEqualTo("서암윤세영재단");
-	}
-
-	@Test
-	@DisplayName("캠퍼스 구분(서울·다빈치·통합)은 교내 장학이므로 INTERNAL 이다")
-	void classifiesCampusCategoriesAsInternal() {
-		assertThat(CauNoticeCollector.classify("2026-1학기 복지장학금 시행 공고(서울캠퍼스)", "서울").type())
-				.isEqualTo(ScholarshipType.INTERNAL);
-		assertThat(CauNoticeCollector.classify("2026-1학기 복지장학금 시행 공고(다빈치캠퍼스)", "다빈치").type())
-				.isEqualTo(ScholarshipType.INTERNAL);
-		assertThat(CauNoticeCollector.classify("2026학년도 2학기 국가장학금 신청 안내", "통합").type())
-				.isEqualTo(ScholarshipType.INTERNAL);
-	}
 
 	// --- 상세 주소 ---
 

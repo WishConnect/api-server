@@ -304,32 +304,9 @@ public class CauNoticeCollector {
 			return false;
 		}
 
-		String dedupKey = ScholarshipDedupKey.of(SOURCE, article.bbsSeq());
-		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
-		boolean isNewScholarship = scholarship == null;
-		Classification classification = classify(title, article.category());
-		if (scholarship == null) {
-			scholarship = scholarshipRepository.save(Scholarship.builder()
-					.title(cleanTitle(title))
-					.provider(classification.provider())
-					.summary(null)
-					.description(bodyText.length() > 2000 ? bodyText.substring(0, 2000) : bodyText)
-					.scholarshipType(classification.type())
-					.applicationStartAt(period == null ? null : period.start())
-					.applicationEndAt(period == null ? null : period.end())
-					.recruitmentStatus(resolveStatus(period))
-					.primarySource(SOURCE)
-					.dedupKey(dedupKey)
-					.homepageUrl(detailUrl)
-					.build());
-		}
-		raw.markParsed(scholarship);
+		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
+		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
 		rawScholarshipRepository.save(raw);
-		if (isNewScholarship) {
-			storeConditions(scholarship, fullText);
-			storeDocuments(scholarship, fullText);
-			storePoster(contentDoc, scholarship, title);
-		}
 		return true;
 	}
 
@@ -472,53 +449,8 @@ public class CauNoticeCollector {
 		return null;
 	}
 
-	/**
-	 * 공지 본문에서 지원 자격 조건을 뽑아 저장한다.
-	 * 숫자 구조화는 이후 조건 추출 배치가 처리하므로 여기서는 원문 문장만 남긴다.
-	 */
-	private void storeConditions(Scholarship scholarship, String text) {
-		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(text).stream()
-				.map(extracted -> ScholarshipCondition.builder()
-						.scholarship(scholarship)
-						.conditionType(extracted.type())
-						.operator(ConditionOperator.EQ)
-						.valueString(extracted.snippet())
-						.autoExtracted(false)
-						.build())
-				.toList();
-		if (!conditions.isEmpty()) {
-			scholarshipConditionRepository.saveAll(conditions);
-		}
-	}
 
-	/** 제출서류 섹션이 보이면 서류명을 저장한다. 명확한 후보만 보수적으로 남긴다. */
-	private void storeDocuments(Scholarship scholarship, String text) {
-		List<String> documentNames = extractDocumentNames(text);
-		if (documentNames.isEmpty()) {
-			return;
-		}
-		List<ScholarshipDocument> documents = new ArrayList<>();
-		for (int i = 0; i < documentNames.size(); i++) {
-			String name = documentNames.get(i);
-			documents.add(ScholarshipDocument.builder()
-					.scholarship(scholarship)
-					.name(name)
-					.essay(ESSAY_DOCUMENT.matcher(name).find())
-					.displayOrder(i)
-					.build());
-		}
-		scholarshipDocumentRepository.saveAll(documents);
-	}
 
-	/** 본문 HTML 의 인라인 이미지에서 포스터 후보를 찾아 S3 에 저장한다(실패해도 수집 계속). */
-	private void storePoster(Document contentDoc, Scholarship scholarship, String title) {
-		String posterUrl = findPosterUrl(contentDoc);
-		if (posterUrl == null) {
-			return;
-		}
-		imageStorageService.storeFromUrl(posterUrl, "scholarship/cau",
-				ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId(), title);
-	}
 
 	static String findPosterUrl(Document contentDoc) {
 		for (Element img : contentDoc.select("img[src]")) {
@@ -578,43 +510,9 @@ public class CauNoticeCollector {
 				+ "|재학증명|가족관계|주민등록|통장|사본|보고서|평가서|서약서|지원서).*");
 	}
 
-	private RecruitmentStatus resolveStatus(Period period) {
-		if (period == null) {
-			return RecruitmentStatus.OPEN;
-		}
-		if (period.start() != null && LocalDateTime.now().isBefore(period.start())) {
-			return RecruitmentStatus.UPCOMING;
-		}
-		return RecruitmentStatus.OPEN;
-	}
 
-	record Classification(ScholarshipType type, String provider) {
-	}
 
-	/**
-	 * 장학 유형을 분류한다. 중앙대는 목록 API 가 분류값을 주므로 제목 추측보다 그 값을 우선한다.
-	 * <ol>
-	 *   <li>근로장학은 성격이 달라 WORK_STUDY 로 분리한다.</li>
-	 *   <li>분류가 '외부'면 EXTERNAL 이며, 제목에서 운영기관명 추출을 시도한다.</li>
-	 *   <li>그 외(통합·서울·다빈치 = 캠퍼스 구분)는 교내 장학이므로 INTERNAL 이다.</li>
-	 * </ol>
-	 */
-	static Classification classify(String title, String category) {
-		if (WORK_STUDY_KEYWORD.matcher(title).find()) {
-			return new Classification(ScholarshipType.WORK_STUDY, PROVIDER);
-		}
-		if (category.contains("외부")) {
-			Matcher provider = PROVIDER_IN_TITLE.matcher(title);
-			return new Classification(ScholarshipType.EXTERNAL,
-					provider.find() ? provider.group(1) : PROVIDER);
-		}
-		return new Classification(ScholarshipType.INTERNAL, PROVIDER);
-	}
 
-	static String cleanTitle(String title) {
-		String cleaned = title.replaceAll("\\s+", " ").trim();
-		return cleaned.length() > 490 ? cleaned.substring(0, 490) : cleaned;
-	}
 
 	private static String firstNonBlank(String first, String fallback) {
 		return first != null && !first.isBlank() ? first.trim() : fallback;

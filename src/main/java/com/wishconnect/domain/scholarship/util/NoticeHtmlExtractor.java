@@ -29,6 +29,12 @@ public final class NoticeHtmlExtractor {
 	/** 이미지 설명으로 인정할 최소 길이. "포스터", "이미지1" 같은 건 내용이 아니다. */
 	private static final int MIN_ALT_CHARS = 20;
 
+	private static final java.util.regex.Pattern IMAGE_EXT =
+			java.util.regex.Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
+	/** 로고·아이콘 같은 장식 이미지는 포스터가 아니다. */
+	private static final java.util.regex.Pattern NON_POSTER = java.util.regex.Pattern.compile(
+			"(?i)logo|icon|btn|banner|common|header|footer|blank|bullet|og_thumbnail|ssu_ogimage|favicon|sns|share|/resources/images/");
+
 	/**
 	 * 본문 영역 후보. 실제 수집 대상 게시판을 열어 확인한 순서다.
 	 *
@@ -161,6 +167,42 @@ public final class NoticeHtmlExtractor {
 		}
 		List<String> split = List.of(preferred.split("\\s*,\\s*"));
 		return java.util.stream.Stream.concat(split.stream(), TITLE_SELECTORS.stream()).distinct().toList();
+	}
+
+	/**
+	 * 공지에 실린 포스터 이미지 URL. 없으면 null.
+	 *
+	 * <p>수집기에 있던 것을 옮겨 왔다. 수집기가 더는 {@code scholarship} 을 만들지 않아
+	 * 포스터를 붙일 시점이 LLM 파싱으로 넘어갔고, 양쪽에서 써야 하는 코드가 됐다.
+	 */
+	public static String posterUrl(Document doc) {
+		Element ogImg = doc.selectFirst("meta[property=og:image][content]");
+		if (ogImg != null) {
+			String src = ogImg.attr("content").trim();
+			if (IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
+				return src;
+			}
+		}
+		for (Element img : doc.select(
+				".board_view .view_cont img[src], .artclView img[src], .view-con img[src], "
+						+ ".view_cont img[src], .article-view img[src], .content img[src], .contents img[src], "
+						+ ".bg-white img[src], .entry-content img[src], article img[src], main img[src]")) {
+			String src = img.attr("abs:src");
+			if (!src.isBlank() && IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
+				return src;
+			}
+		}
+		for (Element link : doc.select(
+				".board_view .view_cont a[href*=download], .artclView a[href*=download], .view-con a[href*=download], "
+						+ ".view_cont a[href*=download], .article-view a[href*=download], .content a[href*=download], "
+						+ ".contents a[href*=download], .bg-white a[href*=download], .entry-content a[href*=download], "
+						+ "article a[href*=download], main a[href*=download]")) {
+			String name = link.text();
+			if (IMAGE_EXT.matcher(name.strip()).find()) {
+				return link.attr("abs:href");
+			}
+		}
+		return null;
 	}
 
 	private static Optional<String> textOf(Document doc, String selector) {

@@ -155,10 +155,6 @@ public class KhuNoticeCollector {
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 
 	private final RawScholarshipRepository rawScholarshipRepository;
-	private final ScholarshipRepository scholarshipRepository;
-	private final ScholarshipConditionRepository scholarshipConditionRepository;
-	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
-	private final ImageStorageService imageStorageService;
 
 	/**
 	 * 경희대 장학·근로 게시판을 수집한다.
@@ -265,33 +261,9 @@ public class KhuNoticeCollector {
 			return false;
 		}
 
-		String dedupKey = ScholarshipDedupKey.of(SOURCE, boardId);
-		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
-		boolean isNewScholarship = scholarship == null;
-		Classification classification = classify(title);
-		if (scholarship == null) {
-			scholarship = scholarshipRepository.save(Scholarship.builder()
-					.title(cleanTitle(title))
-					.provider(classification.provider())
-					.summary(null)
-					.description(bodyText.length() > 2000 ? bodyText.substring(0, 2000) : bodyText)
-					.scholarshipType(classification.type())
-					.applicationStartAt(period == null ? null : period.start())
-					.applicationEndAt(period == null ? null : period.end())
-					.recruitmentStatus(resolveStatus(period))
-					.primarySource(SOURCE)
-					.dedupKey(dedupKey)
-					.homepageUrl(detailUrl)
-					.build());
-		}
-		raw.markParsed(scholarship);
+		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
+		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
 		rawScholarshipRepository.save(raw);
-		if (isNewScholarship) {
-			String fullText = title + "\n" + bodyText;
-			storeConditions(scholarship, fullText);
-			storeDocuments(scholarship, fullText);
-			storePoster(doc, scholarship, title);
-		}
 		return true;
 	}
 
@@ -487,43 +459,7 @@ public class KhuNoticeCollector {
 		return null;
 	}
 
-	/**
-	 * 공지 본문에서 지원 자격 조건을 뽑아 저장한다.
-	 * 숫자 구조화(valueInt)는 이후 조건 추출 배치가 이어서 처리하므로 여기서는 원문 문장만 남긴다.
-	 */
-	private void storeConditions(Scholarship scholarship, String text) {
-		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(text).stream()
-				.map(extracted -> ScholarshipCondition.builder()
-						.scholarship(scholarship)
-						.conditionType(extracted.type())
-						.operator(ConditionOperator.EQ)
-						.valueString(extracted.snippet())
-						.autoExtracted(false)
-						.build())
-				.toList();
-		if (!conditions.isEmpty()) {
-			scholarshipConditionRepository.saveAll(conditions);
-		}
-	}
 
-	/** 제출서류 섹션이 보이면 서류명을 저장한다. 명확한 후보만 보수적으로 남긴다. */
-	private void storeDocuments(Scholarship scholarship, String text) {
-		List<String> documentNames = extractDocumentNames(text);
-		if (documentNames.isEmpty()) {
-			return;
-		}
-		List<ScholarshipDocument> documents = new ArrayList<>();
-		for (int i = 0; i < documentNames.size(); i++) {
-			String name = documentNames.get(i);
-			documents.add(ScholarshipDocument.builder()
-					.scholarship(scholarship)
-					.name(name)
-					.essay(ESSAY_DOCUMENT.matcher(name).find())
-					.displayOrder(i)
-					.build());
-		}
-		scholarshipDocumentRepository.saveAll(documents);
-	}
 
 	static List<String> extractDocumentNames(String text) {
 		if (text == null || text.isBlank()) {
@@ -573,15 +509,6 @@ public class KhuNoticeCollector {
 				+ "|재학증명|가족관계|주민등록|통장|사본|보고서|평가서|서약서|지원서).*");
 	}
 
-	/** 본문 인라인 이미지에서 포스터 후보를 찾아 S3 에 저장한다(실패해도 수집은 계속). */
-	private void storePoster(Document doc, Scholarship scholarship, String title) {
-		String posterUrl = findPosterUrl(doc);
-		if (posterUrl == null) {
-			return;
-		}
-		imageStorageService.storeFromUrl(posterUrl, "scholarship/khu",
-				ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId(), title);
-	}
 
 	/**
 	 * 포스터 후보 URL. 경희대는 본문 이미지가 /upload/cross/images/ 아래에 오고
@@ -602,46 +529,9 @@ public class KhuNoticeCollector {
 		return null;
 	}
 
-	private RecruitmentStatus resolveStatus(Period period) {
-		if (period == null) {
-			return RecruitmentStatus.OPEN;
-		}
-		if (period.start() != null && LocalDateTime.now().isBefore(period.start())) {
-			return RecruitmentStatus.UPCOMING;
-		}
-		return RecruitmentStatus.OPEN;
-	}
 
-	record Classification(ScholarshipType type, String provider) {
-	}
 
-	/**
-	 * 공지 제목으로 장학 유형을 분류한다.
-	 * <ol>
-	 *   <li>근로·인턴장학은 성격이 달라 WORK_STUDY 로 우선 분리</li>
-	 *   <li>[교외] 등 태그가 있거나 제목에 외부 재단명이 있으면 EXTERNAL (운영기관명 추출 시도)</li>
-	 *   <li>그 외는 INTERNAL</li>
-	 * </ol>
-	 */
-	static Classification classify(String title) {
-		if (WORK_STUDY_KEYWORD.matcher(title).find()) {
-			return new Classification(ScholarshipType.WORK_STUDY, PROVIDER);
-		}
-		Matcher providerMatcher = PROVIDER_IN_TITLE.matcher(title);
-		if (providerMatcher.find()) {
-			return new Classification(ScholarshipType.EXTERNAL, providerMatcher.group(1));
-		}
-		if (EXTERNAL_TAG.matcher(title).find()) {
-			return new Classification(ScholarshipType.EXTERNAL, PROVIDER);
-		}
-		return new Classification(ScholarshipType.INTERNAL, PROVIDER);
-	}
 
-	/** 목록에서 딸려온 캠퍼스 라벨을 떼고 공백을 정리한다. */
-	static String cleanTitle(String title) {
-		String cleaned = CAMPUS_LABEL.matcher(title.replaceAll("\\s+", " ").trim()).replaceFirst("");
-		return cleaned.length() > 490 ? cleaned.substring(0, 490) : cleaned;
-	}
 
 	private static String sha256(String value) {
 		try {

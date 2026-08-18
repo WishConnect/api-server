@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
+import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.application.config.LlmProperties;
 import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
@@ -79,6 +80,8 @@ class UnivNoticeLlmParsingServiceTest {
 	@Mock private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock private LlmClient llmClient;
 	@Mock private NoticeParseLogRepository noticeParseLogRepository;
+	/** 포스터 저장. 파싱 성패와 무관하므로 스텁하지 않는다. */
+	@Mock private ImageStorageService imageStorageService;
 	@Mock private RegionResolver regionResolver;
 	@Mock private FamilyTypeRepository familyTypeRepository;
 	@Mock private InterestRepository interestRepository;
@@ -88,7 +91,7 @@ class UnivNoticeLlmParsingServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new UnivNoticeLlmParsingService(
-				rawScholarshipRepository, scholarshipRepository,
+				rawScholarshipRepository, imageStorageService, scholarshipRepository,
 				scholarshipConditionRepository, scholarshipDocumentRepository,
 				new UnivNoticeLlmParser(new ObjectMapper()), llmClient,
 				noticeParseLogRepository,
