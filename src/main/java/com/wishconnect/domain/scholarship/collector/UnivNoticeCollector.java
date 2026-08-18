@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
+import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
@@ -270,26 +271,37 @@ public class UnivNoticeCollector {
 			Pattern.compile("(?i)logo|icon|btn|banner|common|header|footer|blank|bullet|og_thumbnail|ssu_ogimage|favicon|sns|share|/resources/images/");
 
 	/** 상세 본문 텍스트. bodySelector 지정 시 그 영역만, 없으면 body 전체. */
+	/**
+	 * 본문 텍스트. <b>못 찾으면 빈 문자열</b> — 예전처럼 페이지 전체로 폴백하지 않는다.
+	 *
+	 * <p>폴백이 있으면 본문 영역을 못 찾은 공지에서 사이트 메뉴가 통째로 본문 자리에 들어간다.
+	 * 전수조사에서 서울시립대·세종대·국민대·동국대 48건이 그 상태였다.
+	 */
 	static String extractBody(Document doc, String bodySelector) {
-		if (bodySelector != null && !bodySelector.isBlank()) {
-			Element el = doc.selectFirst(bodySelector);
-			if (el != null && !el.text().isBlank()) {
-				return el.text();
-			}
-		}
-		return doc.body() == null ? "" : doc.body().text();
+		return NoticeHtmlExtractor.body(doc, bodySelector).orElse("");
 	}
 
 	/** titleSelector 가 지정되면 그것을 우선 사용하고, 없으면 스킨 자동추출 규칙을 따른다. */
+	/**
+	 * 제목. 못 찾으면 {@code <title>} 에서 사이트명을 떼어 쓰고, 그것도 없으면 빈 문자열.
+	 *
+	 * <p>예전에는 마지막 폴백이 {@code doc.title()} 이라, 게시판 스킨이 안 걸리면 페이지 문서
+	 * 제목이 그대로 들어갔다("공지사항 공유팝업 열기 카카오 공유하기 URL 복사 팝업 닫기").
+	 * 홍익대는 19건 전부가 이 값이었고, 제목이 같으니 dedupKey 까지 뭉쳤다.
+	 */
 	static String extractTitle(Document doc, String titleSelector) {
-		if (titleSelector != null && !titleSelector.isBlank()) {
-			Element el = doc.selectFirst(titleSelector);
-			if (el != null && !el.text().isBlank()) {
-				String ownText = el.ownText().trim();
-				return ownText.isBlank() ? el.text().trim() : ownText;
-			}
+		return NoticeHtmlExtractor.title(doc, titleSelector)
+				.orElseGet(() -> cleanDocumentTitle(doc));
+	}
+
+	/** {@code "홍익대학교 | 실제 제목"} 처럼 사이트명이 붙은 문서 제목에서 뒤쪽만 남긴다. */
+	private static String cleanDocumentTitle(Document doc) {
+		String raw = doc.title() == null ? "" : doc.title().trim();
+		if (NoticeHtmlExtractor.looksLikeChrome(raw)) {
+			return "";
 		}
-		return extractTitle(doc);
+		int bar = raw.indexOf('|');
+		return bar >= 0 && bar < raw.length() - 1 ? raw.substring(bar + 1).trim() : raw;
 	}
 
 	/**
