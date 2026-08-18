@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
+import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
@@ -207,8 +208,7 @@ public class KoreaUnivNoticeCollector {
 			return false;
 		}
 
-		String dedupKey = sha256(SOURCE + "|" + title + "|"
-				+ (period == null ? "" : period.start() + "~" + period.end()));
+		String dedupKey = ScholarshipDedupKey.of(SOURCE, article.articleId());
 		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
 		boolean isNewScholarship = scholarship == null;
 		Classification classification = classify(title);
