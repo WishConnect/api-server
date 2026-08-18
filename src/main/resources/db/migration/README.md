@@ -58,6 +58,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_11__scholarship_essay_interview_requirement.sql` | 장학금에 자소서·면접 필요 여부(3값+NULL)와 근거 문장 추가 | ✅ 2026-08-18 |
 | `V20260818_12__notice_kind_combined_submission.sql` | 공지 종류(모집/결과/안내)·통합 공고 여부·제출 방식·제출 경로 | ✅ 2026-08-18 |
 | `V20260818_13__parse_log_body_from_image_alt.sql` | 본문을 이미지 alt 로 대체했는지 파싱 이력에 기록 (OCR 대상 선별용) | ✅ 2026-08-18 |
+| `V20260818_14__active_user_email_unique.sql` | `users.email` 전역 UNIQUE를 활성 계정의 `(email, login_type)` 부분 UNIQUE로 교체 | ✅ 2026-08-18 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서
