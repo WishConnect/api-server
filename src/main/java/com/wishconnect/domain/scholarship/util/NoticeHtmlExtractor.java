@@ -83,6 +83,37 @@ public final class NoticeHtmlExtractor {
 	 *
 	 * @param preferred 사이트별로 지정된 셀렉터(있으면 가장 먼저 시도한다)
 	 */
+	/**
+	 * 본문이 <b>이미지뿐이라 {@code alt} 로 대체했는가.</b>
+	 *
+	 * <p>포스터 한 장만 올린 공고를 alt 덕분에 살려도, 거기 담긴 건 이미지 설명 한 줄뿐이라
+	 * 조건·제출서류는 여전히 비어 있다. 나중에 OCR 을 붙일 때 <b>이 건들이 대상</b>인데,
+	 * 상태는 PARSED 라 {@code IMAGE_ONLY} 로 골라낼 수 없다. 그래서 따로 표시해 둔다.
+	 */
+	public static boolean bodyFromImageAlt(Document doc, String preferred) {
+		if (doc == null) {
+			return false;
+		}
+		for (String selector : candidates(preferred)) {
+			Element element;
+			try {
+				element = doc.selectFirst(selector);
+			} catch (RuntimeException e) {
+				continue;
+			}
+			if (element == null) {
+				continue;
+			}
+			if (normalize(element.text()).length() >= MIN_BODY_CHARS) {
+				return false;   // 글자만으로 충분했다
+			}
+			if (!imageDescriptions(element).isBlank()) {
+				return true;    // 글자가 모자라 alt 로 채웠다
+			}
+		}
+		return false;
+	}
+
 	public static Optional<String> body(Document doc, String preferred) {
 		if (doc == null) {
 			return Optional.empty();

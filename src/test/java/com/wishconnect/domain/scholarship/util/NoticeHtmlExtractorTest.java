@@ -130,4 +130,15 @@ class NoticeHtmlExtractorTest {
 		assertThat(NoticeHtmlExtractor.body(load("4060"), null))   // 숭실대(워드프레스)
 				.get().asString().contains("학자금대출 이자 지원");
 	}
+
+	@Test
+	@DisplayName("본문을 alt 로 대체한 경우 표시한다 — 나중에 OCR 로 채울 대상이다")
+	void marksBodyTakenFromImageAlt() throws Exception {
+		// 한국외대: 포스터 한 장 + 접근성 설명. 마감일은 건지지만 조건·서류는 비어 있다.
+		assertThat(NoticeHtmlExtractor.bodyFromImageAlt(load("1951"), null)).isTrue();
+		// 글자로 된 본문이 있으면 alt 를 쓰지 않았다.
+		assertThat(NoticeHtmlExtractor.bodyFromImageAlt(load("4041"), null)).isFalse();
+		// 이미지뿐이고 alt 도 없으면 그건 IMAGE_ONLY 다.
+		assertThat(NoticeHtmlExtractor.bodyFromImageAlt(load("4051"), null)).isFalse();
+	}
 }

@@ -215,6 +215,8 @@ public class UnivNoticeLlmParsingService {
 					.modelId(llmProperties.parserModel())
 					.promptVersion(UnivNoticeLlmParser.PROMPT_VERSION)
 					.bodyTruncated(extracted.truncated())
+					// 본문이 포스터뿐이라 alt 로 대체한 건 나중에 OCR 대상이 된다.
+					.bodyFromImageAlt(parser.isBodyFromImageAlt(raw.getRawHtml()))
 					.bodyLength(extracted.originalLength())
 					.parsedJson(parsedJson)
 					.rawResponse(rawResponse)
