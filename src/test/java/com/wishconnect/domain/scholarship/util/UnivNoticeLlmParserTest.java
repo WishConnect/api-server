@@ -119,6 +119,28 @@ class UnivNoticeLlmParserTest {
 				.contains("사랑나눔 장학생 자기소개서.docx");
 	}
 
+	@Test
+	@DisplayName("첨부 파일명도 근거로 인정한다 — 본문이 비어 있으면 거기가 유일한 단서다")
+	void acceptsAttachmentAsEvidence() {
+		// 프롬프트로는 첨부를 보내면서 대조는 본문·제목만 해, 파일명을 근거로 댄 판단이 버려졌다(3970).
+		var result = parser.resolveRequirement("REQUIRED",
+				"붙임_2._[서식]_2026년_상반기_서울인재대학장학금_자기소개서[1].hwp",
+				"선발 공고 홍보 포스터. 8월 3일부터 8월 10일까지 모집함",
+				null,
+				List.of("붙임_2._[서식]_2026년_상반기_서울인재대학장학금_자기소개서[1].hwp"));
+
+		assertThat(result.level()).isEqualTo(RequirementLevel.REQUIRED);
+	}
+
+	@Test
+	@DisplayName("첨부에도 없는 근거는 여전히 버린다")
+	void stillDiscardsEvidenceMissingEverywhere() {
+		var result = parser.resolveRequirement("REQUIRED", "자기소개서를 제출해야 합니다",
+				"본문에는 그런 말이 없다", null, List.of("공고문.pdf"));
+
+		assertThat(result.level()).isNull();
+	}
+
 	// --- 본문 추출 ---
 
 	@Test
