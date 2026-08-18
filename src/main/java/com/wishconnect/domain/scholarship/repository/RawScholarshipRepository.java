@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.repository;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -32,6 +33,16 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	 */
 	List<RawScholarship> findBySourceStartingWithAndParseStatusOrderByIdAsc(
 			String sourcePrefix, ParseStatus parseStatus, Pageable pageable);
+
+	/**
+	 * 특정 공지만 골라 다시 파싱한다.
+	 *
+	 * <p>프롬프트는 그대로인데 <b>LLM 에게 주는 본문이 달라졌을 때</b> 필요하다. 추출기를 고치면
+	 * 같은 공지라도 결과가 달라지는데, 평소 대상 선정은 프롬프트 버전으로 거르기 때문에
+	 * 이미 파싱한 건 다시 잡히지 않는다. 그렇다고 프롬프트 버전을 올리면 안 바뀐 것을 바뀌었다고
+	 * 기록하는 셈이라, 나중에 "무엇이 언제부터 달라졌는지" 를 되짚을 수 없게 된다.
+	 */
+	List<RawScholarship> findByIdInOrderByIdAsc(Collection<Long> ids);
 
 	/** 재파싱 대상: 상태와 무관하게 대학 공고 전체. 잘못 파싱된 기존 데이터를 덮어쓸 때 쓴다. */
 	List<RawScholarship> findBySourceStartingWithOrderByIdAsc(String sourcePrefix, Pageable pageable);

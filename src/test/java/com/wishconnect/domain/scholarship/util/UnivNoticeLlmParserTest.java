@@ -397,7 +397,7 @@ class UnivNoticeLlmParserTest {
 		// 요청이 통째로 반려돼 파서가 한 건도 처리하지 못했다. 스키마는 눈으로 검토해서는
 		// 안 걸리고 실제 호출을 해봐야 드러나므로 여기서 막는다.
 		// (운영 키로 확인함: type 이 단일 문자열이면 enum 과 같이 써도 통과한다)
-		Map<String, Object> schema = parser.buildRequest("본문".repeat(50)).outputSchema();
+		Map<String, Object> schema = parser.buildRequest(null, "본문".repeat(50)).outputSchema();
 		assertNoUnionTypeWithEnum(schema, "$");
 	}
 
@@ -413,5 +413,27 @@ class UnivNoticeLlmParserTest {
 		} else if (node instanceof List<?> list) {
 			list.forEach(item -> assertNoUnionTypeWithEnum(item, path + "[]"));
 		}
+	}
+
+	@Test
+	@DisplayName("제목을 함께 보낸다 — 본문 영역 밖에 제목이 있는 게시판이 있다")
+	void sendsTitleAlongsideBody() {
+		// 건국대는 제목이 본문 영역 밖에 있어, 본문만 보내면 LLM 이 제목을 볼 수가 없다.
+		// 게다가 제목에 기간이 든 공고가 많다 — "…모집(6. 22. ~ 7. 24.)".
+		var request = parser.buildRequest("[교외] 2026년 종근당고촌재단 무상기숙사 장학생 모집(6. 22. ~ 7. 24.)",
+				"1. 선발대상: 붙임 참조 2. 접수기간: 2026. 6. 22.(월) ~ 7. 24.(금)");
+
+		String sent = request.messages().get(0).content();
+		assertThat(sent).contains("[제목]").contains("종근당고촌재단");
+		assertThat(sent).contains("[본문]").contains("접수기간");
+	}
+
+	@Test
+	@DisplayName("제목이 없으면 본문만 보낸다 — 빈 제목 표시를 붙이지 않는다")
+	void sendsBodyOnlyWhenTitleMissing() {
+		String sent = parser.buildRequest(null, "본문만 있는 공지입니다.").messages().get(0).content();
+
+		assertThat(sent).doesNotContain("[제목]");
+		assertThat(sent).contains("[본문]");
 	}
 }
