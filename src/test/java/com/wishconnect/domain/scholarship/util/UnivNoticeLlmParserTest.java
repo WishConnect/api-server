@@ -146,6 +146,75 @@ class UnivNoticeLlmParserTest {
 	}
 
 	@Test
+	@DisplayName("연도 없는 표기도 근거로 인정한다 — '(~8/13)' 하나로 여덟 건을 버렸다")
+	void acceptsEvidenceWithoutYear() {
+		String body = "2026-2학기 교내장학 안내입니다. 신청은 학사시스템에서 하시기 바랍니다.(~8/13)";
+
+		var period = parser.resolvePeriod(
+				notice(null, "2026-08-13", "(~8/13)"), body, LocalDate.of(2026, 8, 5));
+
+		assertThat(period).isPresent();
+		assertThat(period.get().end().toLocalDate()).isEqualTo(LocalDate.of(2026, 8, 13));
+	}
+
+	@Test
+	@DisplayName("줄여 쓴 연도도 인정한다 — \"'26. 8. 12.(수)~9. 9.(수)\"")
+	void acceptsEvidenceWithShortYear() {
+		String body = "국가근로장학금 2차 신청기간 : '26. 8. 12.(수) 9시 ~ 9. 9.(수) 18시";
+
+		var period = parser.resolvePeriod(
+				notice(null, "2026-09-09", "'26. 8. 12.(수) 9시~9. 9.(수) 18시"),
+				body, LocalDate.of(2026, 8, 12));
+
+		assertThat(period).isPresent();
+		assertThat(period.get().end().toLocalDate()).isEqualTo(LocalDate.of(2026, 9, 9));
+	}
+
+	@Test
+	@DisplayName("연도는 모델이 아니라 수집 시점으로 정한다 — 제목의 '(~9/18' 을 2024 년으로 읽은 적이 있다")
+	void takesYearFromReferenceDateNotFromModel() {
+		String body = "앨트웰민초장학재단 제27기 장학생 선발 안내(~9/18 금 18시, 1학년 대상)";
+
+		var period = parser.resolvePeriod(
+				notice(null, "2024-09-18", "(~9/18 금 18시"), body, LocalDate.of(2026, 8, 14));
+
+		assertThat(period).isPresent();
+		assertThat(period.get().end().toLocalDate()).isEqualTo(LocalDate.of(2026, 9, 18));
+	}
+
+	@Test
+	@DisplayName("연말 공고의 연도 없는 마감일은 다음 해로 넘긴다")
+	void rollsYearForwardForYearEndNotice() {
+		String body = "겨울 계절학기 장학 신청은 1/15 까지입니다.";
+
+		var period = parser.resolvePeriod(
+				notice(null, "2026-01-15", "1/15 까지"), body, LocalDate.of(2026, 12, 20));
+
+		assertThat(period).isPresent();
+		assertThat(period.get().end().toLocalDate()).isEqualTo(LocalDate.of(2027, 1, 15));
+	}
+
+	@Test
+	@DisplayName("근거에 없는 날을 마감일로 넣으면 버린다 — 본문은 6/29 인데 6/22 를 넣은 사례")
+	void rejectsDeadlineNotQuotedInEvidence() {
+		String body = "국가근로장학금 1차 신청 : 6. 29.(월) 18시까지";
+
+		var period = parser.resolvePeriod(
+				notice(null, "2026-06-22", "6. 29.(월) 18시까지"), body, LocalDate.of(2026, 6, 20));
+
+		assertThat(period).isEmpty();
+	}
+
+	@Test
+	@DisplayName("연도 없는 표기여도 본문에 그 날짜가 없으면 버린다 — 완화가 구멍이 되지 않도록")
+	void stillRejectsFabricatedEvidenceWithoutYear() {
+		String body = "2026학년도 2학기 장학생을 모집합니다. 자세한 내용은 첨부파일을 참고하세요.";
+
+		assertThat(parser.resolvePeriod(
+				notice(null, "2026-08-13", "(~8/13)"), body, LocalDate.of(2026, 8, 5))).isEmpty();
+	}
+
+	@Test
 	@DisplayName("근거 문장이 본문에 없으면 기간을 버린다 — 지어낸 값 차단")
 	void rejectsPeriodWithFabricatedEvidence() {
 		String body = "2026학년도 2학기 장학생을 모집합니다. 자세한 내용은 첨부파일을 참고하세요.";

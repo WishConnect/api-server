@@ -26,6 +26,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -279,7 +280,10 @@ public class UnivNoticeLlmParsingService {
 		}
 
 		ParsedNotice notice = maybeNotice.get();
-		Optional<UnivNoticeLlmParser.Period> period = parser.resolvePeriod(notice, bodyText);
+		// 연도가 생략된 마감일("~8/13")은 수집 시점을 기준으로 연도를 붙인다. 공고는 대개 올라온
+		// 직후에 수집되므로 그때가 가장 가까운 기준이다. 모델에게 맡기면 2024 년으로 읽는다.
+		Optional<UnivNoticeLlmParser.Period> period = parser.resolvePeriod(notice, bodyText,
+				raw.getCrawledAt() == null ? LocalDate.now() : raw.getCrawledAt().toLocalDate());
 		// LLM 이 제목을 못 냈으면 게시판에서 뽑은 제목을 쓴다. 출처·번호로 만든 이름은 마지막 수단이다.
 		String title = firstNonBlank(notice.title(), htmlTitle, fallbackTitle(raw));
 		String afterPeriod = period.map(p -> format(p.start()) + " ~ " + format(p.end())).orElse(null);

@@ -556,6 +556,13 @@ public class UnivNoticeLlmParser {
 	 * @param bodyText LLM 에 넘긴 본문. 인용문 대조에 쓴다
 	 */
 	public Optional<Period> resolvePeriod(ParsedNotice notice, String bodyText) {
+		return resolvePeriod(notice, bodyText, LocalDate.now());
+	}
+
+	/**
+	 * @param referenceDate 연도가 생략된 날짜의 연도를 정할 기준일. 보통 그 공지를 수집한 날이다
+	 */
+	public Optional<Period> resolvePeriod(ParsedNotice notice, String bodyText, LocalDate referenceDate) {
 		LocalDate start = parseDate(notice.applicationStart());
 		LocalDate end = parseDate(notice.applicationEnd());
 		if (end == null && start == null) {
@@ -572,6 +579,25 @@ public class UnivNoticeLlmParser {
 		if (isNonApplicationPeriod(notice.periodEvidence())) {
 			log.warn("[UnivLlmParser] 신청기간이 아닌 라벨 → 기간 폐기. evidence={}", notice.periodEvidence());
 			return Optional.empty();
+		}
+		// 인용문에 없는 월·일을 마감일로 삼았다면 다른 날짜를 집은 것이다.
+		// 본문 "6. 29.(월) 18시까지" 를 보고 6/22 를 넣은 사례가 있었다.
+		if (!isDayOfMonthQuoted(end, notice.periodEvidence())) {
+			log.warn("[UnivLlmParser] 마감일이 근거에 없는 날짜 → 기간 폐기. end={} evidence={}",
+					end, notice.periodEvidence());
+			return Optional.empty();
+		}
+		// 연도는 모델이 정하게 두지 않는다. 제목의 "(~9/18" 을 보고 2024 년으로 읽은 적이 있다.
+		// 인용문에 네 자리 연도가 없으면 수집 시점을 기준으로 서버가 붙인다.
+		if (!hasExplicitYear(notice.periodEvidence())) {
+			LocalDate corrected = withYearNear(end, referenceDate);
+			if (!corrected.equals(end)) {
+				log.info("[UnivLlmParser] 근거에 연도가 없어 수집 시점 기준으로 교정. {} → {}", end, corrected);
+				if (start != null) {
+					start = withYearNear(start, referenceDate);
+				}
+				end = corrected;
+			}
 		}
 		// 근거에 날짜가 하나뿐이면 시작일의 근거가 없다. "서류제출기간 : 2026. 8. 2.(일) 까지" 를
 		// 보고 시작일에도 같은 날짜를 넣은 사례가 있었다 — 화면에는 "8/2 ~ 8/2" 로 나와
@@ -624,8 +650,8 @@ public class UnivNoticeLlmParser {
 		if (isEvidenceGrounded(evidence, bodyText)) {
 			return true;
 		}
-		java.util.regex.Matcher dates = EVIDENCE_DATE.matcher(evidence);
 		String normalizedBody = normalizeForMatch(bodyText);
+		java.util.regex.Matcher dates = EVIDENCE_DATE.matcher(evidence);
 		boolean found = false;
 		while (dates.find()) {
 			found = true;
@@ -633,7 +659,93 @@ public class UnivNoticeLlmParser {
 				return false;   // 인용에 있는 날짜가 본문에 없다 = 지어낸 것
 			}
 		}
+		if (found) {
+			return true;
+		}
+		// 연도 없는 표기도 근거로 인정한다. "(~8/13)", "~8. 19.(수)까지", "'26. 8. 12.(수)~9. 9.(수)"
+		// 처럼 연도를 생략하거나 줄여 쓰는 공고가 많은데, 네 자리 연도만 찾다가 멀쩡한 마감일을
+		// 여덟 건 버렸다. 연도는 어차피 수집 시점을 기준으로 서버가 붙인다.
+		for (java.time.MonthDay monthDay : monthDaysIn(evidence)) {
+			found = true;
+			if (!containsMonthDay(normalizedBody, monthDay)) {
+				return false;
+			}
+		}
 		return found;
+	}
+
+	/**
+	 * 본문에 그 월일이 있는가. 자리수를 맞춰 쓴 표기도 같이 본다.
+	 *
+	 * <p>구두점을 지운 뒤 비교하므로 "8/6" 은 "86" 이 되는데, 본문이 "08.06" 으로 적었다면
+	 * "0806" 이라 그냥 비교하면 어긋난다.
+	 */
+	private static boolean containsMonthDay(String normalizedBody, java.time.MonthDay monthDay) {
+		int month = monthDay.getMonthValue();
+		int day = monthDay.getDayOfMonth();
+		return normalizedBody.contains("" + month + day)
+				|| normalizedBody.contains(String.format("%02d%02d", month, day))
+				|| normalizedBody.contains(String.format("%d%02d", month, day))
+				|| normalizedBody.contains(String.format("%02d%d", month, day));
+	}
+
+	/** 인용문에서 연도 없는 "월일"을 뽑는다. 날짜로 성립하는 것만 남긴다. */
+	private static List<java.time.MonthDay> monthDaysIn(String evidence) {
+		List<java.time.MonthDay> found = new ArrayList<>();
+		java.util.regex.Matcher matcher =
+				EVIDENCE_MONTH_DAY.matcher(SHORT_YEAR.matcher(evidence).replaceAll(" "));
+		while (matcher.find()) {
+			int month = Integer.parseInt(matcher.group(1));
+			int day = Integer.parseInt(matcher.group(2));
+			try {
+				found.add(java.time.MonthDay.of(month, day));
+			} catch (java.time.DateTimeException ignored) {
+				// 날짜가 아니다("2.0 이상" 같은 평점 표기). 근거로 세지 않는다.
+			}
+		}
+		return found;
+	}
+
+	/** 인용문에 네 자리 연도가 있는가. 없으면 연도를 모델이 아니라 서버가 정한다. */
+	static boolean hasExplicitYear(String evidence) {
+		return evidence != null && EVIDENCE_DATE.matcher(evidence).find();
+	}
+
+	/**
+	 * 이 날짜의 월·일이 인용문에 실제로 적혀 있는가.
+	 *
+	 * <p>연도는 생략될 수 있어도 월·일은 반드시 인용문에 있어야 한다. 본문에 적힌 것과 다른 날을
+	 * 마감일로 넣은 사례를 막는 관문이다.
+	 */
+	static boolean isDayOfMonthQuoted(LocalDate date, String evidence) {
+		if (date == null || evidence == null) {
+			return false;
+		}
+		return monthDaysIn(evidence).contains(java.time.MonthDay.from(date));
+	}
+
+	/**
+	 * 연도가 빠진 날짜에 기준일과 가장 가까운 연도를 붙인다.
+	 *
+	 * <p>공고는 대개 수집 직후 마감된다. 기준일보다 6개월 이상 과거로 계산되면 다음 해로 넘긴다 —
+	 * 12월에 올라온 "1. 15. 까지" 를 열한 달 전으로 읽지 않기 위해서다.
+	 */
+	static LocalDate withYearNear(LocalDate date, LocalDate referenceDate) {
+		if (date == null || referenceDate == null) {
+			return date;
+		}
+		LocalDate candidate = safeWithYear(date, referenceDate.getYear());
+		if (candidate.isBefore(referenceDate.minusMonths(6))) {
+			return safeWithYear(date, referenceDate.getYear() + 1);
+		}
+		return candidate;
+	}
+
+	/** 2월 29일이 평년으로 옮겨가는 경우를 피한다. */
+	private static LocalDate safeWithYear(LocalDate date, int year) {
+		int day = Math.min(date.getDayOfMonth(), LocalDate.of(year, date.getMonthValue(), 1)
+				.lengthOfMonth());
+		return LocalDate.of(year, date.getMonthValue(), day);
 	}
 
 	/**
@@ -669,6 +781,19 @@ public class UnivNoticeLlmParser {
 	/** 인용문에서 날짜를 집는다. "2026.07.30", "2026-07-30", "2026년 7월 30일" */
 	private static final java.util.regex.Pattern EVIDENCE_DATE = java.util.regex.Pattern.compile(
 			"\\d{4}\\s*[.\\-년]\\s*\\d{1,2}\\s*[.\\-월]\\s*\\d{1,2}");
+
+	/**
+	 * 연도 없는 "월일". "8/6", "8. 19.", "9월 9일" 을 잡는다.
+	 *
+	 * <p>앞뒤로 숫자가 붙은 것은 뺀다 — "2026.08.06" 의 "26.08" 이나 "10,320" 같은 금액을
+	 * 날짜로 읽으면 안 된다. 월·일 범위는 별도로 확인한다("2.0 이상" 같은 평점 표기 배제).
+	 */
+	private static final java.util.regex.Pattern EVIDENCE_MONTH_DAY = java.util.regex.Pattern.compile(
+			"(?<![\\d,])(\\d{1,2})\\s*[./\\-월]\\s*(\\d{1,2})(?![\\d,])");
+
+	/** 줄여 쓴 연도. "'26. 8. 12." 의 "'26." 을 먼저 걷어내야 뒤의 월일이 제대로 잡힌다. */
+	private static final java.util.regex.Pattern SHORT_YEAR = java.util.regex.Pattern.compile(
+			"['`‘’]\\d{2}\\s*[.년]");
 
 	static boolean isEvidenceGrounded(String evidence, String bodyText) {
 		if (evidence == null || evidence.isBlank() || bodyText == null) {
