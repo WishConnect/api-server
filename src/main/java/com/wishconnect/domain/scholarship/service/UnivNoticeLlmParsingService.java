@@ -105,6 +105,17 @@ public class UnivNoticeLlmParsingService {
 	 */
 	@Transactional
 	public NoticeParsingResponse parse(int limit, boolean reparse, boolean dryRun, List<Long> rawIds) {
+		return parse(limit, reparse, dryRun, rawIds, true);
+	}
+
+	/**
+	 * @param skipComplete 이미 제목·마감일이 제대로 들어간 공고를 건너뛴다(기본). 결과가 좋아질
+	 *                     여지가 없는 건에 크레딧을 쓰지 않기 위해서다. 프롬프트를 크게 바꿔
+	 *                     전부 다시 보고 싶을 때만 false 로 둔다.
+	 */
+	@Transactional
+	public NoticeParsingResponse parse(int limit, boolean reparse, boolean dryRun, List<Long> rawIds,
+			boolean skipComplete) {
 		int size = Math.min(Math.max(limit, 1), MAX_BATCH_SIZE);
 		var page = PageRequest.of(0, size);
 		if (rawIds != null && !rawIds.isEmpty()) {
@@ -113,8 +124,11 @@ public class UnivNoticeLlmParsingService {
 			return run(picked, reparse, dryRun);
 		}
 		List<RawScholarship> targets = reparse
-				? rawScholarshipRepository.findReparseTargets(
-						UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page)
+				? (skipComplete
+						? rawScholarshipRepository.findIncompleteReparseTargets(
+								UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page)
+						: rawScholarshipRepository.findReparseTargets(
+								UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page))
 				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
 						UNIV_SOURCE_PREFIX, ParseStatus.PENDING, page);
 		return run(targets, reparse, dryRun);
@@ -268,9 +282,17 @@ public class UnivNoticeLlmParsingService {
 		String afterPeriod = period.map(p -> format(p.start()) + " ~ " + format(p.end())).orElse(null);
 		String note = period.isEmpty() ? "기간 미확보(근거 없음·라벨 불일치·범위 초과 중 하나)" : null;
 
+		// dryRun 도 조건·서류·포스터를 세어 돌려준다. 제목과 기간만 보면 파서가 하는 일의
+		// 절반밖에 확인할 수 없다 — 조건 추출이 통째로 망가져도 멀쩡해 보인다.
+		int conditionCount = parser.resolveConditions(notice, bodyText).size();
+		int documentCount = notice.safeDocuments().size();
+		boolean posterFound = NoticeHtmlExtractor.posterUrl(
+				org.jsoup.Jsoup.parse(raw.getRawHtml(),
+						raw.getSourceUrl() == null ? "" : raw.getSourceUrl())) != null;
+
 		if (dryRun) {
-			return new Outcome(ParseStatus.PARSED,
-					item(raw, "PARSED", title, beforePeriod, afterPeriod, note));
+			return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", title, beforePeriod,
+					afterPeriod, conditionCount, documentCount, posterFound, note));
 		}
 
 		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null));
@@ -280,8 +302,8 @@ public class UnivNoticeLlmParsingService {
 		storeDocuments(scholarship, notice.safeDocuments());
 		storePoster(raw, scholarship, title);
 
-		return new Outcome(ParseStatus.PARSED,
-				item(raw, "PARSED", title, beforePeriod, afterPeriod, note));
+		return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", title, beforePeriod,
+				afterPeriod, conditionCount, documentCount, posterFound, note));
 	}
 
 	/**
@@ -416,13 +438,15 @@ public class UnivNoticeLlmParsingService {
 
 	private NoticeParsingResponse.Item item(RawScholarship raw, String status, String title,
 			String beforePeriod, String note) {
-		return item(raw, status, title, beforePeriod, null, note);
+		return item(raw, status, title, beforePeriod, null, 0, 0, false, note);
 	}
 
 	private NoticeParsingResponse.Item item(RawScholarship raw, String status, String title,
-			String beforePeriod, String afterPeriod, String note) {
+			String beforePeriod, String afterPeriod, int conditionCount, int documentCount,
+			boolean posterFound, String note) {
 		return new NoticeParsingResponse.Item(raw.getId(), raw.getSource(), raw.getSourceUrl(),
-				status, title, beforePeriod, afterPeriod, note);
+				status, title, beforePeriod, afterPeriod,
+				conditionCount, documentCount, posterFound, note);
 	}
 
 	private static String describePeriod(Scholarship scholarship) {

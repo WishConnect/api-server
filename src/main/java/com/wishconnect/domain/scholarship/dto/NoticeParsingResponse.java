@@ -11,6 +11,9 @@ import java.util.List;
  * @param failedCount  LLM 호출·응답 파싱 실패 건수
  * @param dryRun       true 면 DB 에 쓰지 않고 결과만 반환한 것
  * @param items        건별 결과. 정규식 결과와 비교 검증할 때 쓴다
+ *
+ * <p>조건·서류·포스터 건수를 함께 담는다. 예전에는 제목과 기간만 담아서, dryRun 으로는
+ * 파서가 하는 일의 절반밖에 확인할 수 없었다. 조건 추출이 통째로 망가져도 dryRun 은 멀쩡해 보였다.
  */
 public record NoticeParsingResponse(
 		int targetCount,
@@ -35,6 +38,9 @@ public record NoticeParsingResponse(
 	 * @param title        LLM 이 뽑은 제목
 	 * @param beforePeriod 기존(정규식) 신청기간
 	 * @param afterPeriod  LLM 신청기간
+	 * @param conditionCount 근거 검증까지 통과해 저장될 조건 수
+	 * @param documentCount  제출서류 수
+	 * @param posterFound    본문에서 포스터 이미지를 찾았는가
 	 * @param note         건너뜀·실패 사유, 또는 기간이 폐기된 이유
 	 */
 	public record Item(
@@ -45,6 +51,9 @@ public record NoticeParsingResponse(
 			String title,
 			String beforePeriod,
 			String afterPeriod,
+			int conditionCount,
+			int documentCount,
+			boolean posterFound,
 			String note
 	) {
 	}

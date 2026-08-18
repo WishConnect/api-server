@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -143,9 +144,12 @@ class UnivNoticeLlmParsingServiceTest {
 	}
 
 	private void givenAllTargets(List<RawScholarship> targets) {
-		given(rawScholarshipRepository.findReparseTargets(
+		given(rawScholarshipRepository.findIncompleteReparseTargets(
 				eq("UNIV_"), eq(UnivNoticeLlmParser.PROMPT_VERSION), any(Pageable.class)))
 				.willReturn(targets);
+		lenient().when(rawScholarshipRepository.findReparseTargets(
+				eq("UNIV_"), eq(UnivNoticeLlmParser.PROMPT_VERSION), any(Pageable.class)))
+				.thenReturn(targets);
 	}
 
 	// --- 신규 파싱 ---
@@ -547,7 +551,7 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(result.targetCount()).isEqualTo(1);
 		assertThat(result.parsedCount()).isEqualTo(1);
 		// 평소 경로(프롬프트 버전 필터)는 타지 않는다.
-		verify(rawScholarshipRepository, never()).findReparseTargets(any(), any(), any());
+		verify(rawScholarshipRepository, never()).findIncompleteReparseTargets(any(), any(), any());
 	}
 
 	@Test
@@ -557,8 +561,47 @@ class UnivNoticeLlmParsingServiceTest {
 
 		service.parse(20, true, true, List.of());
 
-		verify(rawScholarshipRepository).findReparseTargets(eq("UNIV_"),
+		verify(rawScholarshipRepository).findIncompleteReparseTargets(eq("UNIV_"),
 				eq(UnivNoticeLlmParser.PROMPT_VERSION), any(Pageable.class));
 		verify(rawScholarshipRepository, never()).findByIdInOrderByIdAsc(any());
+	}
+
+	@Test
+	@DisplayName("이미 제목·마감일이 제대로 들어간 공고는 다시 파싱하지 않는다 — 크레딧만 쓴다")
+	void skipsAlreadyWellParsedNotices() {
+		givenAllTargets(List.of());
+
+		service.parse(20, true, true, List.of(), true);
+
+		// 완성된 건을 걸러내는 질의를 쓴다.
+		verify(rawScholarshipRepository).findIncompleteReparseTargets(any(), any(), any(Pageable.class));
+		verify(rawScholarshipRepository, never()).findReparseTargets(any(), any(), any(Pageable.class));
+	}
+
+	@Test
+	@DisplayName("skipComplete=false 면 완성된 것까지 전부 본다 — 프롬프트를 크게 바꿨을 때")
+	void reparsesEverythingWhenAsked() {
+		given(rawScholarshipRepository.findReparseTargets(any(), any(), any(Pageable.class)))
+				.willReturn(List.of());
+
+		service.parse(20, true, true, List.of(), false);
+
+		verify(rawScholarshipRepository).findReparseTargets(any(), any(), any(Pageable.class));
+		verify(rawScholarshipRepository, never()).findIncompleteReparseTargets(any(), any(), any(Pageable.class));
+	}
+
+	@Test
+	@DisplayName("dryRun 도 조건·서류·포스터 건수를 돌려준다 — 제목·기간만 보면 절반은 못 본다")
+	void dryRunReportsConditionsAndDocuments() {
+		RawScholarship target = raw(3L, html(BODY), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+
+		var item = service.parse(20, false, true).items().get(0);
+
+		// 조건 추출이 통째로 망가져도 예전 응답으로는 멀쩡해 보였다.
+		assertThat(item.documentCount()).isEqualTo(2);        // 자기소개서 · 성적증명서
+		assertThat(item.conditionCount()).isZero();           // 이 공고에는 자격조건이 없다
+		assertThat(item.posterFound()).isFalse();
 	}
 }
