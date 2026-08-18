@@ -117,7 +117,7 @@ class AuthControllerTest {
 	class Login {
 
 		private static final String BODY = """
-				{"email":"user@example.com","password":"Test1234!"}
+				{"loginId":"user01","password":"Test1234!"}
 				""";
 
 		@Test
@@ -147,14 +147,14 @@ class AuthControllerTest {
 		}
 
 		@Test
-		@DisplayName("존재하지 않는 계정 시 404 USER_NOT_FOUND")
+		@DisplayName("존재하지 않는 계정도 401 LOGIN_FAILED")
 		void userNotFound() throws Exception {
-			given(authService.login(any())).willThrow(new CustomException(ErrorCode.USER_NOT_FOUND));
+			given(authService.login(any())).willThrow(new CustomException(ErrorCode.LOGIN_FAILED));
 
 			mockMvc.perform(post("/api/v1/auth/login")
 							.contentType(MediaType.APPLICATION_JSON).content(BODY))
-					.andExpect(status().isNotFound())
-					.andExpect(jsonPath("$.message").value(ErrorCode.USER_NOT_FOUND.getMessage()));
+					.andExpect(status().isUnauthorized())
+					.andExpect(jsonPath("$.message").value(ErrorCode.LOGIN_FAILED.getMessage()));
 		}
 	}
 

@@ -2,7 +2,9 @@ package com.wishconnect.domain.auth.controller;
 
 import com.wishconnect.domain.auth.dto.request.PasswordResetCodeRequest;
 import com.wishconnect.domain.auth.dto.request.PasswordResetRequest;
+import com.wishconnect.domain.auth.dto.request.PasswordResetVerifyRequest;
 import com.wishconnect.domain.auth.dto.response.PasswordResetResponse;
+import com.wishconnect.domain.auth.dto.response.PasswordResetVerifyResponse;
 import com.wishconnect.domain.auth.dto.response.VerificationCodeResponse;
 import com.wishconnect.domain.auth.service.PasswordResetService;
 import com.wishconnect.global.common.ApiResponse;
@@ -26,14 +28,22 @@ public class PasswordController {
 	@PostMapping("/reset-request")
 	public ApiResponse<VerificationCodeResponse> resetRequest(
 			@Valid @RequestBody PasswordResetCodeRequest request) {
-		long expiresIn = passwordResetService.requestReset(request.email());
+		long expiresIn = passwordResetService.requestReset(request.loginId(), request.email());
 		return ApiResponse.ok(new VerificationCodeResponse(true, expiresIn));
+	}
+
+	/** 아이디·이메일과 인증 코드를 검증하고 일회성 재설정 토큰을 발급한다. */
+	@PostMapping("/verify")
+	public ApiResponse<PasswordResetVerifyResponse> verify(
+			@Valid @RequestBody PasswordResetVerifyRequest request) {
+		return ApiResponse.ok(passwordResetService.verifyCode(
+				request.loginId(), request.email(), request.code()));
 	}
 
 	/** 새 비밀번호로 변경. */
 	@PostMapping("/reset")
 	public ApiResponse<PasswordResetResponse> reset(@Valid @RequestBody PasswordResetRequest request) {
-		passwordResetService.resetPassword(request.email(), request.code(), request.newPassword());
+		passwordResetService.resetPassword(request.resetToken(), request.newPassword());
 		return ApiResponse.ok(new PasswordResetResponse(true));
 	}
 }

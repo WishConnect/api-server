@@ -32,7 +32,7 @@ public class SecurityConfig {
 			"/api/v1/auth/password/**",
 			"/api/v1/auth/refresh",
 			// 회원가입 화면의 아이디 중복 확인. 가입 전이라 토큰이 없다.
-			"/api/v1/auth/login-id/check",
+			"/api/v1/auth/login-id/**",
 			"/api/v1/universities/search",
 			"/api/v1/majors/search",
 			/*

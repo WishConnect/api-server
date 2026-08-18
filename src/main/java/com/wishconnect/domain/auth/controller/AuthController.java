@@ -55,7 +55,7 @@ public class AuthController {
 		return ApiResponse.ok(authService.signup(request));
 	}
 
-	/** 이메일·비밀번호 로그인. 성공 시 accessToken/refreshToken 을 발급한다. */
+	/** 아이디·비밀번호 LOCAL 로그인. 성공 시 accessToken/refreshToken 을 발급한다. */
 	@PostMapping("/login")
 	public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
 		return ApiResponse.ok(authService.login(request));

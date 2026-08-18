@@ -175,6 +175,34 @@ public final class NoticeHtmlExtractor {
 	 * <p>셀렉터를 아무리 맞춰도 다음 게시판에서 또 빗나간다. 그때 조용히 쓰레기가 쌓이는 대신
 	 * 드러나게 하려는 안전망이다 — 이번에도 신호가 없어서 5개 학교만 보고 국민대·홍익대를 놓쳤다.
 	 */
+	/** 첨부로 볼 확장자. 게시판이 링크 텍스트에 파일명을 그대로 쓴다. */
+	private static final java.util.regex.Pattern ATTACHMENT_NAME = java.util.regex.Pattern.compile(
+			"(?i)\\.(hwpx?|pdf|docx?|xlsx?|pptx?|zip|jpe?g|png)\\b");
+
+	/**
+	 * 첨부파일 이름들. 본문에 없는 정보가 파일명에 있다.
+	 *
+	 * <p>본문을 첨부에만 싣는 게시판이 있다(한국외대·숭실대). 그런 공고는 본문이 비어 있어
+	 * 아무것도 못 뽑는데, 파일명만은 게시판에 노출된다. 실제로 자소서 필요 여부가 여기서
+	 * 세 건 갈렸다 — {@code "…사랑나눔 장학생 자기소개서.docx"}.
+	 *
+	 * <p>목록을 12개로 끊는다. 공고문·서식·안내가 보통 3~5개이고, 그보다 많으면 게시판
+	 * 사이드바의 다른 글 링크가 섞인 것이다.
+	 */
+	public static List<String> attachmentNames(Document doc) {
+		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+		for (Element link : doc.select("a[href]")) {
+			String text = normalize(link.text());
+			if (text.isBlank() || text.length() > 150) {
+				continue;
+			}
+			if (ATTACHMENT_NAME.matcher(text).find()) {
+				names.add(text);
+			}
+		}
+		return names.stream().limit(12).toList();
+	}
+
 	public static boolean looksLikeChrome(String text) {
 		if (text == null || text.isBlank()) {
 			return false;

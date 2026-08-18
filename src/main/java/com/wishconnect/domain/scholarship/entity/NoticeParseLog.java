@@ -74,6 +74,16 @@ public class NoticeParseLog extends BaseCreatedEntity {
 	private Integer bodyLength;
 
 	/** 성공 시 정제 결과(JSON). 실패면 null. */
+	/**
+	 * 파서가 LLM 에 실제로 보낸 본문.
+	 *
+	 * <p>검증할 때 원본을 다시 벗겨 재현하면 안 된다. 그러다 "셀렉터가 빗나갔다"고 두 건을
+	 * 오진했는데, 실은 본문을 제대로 뽑고 있었고 내가 벗긴 쪽이 페이지 전체였다. 모델이 무엇을
+	 * 보고 판단했는지를 그대로 남겨야 "본문에 없어서 못 뽑은 것"과 "있는데 놓친 것"이 갈린다.
+	 */
+	@Column(name = "body_text", columnDefinition = "TEXT")
+	private String bodyText;
+
 	@Column(name = "parsed_json", columnDefinition = "TEXT")
 	private String parsedJson;
 
@@ -87,7 +97,7 @@ public class NoticeParseLog extends BaseCreatedEntity {
 	@Builder
 	private NoticeParseLog(Long rawScholarshipId, ParseStatus status, String modelId,
 			String promptVersion, boolean bodyTruncated, boolean bodyFromImageAlt, Integer bodyLength,
-			String parsedJson, String rawResponse, String errorMessage) {
+			String bodyText, String parsedJson, String rawResponse, String errorMessage) {
 		this.rawScholarshipId = rawScholarshipId;
 		this.status = status;
 		this.modelId = modelId;
@@ -95,6 +105,7 @@ public class NoticeParseLog extends BaseCreatedEntity {
 		this.bodyTruncated = bodyTruncated;
 		this.bodyFromImageAlt = bodyFromImageAlt;
 		this.bodyLength = bodyLength;
+		this.bodyText = bodyText;
 		this.parsedJson = parsedJson;
 		this.rawResponse = rawResponse;
 		this.errorMessage = errorMessage;
