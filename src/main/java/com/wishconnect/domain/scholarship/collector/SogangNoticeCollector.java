@@ -193,7 +193,11 @@ public class SogangNoticeCollector {
 		// 마감 판정을 여기서 하지 않는다. 정규식이 연도를 못 읽어 올해로 가정하는 바람에
 		// 모집 중인 공고를 마감으로 버렸다 — 한 배치에서 26건이 그렇게 되살아났다.
 		// 수집기는 raw_html 만 남기고, 기간 판단은 근거를 대조하는 LLM 파싱이 맡는다.
-		String detailUrl = PAGE_URL;
+		// 상세 페이지 주소가 따로 없는 게시판이라 목록 URL 을 쓴다. 다만 그대로 두면 공고
+		// 전부가 같은 주소를 갖게 되고, 원본과 장학금을 주소로 맞춰 볼 수가 없다.
+		// 실제로 16건이 서로 구분되지 않아 끊긴 연결을 복구하지 못했다.
+		// 프래그먼트는 서버로 전송되지 않으므로 열리는 화면은 그대로다.
+		String detailUrl = PAGE_URL + "#" + pkId;
 
 		RawScholarship raw = RawScholarship.builder()
 				.source(SOURCE)

@@ -124,7 +124,31 @@ public final class NoticeHtmlExtractor {
 				return found;
 			}
 		}
-		return Optional.empty();
+		return wholeDocumentIfFragment(doc);
+	}
+
+	/**
+	 * 문서 전체가 <b>이미 본문뿐</b>이면 그대로 쓴다.
+	 *
+	 * <p>게시판 HTML 을 통째로 저장하는 곳만 있는 게 아니다. 서강대는 API 가 본문 조각만
+	 * 내려주고 수집기가 그것을 그대로 담는다 — 감싸는 컨테이너가 없으니 셀렉터가 하나도
+	 * 안 걸린다. 실제로 16건이 본문 4,000~16,000자를 갖고도 "본문을 추출할 수 없습니다" 로
+	 * 버려지고 있었다.
+	 *
+	 * <p>예전에 있던 전체 폴백과는 다르다. 그때는 메뉴·푸터까지 본문으로 삼아 품질을 망쳤다.
+	 * 여기서는 {@link #looksLikeChrome} 로 걸러, <b>네비게이션이 섞이지 않은 조각</b>일 때만
+	 * 인정한다.
+	 */
+	private static Optional<String> wholeDocumentIfFragment(Document doc) {
+		Element body = doc.body();
+		if (body == null) {
+			return Optional.empty();
+		}
+		String text = normalize(body.text());
+		if (text.length() < MIN_BODY_CHARS || looksLikeChrome(text)) {
+			return Optional.empty();
+		}
+		return Optional.of(text);
 	}
 
 	/**

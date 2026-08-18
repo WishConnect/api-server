@@ -117,6 +117,30 @@ public class Scholarship extends BaseEntity {
 	private String submissionMethod;
 
 	/**
+	 * 공공데이터 장학금의 <b>보조 정보만</b> 채운다.
+	 *
+	 * <p>제목·기간·금액은 이미 정확한 구조화 필드로 들어와 있어 손대지 않는다. 모델이 그것들을
+	 * 다시 추측하게 두면 멀쩡한 값을 잃는다. 자유 텍스트에만 있던 것들을 여기서 채운다.
+	 */
+	public void applyLlmSupplement(
+			RequirementLevel essayRequirement,
+			String essayEvidence,
+			RequirementLevel interviewRequirement,
+			String interviewEvidence,
+			String submissionMethod,
+			SubmissionChannel submissionChannel,
+			String submissionEvidence
+	) {
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+	}
+
+	/**
 	 * 제출방식 판단의 근거가 된 본문 문장.
 	 *
 	 * <p>본문이 없는 공고에 "이메일로 서류 접수" 가 지어내진 채 저장된 일이 있었다. 근거를 함께
