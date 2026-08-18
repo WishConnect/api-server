@@ -301,6 +301,26 @@ public class ScholarshipAdminController {
 				limit, reparse, dryRun, rawIds == null ? List.of() : rawIds, skipComplete));
 	}
 
+	@Operation(summary = "공공데이터 장학금 조건 보강",
+			description = """
+					공공데이터(KOSAF) 장학금의 자격조건·제출서류를 LLM 으로 채운다.
+
+					제목·기간·금액은 이미 정확한 구조화 필드로 들어와 있어 건드리지 않는다.
+					문제는 자격 요건이 전부 자유 텍스트라 추천 대조에 쓸 수 없다는 것이다 —
+					"경기도에 주민등록상 2025.04.01 이전부터 계속 거주하는 도민" 이 통짜 문자열로만 있었다.
+
+					대상은 **모집 중이면서 조건이 비어 있는 것**뿐이다. 마감된 3,571건은 사용자에게
+					보이지 않으므로 크레딧을 쓰지 않는다.
+
+					**주의**: LLM 크레딧을 소모한다. (ADMIN 전용)
+					""")
+	@PostMapping("/parse/kosaf-conditions")
+	public ApiResponse<NoticeParsingResponse> parseKosafConditions(
+			@RequestParam(defaultValue = "20") int limit,
+			@RequestParam(defaultValue = "false") boolean dryRun) {
+		return ApiResponse.ok(univNoticeLlmParsingService.parseKosafConditions(limit, dryRun));
+	}
+
 	@Operation(summary = "LLM 조건 구조화 추출",
 			description = "수집된 공고 본문에서 지원 자격조건을 구조화한다. sync 후 실행 권장. (ADMIN 전용)")
 	@PostMapping("/conditions/extract")
