@@ -235,4 +235,17 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	List<Scholarship> findRecentForAdmin(@Param("source") String source, Pageable pageable);
 
 
+
+	/**
+	 * 원본이 가리키지 않는 장학금 수.
+	 *
+	 * <p>{@code scholarship} 은 원본을 가리키는 컬럼이 없어서, 연결이 끊기면 아무도 못 찾는
+	 * 행으로 남는다. 운영에서 164건이 그렇게 떠 있었고 한 달 동안 아무도 몰랐다. 조용히 쌓이는
+	 * 게 가장 나빴으므로 배치가 끝날 때마다 세어 로그로 남긴다.
+	 */
+	@Query("""
+			select count(s) from Scholarship s
+			 where not exists (select 1 from RawScholarship r where r.scholarship = s)
+			""")
+	long countOrphans();
 }

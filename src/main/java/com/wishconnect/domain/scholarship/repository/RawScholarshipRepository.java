@@ -47,16 +47,15 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	/**
 	 * 공공데이터 중 <b>지금 모집 중이고 조건이 비어 있는</b> 것.
 	 *
-	 * <p>마감된 3,571건은 사용자에게 안 보이므로 크레딧을 쓰지 않는다. 이미 조건이 붙은 건도
-	 * 뺀다 — 이 단계는 빈칸을 채우는 것이지 매일 다시 파싱하는 게 아니다.
+	 * <p>마감된 3,571건은 사용자에게 안 보이므로 크레딧을 쓰지 않는다. 조건이 이미 있어도
+	 * 대상이다 — 기존 값은 필드를 유형에 그대로 꽂아 만든 것이라 같은 조건이 두 번 들어가고
+	 * "기타" 가 조건 행이 돼 있었다. 소득·성적 요건도 33건 중 3건·7건뿐이었다.
 	 */
 	@Query("""
 			select r from RawScholarship r
 			 where r.source = 'KOSAF_SCHOLARSHIP'
 			   and r.scholarship is not null
 			   and r.scholarship.applicationEndAt >= current_timestamp
-			   and not exists (
-			       select 1 from ScholarshipCondition c where c.scholarship = r.scholarship)
 			 order by r.scholarship.applicationEndAt asc
 			""")
 	List<RawScholarship> findOpenPublicDataTargets(Pageable pageable);

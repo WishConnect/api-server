@@ -187,10 +187,22 @@ public class UnivNoticeLlmParsingService {
 				Scholarship scholarship = raw.getScholarship();
 
 				if (!dryRun) {
+					// 기존 값은 필드를 유형에 그대로 꽂아 만든 것이라 같은 조건이 두 번 들어가고
+					// "기타" 같은 값이 조건 행이 돼 있었다. 지우고 다시 채운다.
 					scholarshipConditionRepository.deleteByScholarship(scholarship);
 					scholarshipDocumentRepository.deleteByScholarship(scholarship);
 					storeConditions(scholarship, parser.resolveConditions(notice, body));
 					storeDocuments(scholarship, notice.safeDocuments());
+					// 공고종류는 채우지 않는다 — 공공데이터는 전부 모집 공고다.
+					UnivNoticeLlmParser.Requirement essay = parser.resolveRequirement(
+							notice.essayRequirement(), notice.essayEvidence(), body, title);
+					UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
+							notice.interviewRequirement(), notice.interviewEvidence(), body, title);
+					UnivNoticeLlmParser.Submission submission =
+							parser.resolveSubmission(notice, body, title);
+					scholarship.applyLlmSupplement(essay.level(), essay.evidence(),
+							interview.level(), interview.evidence(),
+							submission.method(), submission.channel(), submission.evidence());
 					saveLog(raw, new UnivNoticeLlmParser.ExtractedBody(body, false, body.length()),
 							ParseStatus.PARSED, notice, null, "공공데이터 조건 보강");
 				}

@@ -132,6 +132,16 @@ public class ScholarshipSyncScheduler {
 			log.warn("[SyncBatch] LLM 파싱 실패(다른 스텝에 영향 없음): {}", e.getMessage());
 		}
 		try {
+			// 원본과 끊긴 장학금은 아무도 못 찾는 행이 된다. 조용히 쌓이는 게 가장 나빴다 —
+			// 164건이 한 달 동안 목록에 그대로 노출됐다. 늘어나면 바로 보이게 세어 둔다.
+			long orphans = scholarshipRepository.countOrphans();
+			if (orphans > 0) {
+				log.warn("[SyncBatch] 원본과 끊긴 장학금 {}건. 목록에 옛 파싱 결과가 노출될 수 있다", orphans);
+			}
+		} catch (Exception e) {
+			log.warn("[SyncBatch] 고아 점검 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+		}
+		try {
 			// 공공데이터는 제목·기간이 이미 정확하므로 조건·서류만 채운다. 모집 중이면서
 			// 조건이 빈 것만 대상이라 평소에는 0건이고, 새 공고가 들어온 날만 몇 건 돈다.
 			NoticeParsingResponse kosaf = univNoticeLlmParsingService.parseKosafConditions(
