@@ -154,6 +154,9 @@ scholarship:
           list-url: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=list
           link-pattern: '^\?mode=view&articleNo=(\d+)'
           detail-template: https://www.sejong.ac.kr/kor/intro/notice7.do?mode=view&articleNo={id}
+          # 지정 전에는 본문 영역을 못 찾아 페이지 전체(대학 소개문·메뉴)가 본문으로 들어갔다.
+          title-selector: ".b-title"
+          body-selector: ".fr-view"
           max-articles: 10
         # Tier B: JS 함수형 링크(fnView(날짜, 순번) 복합키). link-pattern 그룹2까지 사용 → {id}/{id2} 치환.
         - code: uos

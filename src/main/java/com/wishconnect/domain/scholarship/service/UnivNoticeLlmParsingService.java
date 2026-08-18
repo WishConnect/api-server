@@ -95,7 +95,8 @@ public class UnivNoticeLlmParsingService {
 		int size = Math.min(Math.max(limit, 1), MAX_BATCH_SIZE);
 		var page = PageRequest.of(0, size);
 		List<RawScholarship> targets = reparse
-				? rawScholarshipRepository.findBySourceStartingWithOrderByIdAsc(UNIV_SOURCE_PREFIX, page)
+				? rawScholarshipRepository.findReparseTargets(
+						UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page)
 				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
 						UNIV_SOURCE_PREFIX, ParseStatus.PENDING, page);
 
