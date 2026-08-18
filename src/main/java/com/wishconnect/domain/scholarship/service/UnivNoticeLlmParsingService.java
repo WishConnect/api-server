@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.config.LlmProperties;
 import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
+import com.wishconnect.domain.scholarship.entity.NoticeKind;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
 import com.wishconnect.global.exception.CustomException;
@@ -318,6 +319,8 @@ public class UnivNoticeLlmParsingService {
 				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle);
 		UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
 				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle);
+		NoticeKind kind = parser.resolveNoticeKind(notice.noticeKind());
+		boolean combined = Boolean.TRUE.equals(notice.combined());
 
 		String provider = firstNonBlank(notice.provider(), raw.getSource());
 		ScholarshipType type = parser.resolveType(notice.scholarshipType());
@@ -334,7 +337,9 @@ public class UnivNoticeLlmParsingService {
 					parser.resolveSelectionCount(notice.selectionCount()),
 					parser.resolveAmount(notice.amount()),
 					raw.getSourceUrl(),
-					essay.level(), essay.evidence(), interview.level(), interview.evidence());
+					essay.level(), essay.evidence(), interview.level(), interview.evidence(),
+					kind, combined, trimTo(notice.submissionMethod(), 300),
+					parser.resolveSubmissionChannel(notice.submissionChannel()));
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -359,6 +364,10 @@ public class UnivNoticeLlmParsingService {
 						.essayEvidence(essay.evidence())
 						.interviewRequirement(interview.level())
 						.interviewEvidence(interview.evidence())
+						.noticeKind(kind)
+						.combined(combined)
+						.submissionMethod(trimTo(notice.submissionMethod(), 300))
+						.submissionChannel(parser.resolveSubmissionChannel(notice.submissionChannel()))
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));
@@ -474,6 +483,15 @@ public class UnivNoticeLlmParsingService {
 	}
 
 	/** LLM 이 제목을 못 뽑은 경우의 최후 수단. 제목은 NOT NULL 이라 비울 수 없다. */
+	/** 컬럼 길이를 넘는 값이 와도 저장이 실패하지 않게 자른다. */
+	private static String trimTo(String value, int max) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		String cleaned = value.replaceAll("\\s+", " ").trim();
+		return cleaned.length() <= max ? cleaned : cleaned.substring(0, max);
+	}
+
 	/** 마지막 수단. 여기까지 오면 사용자에게 "UNIV_KONKUK 공고 1200120" 이 보인다. */
 	private static String fallbackTitle(RawScholarship raw) {
 		return raw.getSource() + " 공고 " + raw.getSourceId();

@@ -87,6 +87,7 @@ public class ScholarshipDetailService {
 				documents,
 				scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions),
 				buildConditionChecks(userId, conditions),
+				scholarship.isCombined(),
 				new ScholarshipDetailResponse.Selection(
 						scholarship.getEssayRequirement() == null
 								? null : scholarship.getEssayRequirement().name(),
@@ -139,7 +140,7 @@ public class ScholarshipDetailService {
 				byType.get(ConditionType.INCOME_CRITERIA),
 				byType.get(ConditionType.RECOMMENDATION_REQUIRED),
 				formatPeriod(scholarship.getApplicationStartAt(), scholarship.getApplicationEndAt()),
-				null
+				scholarship.getSubmissionMethod()
 		);
 	}
 

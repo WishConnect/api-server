@@ -24,6 +24,12 @@ public record ScholarshipDetailResponse(
 		List<RequiredDocument> requiredDocuments,
 		List<String> matchReasons,
 		List<ConditionCheck> conditionChecks,
+		/**
+		 * 한 공고에 여러 장학금이 실려 있으면 true. 이때 {@code conditionChecks} 의 판정은
+		 * 전부 {@code UNKNOWN} 이다 — 조건이 서로 다른 장학금 것이라 판정할 수 없다.
+		 * 화면은 "여러 장학금이 포함된 공고입니다. 원문에서 확인하세요" 로 안내하면 된다.
+		 */
+		boolean combined,
 		Selection selection
 ) {
 
