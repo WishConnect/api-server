@@ -32,6 +32,11 @@ public class MailService {
 				"아래 재설정 코드를 5분 이내에 입력해주세요.\n\n재설정 코드: " + code);
 	}
 
+	public void sendLoginIdFindCode(String to, String code) {
+		send(to, "[WishConnect] 아이디 찾기 인증 코드",
+				"아래 인증 코드를 5분 이내에 입력해주세요.\n\n인증 코드: " + code);
+	}
+
 	private void send(String to, String subject, String text) {
 		String masked = maskEmail(to);
 		log.info("[Mail] 발송 시작 to={}", masked);

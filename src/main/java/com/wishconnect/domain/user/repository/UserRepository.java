@@ -22,6 +22,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 	/** 기본(LOCAL) 계정 조회. */
 	Optional<User> findByEmailAndLoginTypeAndDeletedAtIsNull(String email, LoginType loginType);
 
+	/** 아이디 로그인 및 계정 복구용 LOCAL 계정 조회. */
+	Optional<User> findByLoginIdAndLoginTypeAndDeletedAtIsNull(String loginId, LoginType loginType);
+
+	/** 비밀번호 찾기에서 아이디와 이메일이 같은 LOCAL 계정을 가리키는지 확인한다. */
+	Optional<User> findByLoginIdAndEmailIgnoreCaseAndLoginTypeAndDeletedAtIsNull(
+			String loginId, String email, LoginType loginType);
+
+	/** 아이디 찾기에서 본인 이름과 이메일이 일치하는 LOCAL 계정만 찾는다. */
+	Optional<User> findByEmailIgnoreCaseAndNameAndLoginTypeAndDeletedAtIsNull(
+			String email, String name, LoginType loginType);
+
 	/** 카카오 계정 조회 (기존 유지). */
 	Optional<User> findByKakaoIdAndDeletedAtIsNull(Long kakaoId);
 
