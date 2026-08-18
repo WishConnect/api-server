@@ -115,8 +115,7 @@ public class UnivNoticeLlmParser {
 		Map<String, Object> properties = new LinkedHashMap<>();
 		properties.put("title", nullable("string"));
 		properties.put("provider", nullable("string"));
-		properties.put("scholarshipType", Map.of("type", List.of("string", "null"),
-				"enum", asList("INTERNAL", "EXTERNAL", "WORK_STUDY", null)));
+		properties.put("scholarshipType", nullableEnum("INTERNAL", "EXTERNAL", "WORK_STUDY"));
 		properties.put("applicationStart", nullable("string"));
 		properties.put("applicationEnd", nullable("string"));
 		properties.put("periodEvidence", nullable("string"));
@@ -141,8 +140,7 @@ public class UnivNoticeLlmParser {
 		properties.put("evidence", Map.of("type", "string"));
 		properties.put("necessity", Map.of("type", "string", "enum", List.of("REQUIRED", "PREFERRED")));
 		properties.put("refLabels", Map.of("type", "array", "items", Map.of("type", "string")));
-		properties.put("operator", Map.of("type", List.of("string", "null"),
-				"enum", asList("GTE", "LTE", "BETWEEN", "EQ", null)));
+		properties.put("operator", nullableEnum("GTE", "LTE", "BETWEEN", "EQ"));
 		properties.put("valueInt", nullable("integer"));
 		properties.put("valueIntMax", nullable("integer"));
 		return properties;
@@ -152,10 +150,22 @@ public class UnivNoticeLlmParser {
 		return Map.of("type", List.of(type, "null"));
 	}
 
-	/** {@code Map.of} 는 null 원소를 허용하지 않아 enum 에 null 을 넣으려면 이쪽이 필요하다. */
-	private static List<Object> asList(Object... values) {
-		return Collections.unmodifiableList(Arrays.asList(values));
+	/**
+	 * 값이 없을 수도 있는 열거 필드.
+	 *
+	 * <p><b>{@code type} 을 같이 쓰지 않는다.</b> {@code {"type":["string","null"],"enum":[...]}} 로
+	 * 두면 API 가 400 으로 거부한다 — {@code Enum value 'INTERNAL' does not match declared type
+	 * '['string','null']'}. 파서가 통째로 실패하던 원인이었다.
+	 *
+	 * <p>{@code enum} 만 두면 허용된 값 자체가 타입을 말해 주므로 {@code type} 이 필요 없다.
+	 * ({@code type} 없는 {@code nullable()} 은 문제없다 — enum 과 결합할 때만 터진다)
+	 */
+	private static Map<String, Object> nullableEnum(String... values) {
+		List<Object> allowed = new java.util.ArrayList<>(Arrays.asList(values));
+		allowed.add(null);
+		return Map.of("enum", Collections.unmodifiableList(allowed));
 	}
+
 
 
 
