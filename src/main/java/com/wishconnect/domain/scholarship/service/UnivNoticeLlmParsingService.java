@@ -180,16 +180,17 @@ public class UnivNoticeLlmParsingService {
 	 * 같은 요청이 같은 지점에서 다시 잘리므로 재시도가 토큰만 태운다. 반면 형식이 깨지거나
 	 * 일시적 오류로 실패한 경우는 모델이 매번 조금씩 다르게 답하므로 한 번 더 부르면 대개 풀린다.
 	 */
-	private String callWithRetry(String noticeTitle, String bodyText, Long rawId) {
+	private String callWithRetry(String noticeTitle, String bodyText, List<String> attachments,
+			Long rawId) {
 		try {
-			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText, attachments));
 		} catch (CustomException e) {
 			if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
 				throw e;
 			}
 			log.info("[UnivLlmParsing] LLM 호출 실패, 1회 재시도합니다. rawId={} reason={}",
 					rawId, e.getErrorCode());
-			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText, attachments));
 		}
 	}
 
@@ -267,7 +268,8 @@ public class UnivNoticeLlmParsingService {
 
 		String response;
 		try {
-			response = callWithRetry(htmlTitle, bodyText, raw.getId());
+			response = callWithRetry(htmlTitle, bodyText,
+					parser.extractAttachments(raw.getRawHtml()), raw.getId());
 		} catch (CustomException e) {
 			String reason = describeLlmFailure(e, extracted);
 			if (!dryRun) {
@@ -335,6 +337,7 @@ public class UnivNoticeLlmParsingService {
 				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle);
 		UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
 				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle);
+		UnivNoticeLlmParser.Submission submission = parser.resolveSubmission(notice, bodyText, noticeTitle);
 		NoticeKind kind = parser.resolveNoticeKind(notice.noticeKind());
 		boolean combined = Boolean.TRUE.equals(notice.combined());
 
@@ -354,8 +357,7 @@ public class UnivNoticeLlmParsingService {
 					parser.resolveAmount(notice.amount()),
 					raw.getSourceUrl(),
 					essay.level(), essay.evidence(), interview.level(), interview.evidence(),
-					kind, combined, trimTo(notice.submissionMethod(), 300),
-					parser.resolveSubmissionChannel(notice.submissionChannel()));
+					kind, combined, submission.method(), submission.channel(), submission.evidence());
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -382,8 +384,9 @@ public class UnivNoticeLlmParsingService {
 						.interviewEvidence(interview.evidence())
 						.noticeKind(kind)
 						.combined(combined)
-						.submissionMethod(trimTo(notice.submissionMethod(), 300))
-						.submissionChannel(parser.resolveSubmissionChannel(notice.submissionChannel()))
+						.submissionMethod(submission.method())
+						.submissionChannel(submission.channel())
+						.submissionEvidence(submission.evidence())
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));

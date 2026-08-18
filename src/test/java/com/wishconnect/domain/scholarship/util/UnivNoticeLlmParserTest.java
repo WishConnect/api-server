@@ -33,7 +33,7 @@ class UnivNoticeLlmParserTest {
 		return notice(null, null, null, List.of(conditions));
 	}
 
-	/** 필드가 19개라 위치로 쓰면 읽기도 고치기도 어렵다. 테스트가 신경 쓰는 것만 인자로 받는다. */
+	/** 필드가 20개라 위치로 쓰면 읽기도 고치기도 어렵다. 테스트가 신경 쓰는 것만 인자로 받는다. */
 	private ParsedNotice notice(String start, String end, String evidence,
 			List<ParsedNotice.Condition> conditions) {
 		return new ParsedNotice(
@@ -41,9 +41,82 @@ class UnivNoticeLlmParserTest {
 				start, end, evidence,              // 신청기간과 그 근거
 				null, null, null,                  // selectionCount · amount · summary
 				null, null,                        // noticeKind · combined
-				null, null,                        // submissionMethod · submissionChannel
+				null, null, null,                  // submissionMethod · submissionChannel · 근거
 				null, null, null, null,            // 자소서·면접 판단과 근거
 				List.of(), conditions);            // documents · conditions
+	}
+
+	// --- v4: 제출방식 근거 · 첨부 · 새 분류 ---
+
+	private ParsedNotice submission(String method, String channel, String evidence) {
+		return new ParsedNotice(
+				"제목", "경희대학교", "INTERNAL",
+				null, null, null,
+				null, null, null,
+				null, null,
+				method, channel, evidence,
+				null, null, null, null,
+				List.of(), List.of());
+	}
+
+	@Test
+	@DisplayName("제출방식 근거가 본문에 없으면 방식·채널을 함께 버린다")
+	void discardsUngroundedSubmission() {
+		// 본문이 첨부뿐인 공고에 "이메일로 서류 접수" 가 지어내진 채 저장된 일이 있었다(3906).
+		var result = parser.resolveSubmission(
+				submission("이메일로 서류 접수", "EMAIL", "이메일로 서류 접수"),
+				"글번호 260210 작성자 장학팀 첨부파일 공고문.docx", null);
+
+		assertThat(result.method()).isNull();
+		assertThat(result.channel()).isNull();
+	}
+
+	@Test
+	@DisplayName("근거가 본문에 있으면 제출방식을 살린다")
+	void keepsGroundedSubmission() {
+		var result = parser.resolveSubmission(
+				submission("이메일 제출(komin78@inu.ac.kr)", "EMAIL", "이메일로 서류제출"),
+				"7. 지원방법 : 이메일(komin78@inu.ac.kr)로 서류제출", null);
+
+		assertThat(result.channel()).isEqualTo(SubmissionChannel.EMAIL);
+		assertThat(result.method()).isEqualTo("이메일 제출(komin78@inu.ac.kr)");
+	}
+
+	@Test
+	@DisplayName("학교를 거쳐야 하는 공고는 THIRD_PARTY 다 — 학생이 직접 못 낸다")
+	void recognizesThirdPartyChannel() {
+		var result = parser.resolveSubmission(
+				submission("학교장 명의 전자공문 제출", "THIRD_PARTY", "학교장 명의 전자공문으로만 신청 가능"),
+				"마. 유의사항: 개인신청은 불가하며, 학교장 명의 전자공문으로만 신청 가능", null);
+
+		assertThat(result.channel()).isEqualTo(SubmissionChannel.THIRD_PARTY);
+	}
+
+	@Test
+	@DisplayName("장학금이 아닌 공고를 가려낸다")
+	void recognizesNonScholarshipNotice() {
+		// 성균관대 장학 게시판에 올라온 VR 실험 참여자 모집·직원 채용(4229·4230).
+		assertThat(parser.resolveNoticeKind("NOT_SCHOLARSHIP")).isEqualTo(NoticeKind.NOT_SCHOLARSHIP);
+	}
+
+	@Test
+	@DisplayName("첨부 파일명을 프롬프트에 함께 보낸다 — 본문이 비어도 자소서 여부가 드러난다")
+	void sendsAttachmentNames() {
+		String html = """
+				<html><body><div class="view_cont">자세한 사항은 붙임파일 확인</div>
+				<a href="/down?id=1">2026년 상반기 사랑나눔 장학생 자기소개서.docx</a>
+				<a href="/down?id=2">개인정보 동의서.hwp</a>
+				<a href="/list">목록</a></body></html>
+				""";
+
+		var attachments = parser.extractAttachments(html);
+		assertThat(attachments)
+				.containsExactly("2026년 상반기 사랑나눔 장학생 자기소개서.docx", "개인정보 동의서.hwp");
+
+		var request = parser.buildRequest("제목", "본문", attachments);
+		assertThat(request.messages().get(0).content())
+				.contains("[첨부]")
+				.contains("사랑나눔 장학생 자기소개서.docx");
 	}
 
 	// --- 본문 추출 ---

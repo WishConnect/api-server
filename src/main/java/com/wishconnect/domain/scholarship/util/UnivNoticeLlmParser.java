@@ -97,7 +97,7 @@ public class UnivNoticeLlmParser {
 	 * 제목 판별 기준과 제목 동봉 · 자소서/면접 판단 · 공지 종류(RECRUITMENT/RESULT/GUIDE) ·
 	 * 통합 공고 · 제출 방식과 경로 · FINANCIAL_AID_TYPE 정의 축소.
 	 */
-	public static final String PROMPT_VERSION = "v3";
+	public static final String PROMPT_VERSION = "v4";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
@@ -122,7 +122,7 @@ public class UnivNoticeLlmParser {
 			"type", "object",
 			"additionalProperties", false,
 			"required", List.of("title", "provider", "scholarshipType", "noticeKind", "combined",
-					"submissionMethod", "submissionChannel", "essayRequirement",
+					"submissionMethod", "submissionChannel", "submissionEvidence", "essayRequirement",
 					"essayEvidence", "interviewRequirement", "interviewEvidence", "applicationStart",
 					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
 					"documents", "conditions"),
@@ -139,11 +139,13 @@ public class UnivNoticeLlmParser {
 		properties.put("selectionCount", nullable("integer"));
 		properties.put("amount", nullable("integer"));
 		properties.put("summary", nullable("string"));
-		properties.put("noticeKind", nullableEnum("RECRUITMENT", "RESULT", "GUIDE"));
+		properties.put("noticeKind",
+				nullableEnum("RECRUITMENT", "RESULT", "GUIDE", "NOT_SCHOLARSHIP"));
 		properties.put("combined", Map.of("type", "boolean"));
 		properties.put("submissionMethod", nullable("string"));
 		properties.put("submissionChannel",
-				nullableEnum("ONLINE", "EMAIL", "POST", "VISIT", "FAX", "MIXED"));
+				nullableEnum("ONLINE", "EMAIL", "POST", "VISIT", "FAX", "MIXED", "THIRD_PARTY"));
+		properties.put("submissionEvidence", nullable("string"));
 		properties.put("essayRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
 		properties.put("essayEvidence", nullable("string"));
 		properties.put("interviewRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
@@ -235,10 +237,11 @@ public class UnivNoticeLlmParser {
 			  "selectionCount": 정수|null,
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
-			  "noticeKind": "RECRUITMENT"|"RESULT"|"GUIDE"|null,
+			  "noticeKind": "RECRUITMENT"|"RESULT"|"GUIDE"|"NOT_SCHOLARSHIP"|null,
 			  "combined": true|false,
 			  "submissionMethod": 문자열|null,
-			  "submissionChannel": "ONLINE"|"EMAIL"|"POST"|"VISIT"|"FAX"|"MIXED"|null,
+			  "submissionChannel": "ONLINE"|"EMAIL"|"POST"|"VISIT"|"FAX"|"MIXED"|"THIRD_PARTY"|null,
+			  "submissionEvidence": 문자열|null,
 			  "essayRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
 			  "essayEvidence": 문자열|null,
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
@@ -253,8 +256,11 @@ public class UnivNoticeLlmParser {
 			- 본문에 근거가 없는 값은 반드시 null 로 둔다. 추측·유추·계산으로 값을 만들지 마라.
 			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.
-			  [제목] 에 기간이 적혀 있으면 그것도 근거로 인정한다 — "모집(6. 22. ~ 7. 24.)" 처럼
-			  제목에만 날짜가 있는 공고가 있다.
+			  본문에 기간이 없으면 <반드시 [제목] 을 확인한다>. 본문을 첨부파일에만 싣고 제목에
+			  마감을 적는 게시판이 있다 — "…선발 안내(~9.18.금 18시, 1학년 대상)".
+			  이때 [제목] 이 유일한 근거이므로 그대로 인용하면 된다.
+			- 조건도 같다. 본문에 자격이 없고 [제목] 에만 있으면([예] "1학년 대상", "대학원생 한정")
+			  제목을 근거로 조건을 넣는다.
 			- 마감일만 있고 시작일이 없으면 applicationStart 만 null 로 둔다.
 			- conditions 의 evidence 도 마찬가지로 본문 문장을 그대로 인용한다. 요약·재작성 금지.
 			  인용할 문장이 없으면 그 조건을 아예 넣지 마라.
@@ -273,7 +279,12 @@ public class UnivNoticeLlmParser {
 			- noticeKind: 이 공지가 무엇인가.
 			  RECRUITMENT  장학생을 모집·선발하는 공고
 			  RESULT       선발 결과·지급 일정 안내 (이미 끝난 전형이라 모집기간이 없는 게 정상)
-			  GUIDE        장학금 자체가 아닌 안내 — 연락처 변경, 계좌 등록, 서류 제출 방법 안내
+			  GUIDE        장학금에 딸린 안내 — 연락처 변경, 계좌 등록, 서류 제출 방법 안내
+			  NOT_SCHOLARSHIP  장학금과 무관한 글. 장학 게시판에 잘못 올라온 것이다 —
+			               연구 실험 참여자 모집, 직원·조교 채용, 행사 접수, 설문 참여.
+			               <돈을 준다고 해서 장학금인 것은 아니다.> 학생의 학업을 지원하는
+			               것이 아니라 노동·참여의 대가라면 장학금이 아니다.
+			               (근로장학금은 장학금이다 — 한국장학재단 사업이고 학적이 요건이다.)
 			- combined: 한 공고에 서로 다른 장학금이 여러 개 실려 있으면 true.
 			  표로 장학금명·신청대상·금액·인원을 나열하는 "통합장학금" 공고가 그렇다.
 			  하나의 장학금을 여러 문단으로 설명한 것은 false 다.
@@ -282,15 +293,29 @@ public class UnivNoticeLlmParser {
 			  마감이 온라인 자정인지 방문 마감인지에 따라 준비가 달라지므로 중요하다.
 			- submissionChannel: 위 방식을 하나로 분류한다.
 			  ONLINE 웹 신청(학교 시스템·구글폼·네이버폼) / EMAIL 이메일 / POST 우편·등기
-			  VISIT 직접 방문 / FAX 팩스 / MIXED 둘 이상을 함께 요구
+			  VISIT 직접 방문 / FAX 팩스 / MIXED 서로 다른 경로를 둘 이상 요구
+			  THIRD_PARTY 학생이 직접 못 내고 학교·기관을 거친다 —
+			              "학교장 명의 전자공문으로만 신청 가능", "학과 추천을 거쳐 제출"
 			  "시스템에서 신청 후 서류는 방문 제출" 처럼 섞이면 MIXED 다.
+			  <온라인 신청 + 온라인 업로드는 경로가 하나이므로 ONLINE 이다.> MIXED 가 아니다.
+			- submissionEvidence: submissionMethod/submissionChannel 의 근거가 된 본문 문장을
+			  그대로 인용한다. 인용할 문장이 없으면 <셋 다 null 로 둔다>. 본문이 없는 공고에
+			  "이메일로 서류 접수" 를 지어낸 일이 있었다.
 			- documents: 제출서류 이름만. 부수(1부)·설명·괄호 주석은 제외한다.
+			  [첨부] 의 파일명도 근거로 쓴다 — 서식을 첨부로 주는 게시판이 많다.
 			- essayRequirement / interviewRequirement: 아래 넷 중 하나다.
 			  REQUIRED     모두가 내야 한다 — "자기소개서 제출", "면접전형 진행"
 			  CONDITIONAL  일부만 — "서류 합격자에 한해 면접", "1차 통과자만 자기소개서 제출"
 			  NOT_REQUIRED 공고가 없다고 밝힌 경우 — "면접 없이 서류로만 선발"
-			  null         공고에 아무 언급이 없을 때. 없다고 단정하지 마라.
+			  null         자료가 없어 판단할 수 없을 때만. 본문·제목·첨부가 모두 비어 있는 경우다.
 			  자기소개서는 이름이 달라도 같은 것으로 본다 — 학업계획서·수학계획서·지원동기서·에세이.
+			  <읽을 본문이 있는데 아무 언급이 없으면 NOT_REQUIRED 다.> null 로 두지 마라.
+			  선발기준·평가항목·제출서류 목록 안에 섞여 있어도 근거로 인정한다.
+			    "선발기준 : 서류평가 50%, 면접 50%"            → 면접 REQUIRED
+			    "면접 불참 시 선발에서 제외"                    → 면접 REQUIRED
+			    "선발기준 : 평점, 소득분위, 자기소개서, 면접 등" → 둘 다 REQUIRED
+			    "제출서류 : 지원신청서 및 자기소개서"           → 자소서 REQUIRED
+			    [첨부] "…장학생 자기소개서.hwp"                 → 자소서 REQUIRED
 			- essayEvidence / interviewEvidence: 위 판단의 근거가 된 본문 문장을 그대로 인용한다.
 			  값을 REQUIRED·CONDITIONAL·NOT_REQUIRED 로 정했으면 반드시 채운다. 인용할 문장이
 			  없으면 판단을 null 로 되돌린다.
@@ -310,6 +335,9 @@ public class UnivNoticeLlmParser {
 			    "국가장학금 신청자"      → RESTRICTION (신청 절차를 밟아야 지원 가능)
 			    "등록금 완납자"          → RESTRICTION
 			    "국가근로장학금 신청자"   → RESTRICTION
+			    "학자금대출 이용자"      → RESTRICTION
+			    "기숙사 입사자"          → RESTRICTION
+			  <학생이 충족해야 하는 상태는 전부 자격이다.> 장학금이 무엇을 지원하는지만 여기 온다.
 			  이 유형은 언제나 우대로 저장되므로, 필수 요건을 여기 넣으면 자격 없는 학생이 통과한다.
 
 			necessity: 자격요건이면 REQUIRED, 우대사항·가산점이면 PREFERRED.
@@ -339,6 +367,12 @@ public class UnivNoticeLlmParser {
 
 			조건 규칙:
 			- '지원 자격'에 해당하는 것만 넣는다. 제출서류·문의처·지급방법·선발일정은 조건이 아니다.
+			- <근무조건도 조건이 아니다.> 근로·봉사 장학금 공고의 절반이 여기서 틀렸다.
+			  시급·급여, 근무시간·근로시간, 근무기간, 근무지·근무장소, 업무내용·직무내용,
+			  선발인원 — 전부 넣지 마라. "누가 지원할 수 있는가" 가 아니라 "뽑히면 무엇을 하는가" 다.
+			    "근무기간 : 2026.9.1.~2027.2.28."     → 넣지 않는다
+			    "시급 10,320원, 주 최대 20시간"        → 넣지 않는다
+			    "물리학과 재학생"                       → MAJOR_FIELD (이건 자격이다)
 			- 한 문장에 조건이 둘이면(예: "3학년 이상, 평점 3.0 이상") 유형별로 나눠 각각 넣는다.
 			  이때 evidence 는 각 조건이 포함된 본문 문장을 인용하면 된다.
 			- 같은 조건을 여러 번 넣지 마라. 최대 12개.
@@ -433,11 +467,31 @@ public class UnivNoticeLlmParser {
 	 *     "…무상기숙사 장학생 모집(6. 22. ~ 7. 24.)" 처럼. 안 보내면 그 정보도 함께 버린다.
 	 */
 	public LlmChatRequest buildRequest(String noticeTitle, String bodyText) {
-		String message = (noticeTitle == null || noticeTitle.isBlank())
-				? "[본문]\n" + bodyText
-				: "[제목]\n" + noticeTitle + "\n\n[본문]\n" + bodyText;
+		return buildRequest(noticeTitle, bodyText, List.of());
+	}
+
+	/**
+	 * @param attachments 첨부파일 이름들. 본문을 첨부에만 싣는 게시판에서는 이게 유일한 단서다.
+	 */
+	public LlmChatRequest buildRequest(String noticeTitle, String bodyText, List<String> attachments) {
+		StringBuilder message = new StringBuilder();
+		if (noticeTitle != null && !noticeTitle.isBlank()) {
+			message.append("[제목]\n").append(noticeTitle).append("\n\n");
+		}
+		message.append("[본문]\n").append(bodyText);
+		if (attachments != null && !attachments.isEmpty()) {
+			message.append("\n\n[첨부]\n").append(String.join("\n", attachments));
+		}
 		return LlmChatRequest.structured(LlmModel.PARSING, SYSTEM_PROMPT,
-				List.of(LlmMessage.user(message)), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
+				List.of(LlmMessage.user(message.toString())), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
+	}
+
+	/** 첨부파일 이름들. 본문이 비어 있는 공고에서 자소서 여부가 여기서 갈린다. */
+	public List<String> extractAttachments(String rawHtml) {
+		if (rawHtml == null || rawHtml.isBlank()) {
+			return List.of();
+		}
+		return NoticeHtmlExtractor.attachmentNames(Jsoup.parse(rawHtml));
 	}
 
 	/**
@@ -480,6 +534,86 @@ public class UnivNoticeLlmParser {
 	}
 
 	/** 공지 종류. 알 수 없는 값이 와도 터지지 않고 null 로 둔다. */
+	/** 컬럼 길이를 넘지 않게 자른다. submission_method 는 VARCHAR(300) 이다. */
+	private static String trimTo(String value, int max) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		String trimmed = value.trim();
+		return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
+	}
+
+	/** 제출방식 세 값. 근거가 본문에 없으면 셋 다 null 이다. */
+	public record Submission(String method, SubmissionChannel channel, String evidence) {
+	}
+
+	/**
+	 * 제출방식을 <b>근거와 함께</b> 확정한다.
+	 *
+	 * <p>기간·조건·자소서에는 인용 대조가 있는데 제출방식만 없었다. 그래서 본문이 없는 공고
+	 * (첨부만 있는 한국외대 게시판)에 "이메일로 서류 접수" 가 지어내진 채 저장됐다 — 원문에
+	 * '이메일'·'@' 가 한 번도 나오지 않는 공고였다.
+	 *
+	 * <p>전수조사에서 299건 중 296건은 정확했다. 문제는 정확도가 아니라, 틀렸을 때 막을 것이
+	 * 없다는 점이다. 근거가 본문에 없으면 방식·채널을 함께 버린다 — 값이 없는 것보다 틀린
+	 * 안내가 나쁘다. 우편 마감을 온라인 자정으로 알면 지원 자체를 못 한다.
+	 */
+	public Submission resolveSubmission(ParsedNotice notice, String bodyText, String noticeTitle) {
+		String method = trimTo(notice.submissionMethod(), 300);
+		SubmissionChannel channel = resolveSubmissionChannel(notice.submissionChannel());
+		if (method == null && channel == null) {
+			return new Submission(null, null, null);
+		}
+		String evidence = notice.submissionEvidence();
+		if (!isSubmissionEvidenceGrounded(evidence, bodyText)
+				&& !isSubmissionEvidenceGrounded(evidence, noticeTitle)) {
+			log.warn("[UnivLlmParser] 제출방식 근거 미확인 → 폐기. evidence={} method={}", evidence, method);
+			return new Submission(null, null, null);
+		}
+		return new Submission(method, channel, evidence);
+	}
+
+	/** 제출 경로를 결정짓는 낱말. 이게 본문에 없으면 그 경로를 주장할 근거가 없다. */
+	private static final java.util.regex.Pattern SUBMISSION_ANCHOR = java.util.regex.Pattern.compile(
+			"이메일|메일|우편|등기|택배|방문|팩스|FAX|온라인|시스템|홈페이지|누리집|공문|[\\w.+-]+@[\\w.-]+",
+			java.util.regex.Pattern.CASE_INSENSITIVE);
+
+	/**
+	 * 제출방식 인용문이 본문에 근거를 두는지 본다.
+	 *
+	 * <p>문장 전체를 대조하지 않는다. 기간에서 겪은 것과 같은 이유다 — 모델이 조사·어미를
+	 * 다듬어 인용하는 건 자연스러운 일인데, 그걸로 폐기하면 멀쩡한 값이 대량으로 사라진다.
+	 *
+	 * <pre>
+	 *   본문      "7. 지원방법 : 이메일(komin78@inu.ac.kr)로 서류제출"
+	 *   LLM 인용  "이메일로 서류제출"          ← 주소를 빼고 줄여 씀
+	 * </pre>
+	 *
+	 * <p>대신 <b>경로를 결정짓는 낱말</b>이 본문에 있는지 본다. "이메일" 이라고 주장하려면
+	 * 본문 어딘가에 이메일이 나와야 한다. 이것만으로 3906 이 걸린다 — 본문에 '이메일'·'@' 가
+	 * 한 번도 나오지 않는 공고에 "이메일로 서류 접수" 가 저장돼 있었다.
+	 *
+	 * <p>문의처 이메일만 있는 공고를 이메일 제출로 오인할 여지는 남는다. 그건 원래도 있던
+	 * 위험이고, 여기서 더 조이면 정확했던 296건을 같이 버린다.
+	 */
+	static boolean isSubmissionEvidenceGrounded(String evidence, String bodyText) {
+		if (evidence == null || evidence.isBlank() || bodyText == null || bodyText.isBlank()) {
+			return false;
+		}
+		if (isEvidenceGrounded(evidence, bodyText)) {
+			return true;
+		}
+		java.util.regex.Matcher anchors = SUBMISSION_ANCHOR.matcher(evidence);
+		boolean found = false;
+		while (anchors.find()) {
+			found = true;
+			if (!bodyText.toLowerCase().contains(anchors.group().toLowerCase())) {
+				return false;   // 주장한 경로가 본문에 없다 = 지어낸 것
+			}
+		}
+		return found;
+	}
+
 	public NoticeKind resolveNoticeKind(String value) {
 		if (value == null || value.isBlank()) {
 			return null;
