@@ -36,7 +36,25 @@ public record UnivNoticeProperties(List<Site> sites) {
 	public record Site(
 			String code, String provider, String source, String listUrl,
 			String articlePath, String linkPattern, String detailTemplate, String listParam,
-			String titleSelector, String bodySelector, Integer maxArticles) {
+			String titleSelector, String bodySelector, String includeCategory, Integer maxArticles) {
+
+		/**
+		 * 이 게시판이 장학 전용이 아니면, 상세 페이지의 분류가 이 말을 포함할 때만 수집한다.
+		 *
+		 * <p>연세대는 한 게시판에 장학·학사·일반이 섞여 올라온다. 목록 URL 에 분류 필터를 걸어
+		 * 뒀지만 그건 목록에만 적용되고, 상단 고정 공지 등은 필터를 무시하고 노출된다.
+		 * 실제로 수집분 42건 중 18건이 셔틀버스 시간표·수강신청 안내 같은 것이었다.
+		 *
+		 * <p>지정하지 않으면 분류를 보지 않는다(장학 전용 게시판이 대부분이다).
+		 */
+		public boolean acceptsCategory(String category) {
+			if (!StringUtils.hasText(includeCategory)) {
+				return true;
+			}
+			// 분류를 못 읽었으면 거르지 않는다. 스킨이 바뀌어 못 읽게 됐을 때
+			// 멀쩡한 공지까지 통째로 사라지는 쪽이 더 나쁘다.
+			return !StringUtils.hasText(category) || category.contains(includeCategory);
+		}
 
 		/** 목록에서 게시글 ID를 뽑는 정규식. 지정 없으면 articlePath 기반 artclView 패턴. */
 		public String effectiveLinkPattern() {

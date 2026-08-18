@@ -166,6 +166,20 @@ public class UnivNoticeCollector {
 		String title = extractTitle(doc, site.titleSelector());
 		String bodyText = extractBody(doc, site.bodySelector());
 
+		// 장학 아닌 공지는 여기서 걸러 낸다. 원본은 SKIPPED 로 남겨야 다음 배치가 또 받아오지 않는다.
+		String category = extractCategory(doc);
+		if (!site.acceptsCategory(category)) {
+			rawScholarshipRepository.save(RawScholarship.builder()
+					.source(site.source())
+					.sourceId(site.sourceIdOf(articleId))
+					.sourceUrl(detailUrl)
+					.rawHtml(doc.outerHtml())
+					.parseStatus(ParseStatus.SKIPPED)
+					.parseError("장학 분류가 아닌 공지입니다" + (category == null ? "." : "(" + category + ")."))
+					.build());
+			return false;
+		}
+
 		Period period = parsePeriod(title + " " + bodyText, LocalDate.now().getYear());
 		boolean closed = period != null && period.end() != null
 				&& period.end().isBefore(LocalDateTime.now());
@@ -334,6 +348,22 @@ public class UnivNoticeCollector {
 			return h2.text().trim();
 		}
 		return doc.title().trim();
+	}
+
+	/**
+	 * 상세 페이지의 분류 표기. 못 찾으면 null.
+	 *
+	 * <p>연세대 등이 쓰는 스킨은 제목 아래 목록에 넣어 둔다 —
+	 * {@code <li class="cl"><span class="hidden">분류</span> [학사]</li>}.
+	 * "분류" 라는 글자는 화면에 안 보이는 라벨이라 자식 요소를 뺀 직접 텍스트만 읽는다.
+	 */
+	static String extractCategory(Document doc) {
+		Element item = doc.selectFirst(".detail li.cl, .view .detail li.cl");
+		if (item == null) {
+			return null;
+		}
+		String own = item.ownText().trim();
+		return own.isEmpty() ? null : own;
 	}
 
 	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
