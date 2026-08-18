@@ -127,6 +127,8 @@ scholarship:
           # 학사·일반 공지가 섞인 통합 게시판이라 장학 분류(findClSeq=257)만 수집한다.
           list-url: https://www.yonsei.ac.kr/bbs/sc/58/artclList.do?findClSeq=257
           article-path: /bbs/sc/58/
+          # 목록 필터(findClSeq)는 상단 고정 공지에 안 먹는다. 상세의 분류 표기로 한 번 더 거른다.
+          include-category: 장학
           max-articles: 10
         - code: hufs
           provider: 한국외국어대학교
