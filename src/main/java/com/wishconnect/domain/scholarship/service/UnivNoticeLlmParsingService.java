@@ -75,6 +75,10 @@ public class UnivNoticeLlmParsingService {
 			Pattern.CASE_INSENSITIVE);
 	private static final int MAX_DOCUMENTS = 12;
 
+	/** 본문을 못 뽑아 LLM 을 부르지 않은 경우의 이력용 자리표시. */
+	private static final UnivNoticeLlmParser.ExtractedBody EMPTY_BODY =
+			new UnivNoticeLlmParser.ExtractedBody("", false, 0);
+
 	private final RawScholarshipRepository rawScholarshipRepository;
 	// 포스터는 수집기가 아니라 여기서 붙인다 — 수집 시점에는 아직 scholarship 이 없다.
 	private final ImageStorageService imageStorageService;
@@ -219,6 +223,8 @@ public class UnivNoticeLlmParsingService {
 					// 본문이 포스터뿐이라 alt 로 대체한 건 나중에 OCR 대상이 된다.
 					.bodyFromImageAlt(parser.isBodyFromImageAlt(raw.getRawHtml()))
 					.bodyLength(extracted.originalLength())
+					// 모델이 실제로 본 글. 검증할 때 원본을 다시 벗겨 재현하면 오진한다.
+					.bodyText(extracted.text())
 					.parsedJson(parsedJson)
 					.rawResponse(rawResponse)
 					.errorMessage(message)
@@ -242,6 +248,10 @@ public class UnivNoticeLlmParsingService {
 			ParseStatus status = imageOnly ? ParseStatus.IMAGE_ONLY : ParseStatus.SKIPPED;
 			if (!dryRun) {
 				raw.markSkipped(reason, status);
+				// 건너뛴 것도 "이 판으로 처리했다"는 사실이다. 남기지 않으면 프롬프트 버전으로
+				// 대상을 고를 때 매번 다시 뽑혀, 100칸 중 절반을 건너뛰기만 하다 끝난다.
+				// 실제로 다섯 배치에서 500칸을 쓰고 397건만 처리했다.
+				saveLog(raw, EMPTY_BODY, status, null, null, reason);
 			}
 			return new Outcome(status,
 					item(raw, status.name(), null, beforePeriod, reason));
