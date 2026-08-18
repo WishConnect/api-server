@@ -22,6 +22,7 @@ class UnivNoticeCollectorTest {
 				"article.offset",
 				".title",
 				".content",
+				null,
 				5);
 
 		assertThat(site.listPageUrl(1)).contains("article.offset=0");
@@ -60,6 +61,7 @@ class UnivNoticeCollectorTest {
 				"article.offset",
 				".title",
 				".content",
+				null,
 				5);
 
 		assertThat(site.detailUrl("https://www.hongik.ac.kr",
@@ -85,6 +87,7 @@ class UnivNoticeCollectorTest {
 				"paged",
 				".bg-white h1, h1",
 				".bg-white, .entry-content",
+				null,
 				10);
 		String href = "https://scatch.ssu.ac.kr/%ea%b3%b5%ec%a7%80%ec%82%ac%ed%95%ad/"
 				+ "?f&category=%EC%9E%A5%ED%95%99&paged=1&slug="
@@ -388,5 +391,59 @@ class UnivNoticeCollectorTest {
 	@DisplayName("기간 표기가 없으면 null")
 	void returnsNullWhenNoPeriod() {
 		assertThat(UnivNoticeCollector.parsePeriod("장학생 선발 안내", 2026)).isNull();
+	}
+
+	@Test
+	@DisplayName("장학 아닌 공지는 상세의 분류로 걸러낸다 — 목록 필터는 고정 공지에 안 먹는다")
+	void filtersOutNonScholarshipByCategory() {
+		// 연세대 스킨: 제목 아래 목록에 분류를 넣는다. "분류" 라벨은 화면에 안 보이는 글자다.
+		String detail = """
+				<html><body><div class="view viewCont"><div class="title">
+				  <strong>2026학년도 여름방학 셔틀버스 운행 시간표</strong>
+				  <ul class="detail">
+				    <li class="cl"><span class="hidden">분류</span> [일반]</li>
+				    <li><span>작성자</span> 총무팀</li>
+				  </ul>
+				</div></div></body></html>
+				""";
+		var site = siteWithCategory("장학");
+
+		assertThat(site.acceptsCategory(
+				UnivNoticeCollector.extractCategory(org.jsoup.Jsoup.parse(detail)))).isFalse();
+	}
+
+	@Test
+	@DisplayName("장학 공지는 통과시킨다")
+	void keepsScholarshipCategory() {
+		String detail = """
+				<html><body><div class="view viewCont"><div class="title">
+				  <strong>2026-2 교내장학 신청 안내</strong>
+				  <ul class="detail"><li class="cl"><span class="hidden">분류</span> [장학]</li></ul>
+				</div></div></body></html>
+				""";
+
+		assertThat(siteWithCategory("장학").acceptsCategory(
+				UnivNoticeCollector.extractCategory(org.jsoup.Jsoup.parse(detail)))).isTrue();
+	}
+
+	@Test
+	@DisplayName("분류를 못 읽으면 거르지 않는다 — 스킨이 바뀌었을 때 전부 사라지는 게 더 나쁘다")
+	void keepsNoticeWhenCategoryIsUnreadable() {
+		String detail = "<html><body><div class='artclView'>분류 표기가 없는 스킨</div></body></html>";
+
+		assertThat(siteWithCategory("장학").acceptsCategory(
+				UnivNoticeCollector.extractCategory(org.jsoup.Jsoup.parse(detail)))).isTrue();
+	}
+
+	@Test
+	@DisplayName("분류를 지정하지 않은 게시판은 그대로 다 받는다 — 장학 전용 게시판이 대부분이다")
+	void doesNotFilterWhenNoCategoryConfigured() {
+		assertThat(siteWithCategory(null).acceptsCategory("[일반]")).isTrue();
+	}
+
+	private UnivNoticeProperties.Site siteWithCategory(String includeCategory) {
+		return new UnivNoticeProperties.Site("yonsei", "연세대학교", "UNIV_YONSEI",
+				"https://example.com/list", "/bbs/sc/58/", null, null, null,
+				null, null, includeCategory, 10);
 	}
 }
