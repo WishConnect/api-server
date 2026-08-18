@@ -8,7 +8,9 @@ import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.NoticeKind;
 import com.wishconnect.domain.scholarship.entity.RequirementLevel;
+import com.wishconnect.domain.scholarship.entity.SubmissionChannel;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -107,7 +109,8 @@ public class UnivNoticeLlmParser {
 	private static final Map<String, Object> RESPONSE_SCHEMA = Map.of(
 			"type", "object",
 			"additionalProperties", false,
-			"required", List.of("title", "provider", "scholarshipType", "essayRequirement",
+			"required", List.of("title", "provider", "scholarshipType", "noticeKind", "combined",
+					"submissionMethod", "submissionChannel", "essayRequirement",
 					"essayEvidence", "interviewRequirement", "interviewEvidence", "applicationStart",
 					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
 					"documents", "conditions"),
@@ -124,6 +127,11 @@ public class UnivNoticeLlmParser {
 		properties.put("selectionCount", nullable("integer"));
 		properties.put("amount", nullable("integer"));
 		properties.put("summary", nullable("string"));
+		properties.put("noticeKind", nullableEnum("RECRUITMENT", "RESULT", "GUIDE"));
+		properties.put("combined", Map.of("type", "boolean"));
+		properties.put("submissionMethod", nullable("string"));
+		properties.put("submissionChannel",
+				nullableEnum("ONLINE", "EMAIL", "POST", "VISIT", "FAX", "MIXED"));
 		properties.put("essayRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
 		properties.put("essayEvidence", nullable("string"));
 		properties.put("interviewRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
@@ -215,6 +223,10 @@ public class UnivNoticeLlmParser {
 			  "selectionCount": 정수|null,
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
+			  "noticeKind": "RECRUITMENT"|"RESULT"|"GUIDE"|null,
+			  "combined": true|false,
+			  "submissionMethod": 문자열|null,
+			  "submissionChannel": "ONLINE"|"EMAIL"|"POST"|"VISIT"|"FAX"|"MIXED"|null,
 			  "essayRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
 			  "essayEvidence": 문자열|null,
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
@@ -246,6 +258,20 @@ public class UnivNoticeLlmParser {
 			- amount: 1인당 지급액(원). 사업 예산 총액이나 누적 지원 실적은 넣지 마라.
 			- selectionCount: 선발 인원. 지원자 수·경쟁률은 넣지 마라.
 			- summary: 한 문장(80자 이내). 본문 내용만으로 쓴다.
+			- noticeKind: 이 공지가 무엇인가.
+			  RECRUITMENT  장학생을 모집·선발하는 공고
+			  RESULT       선발 결과·지급 일정 안내 (이미 끝난 전형이라 모집기간이 없는 게 정상)
+			  GUIDE        장학금 자체가 아닌 안내 — 연락처 변경, 계좌 등록, 서류 제출 방법 안내
+			- combined: 한 공고에 서로 다른 장학금이 여러 개 실려 있으면 true.
+			  표로 장학금명·신청대상·금액·인원을 나열하는 "통합장학금" 공고가 그렇다.
+			  하나의 장학금을 여러 문단으로 설명한 것은 false 다.
+			- submissionMethod: 어떻게 내는가. 온라인 신청이면 그 시스템 이름을, 우편·방문 제출이면
+			  그 사실과 도착 기준을 적는다. 예: "우편·방문 접수(7.30 오전 10:00 도착분에 한함)".
+			  마감이 온라인 자정인지 방문 마감인지에 따라 준비가 달라지므로 중요하다.
+			- submissionChannel: 위 방식을 하나로 분류한다.
+			  ONLINE 웹 신청(학교 시스템·구글폼·네이버폼) / EMAIL 이메일 / POST 우편·등기
+			  VISIT 직접 방문 / FAX 팩스 / MIXED 둘 이상을 함께 요구
+			  "시스템에서 신청 후 서류는 방문 제출" 처럼 섞이면 MIXED 다.
 			- documents: 제출서류 이름만. 부수(1부)·설명·괄호 주석은 제외한다.
 			- essayRequirement / interviewRequirement: 아래 넷 중 하나다.
 			  REQUIRED     모두가 내야 한다 — "자기소개서 제출", "면접전형 진행"
@@ -414,6 +440,30 @@ public class UnivNoticeLlmParser {
 		return new Requirement(parsed, evidence.replaceAll("\\s+", " ").trim());
 	}
 
+	/** 제출 경로. 알 수 없는 값이 와도 터지지 않고 null 로 둔다. */
+	public SubmissionChannel resolveSubmissionChannel(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return SubmissionChannel.valueOf(value.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
+	/** 공지 종류. 알 수 없는 값이 와도 터지지 않고 null 로 둔다. */
+	public NoticeKind resolveNoticeKind(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return NoticeKind.valueOf(value.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
 	/** 자소서·면접 판단과 그 근거. */
 	public record Requirement(RequirementLevel level, String evidence) {
 		static Requirement unknown() {
@@ -488,7 +538,7 @@ public class UnivNoticeLlmParser {
 		if (end == null) {
 			return Optional.empty();
 		}
-		if (!isEvidenceGrounded(notice.periodEvidence(), bodyText)) {
+		if (!isPeriodEvidenceGrounded(notice.periodEvidence(), bodyText)) {
 			log.warn("[UnivLlmParser] 기간 근거 미확인 → 기간 폐기. evidence={}", notice.periodEvidence());
 			return Optional.empty();
 		}
@@ -518,6 +568,45 @@ public class UnivNoticeLlmParser {
 	 * 그것까지 불일치로 보면 정상 추출도 버려지기 때문이다. 반대로 인용문 자체가 없으면
 	 * 근거 없이 지어낸 것으로 간주한다.
 	 */
+	/**
+	 * 기간 인용문의 <b>날짜</b>가 본문에 있는지 본다.
+	 *
+	 * <p>조건과 달리 문장 전체를 대조하지 않는다. 실제로 이런 일이 있었다.
+	 *
+	 * <pre>
+	 *   본문      "접수마감 : ~2026.07.30(목) 오전 10:00 도착분에 한함"
+	 *   LLM 인용  "~2026.07.30(목) 오전 10:00까지"
+	 * </pre>
+	 *
+	 * 뜻은 같은데 끝만 바꿔 써서 대조에 실패했고, 멀쩡한 마감일이 버려졌다. 조사·어미를 다듬는 건
+	 * 모델이 자연스럽게 하는 일이라 이걸로 폐기하면 손실이 크다.
+	 *
+	 * <p>날짜는 지어내기 어렵고 틀리면 바로 드러난다. 그래서 <b>날짜만</b> 본문에 있으면 인정한다.
+	 * 조건({@code evidence})은 문장 전체의 의미가 중요하므로 지금 규칙을 그대로 둔다.
+	 */
+	static boolean isPeriodEvidenceGrounded(String evidence, String bodyText) {
+		if (evidence == null || evidence.isBlank() || bodyText == null) {
+			return false;
+		}
+		if (isEvidenceGrounded(evidence, bodyText)) {
+			return true;
+		}
+		java.util.regex.Matcher dates = EVIDENCE_DATE.matcher(evidence);
+		String normalizedBody = normalizeForMatch(bodyText);
+		boolean found = false;
+		while (dates.find()) {
+			found = true;
+			if (!normalizedBody.contains(normalizeForMatch(dates.group()))) {
+				return false;   // 인용에 있는 날짜가 본문에 없다 = 지어낸 것
+			}
+		}
+		return found;
+	}
+
+	/** 인용문에서 날짜를 집는다. "2026.07.30", "2026-07-30", "2026년 7월 30일" */
+	private static final java.util.regex.Pattern EVIDENCE_DATE = java.util.regex.Pattern.compile(
+			"\\d{4}\\s*[.\\-년]\\s*\\d{1,2}\\s*[.\\-월]\\s*\\d{1,2}");
+
 	static boolean isEvidenceGrounded(String evidence, String bodyText) {
 		if (evidence == null || evidence.isBlank() || bodyText == null) {
 			return false;
