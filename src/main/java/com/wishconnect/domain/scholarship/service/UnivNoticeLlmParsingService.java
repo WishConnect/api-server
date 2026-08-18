@@ -160,16 +160,16 @@ public class UnivNoticeLlmParsingService {
 	 * 같은 요청이 같은 지점에서 다시 잘리므로 재시도가 토큰만 태운다. 반면 형식이 깨지거나
 	 * 일시적 오류로 실패한 경우는 모델이 매번 조금씩 다르게 답하므로 한 번 더 부르면 대개 풀린다.
 	 */
-	private String callWithRetry(String bodyText, Long rawId) {
+	private String callWithRetry(String noticeTitle, String bodyText, Long rawId) {
 		try {
-			return llmClient.chat(parser.buildRequest(bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
 		} catch (CustomException e) {
 			if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
 				throw e;
 			}
 			log.info("[UnivLlmParsing] LLM 호출 실패, 1회 재시도합니다. rawId={} reason={}",
 					rawId, e.getErrorCode());
-			return llmClient.chat(parser.buildRequest(bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
 		}
 	}
 
@@ -235,9 +235,11 @@ public class UnivNoticeLlmParsingService {
 			log.info("[UnivLlmParsing] 본문이 잘렸습니다. rawId={} 원본={}자", raw.getId(), extracted.originalLength());
 		}
 
+		String htmlTitle = parser.extractTitle(raw.getRawHtml()).orElse(null);
+
 		String response;
 		try {
-			response = callWithRetry(bodyText, raw.getId());
+			response = callWithRetry(htmlTitle, bodyText, raw.getId());
 		} catch (CustomException e) {
 			String reason = describeLlmFailure(e, extracted);
 			if (!dryRun) {
@@ -261,7 +263,8 @@ public class UnivNoticeLlmParsingService {
 
 		ParsedNotice notice = maybeNotice.get();
 		Optional<UnivNoticeLlmParser.Period> period = parser.resolvePeriod(notice, bodyText);
-		String title = firstNonBlank(notice.title(), fallbackTitle(raw));
+		// LLM 이 제목을 못 냈으면 게시판에서 뽑은 제목을 쓴다. 출처·번호로 만든 이름은 마지막 수단이다.
+		String title = firstNonBlank(notice.title(), htmlTitle, fallbackTitle(raw));
 		String afterPeriod = period.map(p -> format(p.start()) + " ~ " + format(p.end())).orElse(null);
 		String note = period.isEmpty() ? "기간 미확보(근거 없음·라벨 불일치·범위 초과 중 하나)" : null;
 
@@ -438,6 +441,7 @@ public class UnivNoticeLlmParsingService {
 	}
 
 	/** LLM 이 제목을 못 뽑은 경우의 최후 수단. 제목은 NOT NULL 이라 비울 수 없다. */
+	/** 마지막 수단. 여기까지 오면 사용자에게 "UNIV_KONKUK 공고 1200120" 이 보인다. */
 	private static String fallbackTitle(RawScholarship raw) {
 		return raw.getSource() + " 공고 " + raw.getSourceId();
 	}
@@ -447,11 +451,16 @@ public class UnivNoticeLlmParsingService {
 		return cleaned.length() > 490 ? cleaned.substring(0, 490) : cleaned;
 	}
 
-	private static String firstNonBlank(String value, String fallback) {
-		return value != null && !value.isBlank() ? value.trim() : fallback;
+	/** 앞에서부터 비어 있지 않은 첫 값. 제목은 LLM → 게시판 → 출처·번호 순으로 떨어진다. */
+	private static String firstNonBlank(String... values) {
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value.trim();
+			}
+		}
+		return null;
 	}
 
-	/** 수집기와 같은 방식으로 만든다. 재파싱이 아닌 신규 저장에서만 쓴다. */
 	/**
 	 * 이 공지가 <b>단독으로</b> 쓰는 장학금 행. 다른 공지와 공유 중이면 null 을 내 새 행을 만들게 한다.
 	 *

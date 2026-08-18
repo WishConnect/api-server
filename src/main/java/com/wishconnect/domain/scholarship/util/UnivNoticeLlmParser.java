@@ -219,6 +219,8 @@ public class UnivNoticeLlmParser {
 			- 본문에 근거가 없는 값은 반드시 null 로 둔다. 추측·유추·계산으로 값을 만들지 마라.
 			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.
+			  [제목] 에 기간이 적혀 있으면 그것도 근거로 인정한다 — "모집(6. 22. ~ 7. 24.)" 처럼
+			  제목에만 날짜가 있는 공고가 있다.
 			- 마감일만 있고 시작일이 없으면 applicationStart 만 null 로 둔다.
 			- conditions 의 evidence 도 마찬가지로 본문 문장을 그대로 인용한다. 요약·재작성 금지.
 			  인용할 문장이 없으면 그 조건을 아예 넣지 마라.
@@ -228,7 +230,9 @@ public class UnivNoticeLlmParser {
               근무기간, 근로기간, 장학금 지급기간, 서류 유효기간, 심사기간, 발표일, 게시기간.
 			- scholarshipType: 근로·인턴 대가로 지급되면 WORK_STUDY, 외부 재단·기관이 주면 EXTERNAL,
 			  대학이 자체 재원으로 주면 INTERNAL.
-			- provider: EXTERNAL 이면 재단·기관명, 그 외에는 대학명.
+			- title: 장학금 이름이 드러나게. 입력의 [제목] 을 그대로 쓰되 게시판 말머리
+			  ([교외], [교내], ★[필독], (재공고) 같은 분류·강조 표시)는 뺀다. [제목] 이 없으면
+			  본문 첫머리에서 찾는다. 그래도 없을 때만 null 이다.
 			- amount: 1인당 지급액(원). 사업 예산 총액이나 누적 지원 실적은 넣지 마라.
 			- selectionCount: 선발 인원. 지원자 수·경쟁률은 넣지 마라.
 			- summary: 한 문장(80자 이내). 본문 내용만으로 쓴다.
@@ -348,9 +352,28 @@ public class UnivNoticeLlmParser {
 	}
 
 	/** 파싱 요청을 조립한다. 모델은 PARSING 프로필(기본 Haiku)을 쓴다. */
-	public LlmChatRequest buildRequest(String bodyText) {
+	/**
+	 * @param noticeTitle 게시판에서 뽑은 공고 제목. 없으면 null.
+	 *
+	 *     <p>제목을 따로 보내는 이유가 있다. 본문 영역만 정확히 잘라 보내게 되면서
+	 *     <b>제목이 통째로 빠지는 게시판</b>이 생겼다(건국대). LLM 이 제목을 못 낸 게 아니라
+	 *     볼 수가 없었던 것이다. 게다가 제목에 기간이 들어 있는 경우가 많다 —
+	 *     "…무상기숙사 장학생 모집(6. 22. ~ 7. 24.)" 처럼. 안 보내면 그 정보도 함께 버린다.
+	 */
+	public LlmChatRequest buildRequest(String noticeTitle, String bodyText) {
+		String message = (noticeTitle == null || noticeTitle.isBlank())
+				? "[본문]\n" + bodyText
+				: "[제목]\n" + noticeTitle + "\n\n[본문]\n" + bodyText;
 		return LlmChatRequest.structured(LlmModel.PARSING, SYSTEM_PROMPT,
-				List.of(LlmMessage.user(bodyText)), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
+				List.of(LlmMessage.user(message)), PARSER_MAX_TOKENS, RESPONSE_SCHEMA);
+	}
+
+	/** 게시판에서 공고 제목만 뽑는다. LLM 에 함께 넘기고, 폴백으로도 쓴다. */
+	public Optional<String> extractTitle(String rawHtml) {
+		if (rawHtml == null || rawHtml.isBlank()) {
+			return Optional.empty();
+		}
+		return NoticeHtmlExtractor.title(Jsoup.parse(rawHtml), null);
 	}
 
 	/**

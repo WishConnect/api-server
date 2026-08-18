@@ -5,9 +5,13 @@ import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
+import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
+import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
+import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
+import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +43,8 @@ public class ScholarshipSyncScheduler {
 	private final UnivNoticeCollector univNoticeCollector;
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
+	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
+	private final ScholarshipDedupService scholarshipDedupService;
 
 	/**
 	 * 한 배치에서 보완할 최대 건수.
@@ -49,6 +55,19 @@ public class ScholarshipSyncScheduler {
 	 */
 	@Value("${scholarship.enrich.batch-limit:50}")
 	private int enrichBatchLimit;
+
+	/**
+	 * 하루에 LLM 으로 정제할 공고 수 상한.
+	 *
+	 * <p>크레딧이 자동으로 나가는 유일한 단계라 상한을 둔다. 평소 신규 공고는 하루 수십 건이고,
+	 * 못 채운 건 PENDING 으로 남아 다음 날 이어서 처리된다.
+	 */
+	@Value("${scholarship.parse.batch-limit:60}")
+	private int parseBatchLimit;
+
+	/** 중복 후보 탐지 상한. 그룹당 LLM 1회를 쓰므로 함께 제한한다. */
+	@Value("${scholarship.merge.batch-limit:30}")
+	private int mergeDetectBatchLimit;
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
@@ -90,6 +109,27 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 전용 수집기 실행 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+		}
+		try {
+			// 수집 바로 다음에 온다. 수집기는 raw_html 만 저장하므로, 이 단계가 없으면
+			// 새 공고가 PENDING 인 채 쌓이기만 하고 사용자에게는 아무것도 보이지 않는다.
+			NoticeParsingResponse parsing = univNoticeLlmParsingService.parse(parseBatchLimit, false, false);
+            //LLM으로 대학공지 정제하는 부분
+			log.info("[SyncBatch] LLM 파싱 완료 target={} parsed={} skipped={} failed={}",
+					parsing.targetCount(), parsing.parsedCount(), parsing.skippedCount(),
+					parsing.failedCount());
+		} catch (Exception e) {
+			log.warn("[SyncBatch] LLM 파싱 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+		}
+		try {
+			// 파싱이 끝난 뒤라야 새로 들어온 공고까지 중복 검사 대상이 된다.
+			// 병합하지는 않는다 — 승인 큐에 올리기만 하고 사람이 확인한다.
+			MergeDetectionResponse merge = scholarshipDedupService.detect(mergeDetectBatchLimit);
+			log.info("[SyncBatch] 중복 후보 탐지 완료 검사={} 그룹={} 신규후보={} 실패={}",
+					merge.scannedCount(), merge.groupCount(), merge.candidateCount(),
+					merge.failedCount());
+		} catch (Exception e) {
+			log.warn("[SyncBatch] 중복 후보 탐지 실패(다른 스텝에 영향 없음): {}", e.getMessage());
 		}
 		try {
 			ConditionExtractionResponse extraction = conditionExtractionService.extract();
