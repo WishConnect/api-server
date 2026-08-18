@@ -44,6 +44,23 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	 */
 	List<RawScholarship> findByIdInOrderByIdAsc(Collection<Long> ids);
 
+	/**
+	 * 공공데이터 중 <b>지금 모집 중이고 조건이 비어 있는</b> 것.
+	 *
+	 * <p>마감된 3,571건은 사용자에게 안 보이므로 크레딧을 쓰지 않는다. 이미 조건이 붙은 건도
+	 * 뺀다 — 이 단계는 빈칸을 채우는 것이지 매일 다시 파싱하는 게 아니다.
+	 */
+	@Query("""
+			select r from RawScholarship r
+			 where r.source = 'KOSAF_SCHOLARSHIP'
+			   and r.scholarship is not null
+			   and r.scholarship.applicationEndAt >= current_timestamp
+			   and not exists (
+			       select 1 from ScholarshipCondition c where c.scholarship = r.scholarship)
+			 order by r.scholarship.applicationEndAt asc
+			""")
+	List<RawScholarship> findOpenPublicDataTargets(Pageable pageable);
+
 	/** 재파싱 대상: 상태와 무관하게 대학 공고 전체. 잘못 파싱된 기존 데이터를 덮어쓸 때 쓴다. */
 	List<RawScholarship> findBySourceStartingWithOrderByIdAsc(String sourcePrefix, Pageable pageable);
 

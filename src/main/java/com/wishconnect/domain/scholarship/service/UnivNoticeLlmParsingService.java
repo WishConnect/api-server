@@ -23,6 +23,7 @@ import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.util.KosafNoticeText;
 import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
@@ -138,6 +139,75 @@ public class UnivNoticeLlmParsingService {
 				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
 						UNIV_SOURCE_PREFIX, ParseStatus.PENDING, page);
 		return run(targets, reparse, dryRun);
+	}
+
+	/**
+	 * 공공데이터(KOSAF) 장학금의 <b>조건·서류만</b> 채운다.
+	 *
+	 * <p>제목·기간·금액은 이미 정확한 구조화 필드로 들어와 있다. 그런데 자격 요건은 전부
+	 * 자유 텍스트라 추천 대조에 쓸 수가 없었다 — "경기도에 주민등록상 2025.04.01 이전부터
+	 * 계속 거주하는 도민" 이 통짜 문자열로만 있었다.
+	 *
+	 * <p>대학 공지와 같은 파서를 쓰되 <b>덮어쓰는 범위가 다르다.</b> 여기서는 조건·서류·
+	 * 자소서·면접·제출방식만 손대고 제목·기간·금액은 건드리지 않는다. 모델이 그것들을 다시
+	 * 추측하게 두면 멀쩡한 값을 잃는다.
+	 *
+	 * <p>대상은 모집 중인 것뿐이다. 마감된 3,571건은 사용자에게 보이지 않으므로 크레딧을 쓸
+	 * 이유가 없다.
+	 */
+	@Transactional
+	public NoticeParsingResponse parseKosafConditions(int limit, boolean dryRun) {
+		int size = Math.min(Math.max(limit, 1), MAX_BATCH_SIZE);
+		List<RawScholarship> targets = rawScholarshipRepository.findOpenPublicDataTargets(
+				PageRequest.of(0, size));
+
+		int parsed = 0;
+		int skipped = 0;
+		int failed = 0;
+		List<NoticeParsingResponse.Item> items = new ArrayList<>();
+
+		for (RawScholarship raw : targets) {
+			try {
+				String body = KosafNoticeText.bodyOf(raw.getRawJson());
+				String title = KosafNoticeText.titleOf(raw.getRawJson());
+				if (body.isBlank()) {
+					skipped++;
+					items.add(item(raw, ParseStatus.SKIPPED.name(), title, null,
+							"자격·서류 칸이 모두 비어 있습니다(해당없음·홈페이지 참고)."));
+					continue;
+				}
+				String response = callWithRetry(title, body, List.of(), raw.getId());
+				Optional<ParsedNotice> maybe = parser.readResponse(response);
+				if (maybe.isEmpty()) {
+					failed++;
+					items.add(item(raw, "FAILED", title, null, "LLM 응답을 읽지 못했습니다."));
+					continue;
+				}
+				ParsedNotice notice = maybe.get();
+				Scholarship scholarship = raw.getScholarship();
+
+				if (!dryRun) {
+					scholarshipConditionRepository.deleteByScholarship(scholarship);
+					scholarshipDocumentRepository.deleteByScholarship(scholarship);
+					storeConditions(scholarship, parser.resolveConditions(notice, body));
+					storeDocuments(scholarship, notice.safeDocuments());
+					saveLog(raw, new UnivNoticeLlmParser.ExtractedBody(body, false, body.length()),
+							ParseStatus.PARSED, notice, null, "공공데이터 조건 보강");
+				}
+				parsed++;
+				items.add(item(raw, ParseStatus.PARSED.name(), title, null,
+						"조건 " + parser.resolveConditions(notice, body).size()
+								+ "건 · 서류 " + notice.safeDocuments().size() + "건"));
+			} catch (Exception e) {
+				log.warn("[KosafConditions] 파싱 실패 rawId={} : {}", raw.getId(), e.getMessage());
+				failed++;
+				items.add(item(raw, "FAILED", null, null, e.getMessage()));
+			}
+		}
+
+		log.info("[KosafConditions] 대상={} 정제={} 스킵={} 실패={} dryRun={}",
+				targets.size(), parsed, skipped, failed, dryRun);
+		return new NoticeParsingResponse(targets.size(), parsed, skipped, failed, dryRun, items);
 	}
 
 	/** 대상이 정해진 뒤의 처리. 어떻게 골랐든 이 다음은 같다. */
