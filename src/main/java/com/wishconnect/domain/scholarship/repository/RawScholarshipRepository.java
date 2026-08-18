@@ -65,5 +65,29 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	List<RawScholarship> findReparseTargets(@Param("sourcePrefix") String sourcePrefix,
 			@Param("promptVersion") String promptVersion, Pageable pageable);
 
+	/**
+	 * 재파싱 대상 중 <b>아직 제대로 정제되지 않은 것</b>만.
+	 *
+	 * <p>이미 제목과 마감일이 제대로 들어간 공고를 다시 LLM 에 태우는 건 돈만 쓰고 얻는 게 없다.
+	 * 결과가 좋아질 여지가 있는 것부터 처리한다.
+	 *
+	 * <p>"제대로" 의 기준은 둘이다 — 마감일이 있고, 제목이 지어낸 이름이 아닐 것.
+	 * {@code "UNIV_KONKUK 공고 1200120"} 은 LLM 도 게시판도 제목을 못 줬을 때 쓰는 마지막 수단이라,
+	 * 그게 남아 있다는 건 아직 정제가 안 됐다는 뜻이다.
+	 */
+	@Query("""
+			select r from RawScholarship r
+			 where r.source like concat(:sourcePrefix, '%')
+			   and not exists (
+			       select 1 from NoticeParseLog l
+			        where l.rawScholarshipId = r.id and l.promptVersion = :promptVersion)
+			   and (r.scholarship is null
+			        or r.scholarship.applicationEndAt is null
+			        or r.scholarship.title like concat(r.source, ' 공고 %'))
+			 order by r.id asc
+			""")
+	List<RawScholarship> findIncompleteReparseTargets(@Param("sourcePrefix") String sourcePrefix,
+			@Param("promptVersion") String promptVersion, Pageable pageable);
+
 	long countBySourceStartingWithAndParseStatus(String sourcePrefix, ParseStatus parseStatus);
 }

@@ -281,6 +281,9 @@ public class ScholarshipAdminController {
 					- rawIds: 지정하면 그 공지들만 처리한다(쉼표 구분). 프롬프트 버전 필터를 건너뛰므로
 					  이미 파싱한 공지도 다시 돌릴 수 있다. 추출기를 고쳐 같은 공지의 결과가
 					  달라졌을 때 쓴다.
+					- skipComplete: 기본 true. 이미 제목·마감일이 제대로 들어간 공고는 건너뛴다.
+					  결과가 좋아질 여지가 없는 건에 크레딧을 쓰지 않기 위해서다.
+					  프롬프트를 크게 바꿔 전부 다시 보고 싶을 때만 false.
 					- dryRun: true 면 DB 에 쓰지 않고 결과만 반환한다.
 					  응답의 beforePeriod(기존 정규식) / afterPeriod(LLM) 를 사람이 비교해
 					  전환 여부를 판단하는 용도다.
@@ -292,9 +295,10 @@ public class ScholarshipAdminController {
 			@RequestParam(defaultValue = "20") int limit,
 			@RequestParam(defaultValue = "false") boolean reparse,
 			@RequestParam(defaultValue = "false") boolean dryRun,
-			@RequestParam(required = false) List<Long> rawIds) {
+			@RequestParam(required = false) List<Long> rawIds,
+			@RequestParam(defaultValue = "true") boolean skipComplete) {
 		return ApiResponse.ok(univNoticeLlmParsingService.parse(
-				limit, reparse, dryRun, rawIds == null ? List.of() : rawIds));
+				limit, reparse, dryRun, rawIds == null ? List.of() : rawIds, skipComplete));
 	}
 
 	@Operation(summary = "LLM 조건 구조화 추출",

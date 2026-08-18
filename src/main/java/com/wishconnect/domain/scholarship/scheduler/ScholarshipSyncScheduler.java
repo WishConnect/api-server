@@ -14,6 +14,7 @@ import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -113,7 +114,7 @@ public class ScholarshipSyncScheduler {
 		try {
 			// 수집 바로 다음에 온다. 수집기는 raw_html 만 저장하므로, 이 단계가 없으면
 			// 새 공고가 PENDING 인 채 쌓이기만 하고 사용자에게는 아무것도 보이지 않는다.
-			NoticeParsingResponse parsing = univNoticeLlmParsingService.parse(parseBatchLimit, false, false);
+			NoticeParsingResponse parsing = univNoticeLlmParsingService.parse(parseBatchLimit, false, false, List.of(), true);
             //LLM으로 대학공지 정제하는 부분
 			log.info("[SyncBatch] LLM 파싱 완료 target={} parsed={} skipped={} failed={}",
 					parsing.targetCount(), parsing.parsedCount(), parsing.skippedCount(),
