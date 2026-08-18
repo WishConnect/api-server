@@ -67,6 +67,16 @@ PERSONALIZED 의 규칙:
 @RequiredArgsConstructor
 public class ScholarshipRecommendationService {
 
+	/**
+	 * 목록에 보이는 상태.
+	 *
+	 * <p>{@code ALWAYS_OPEN} 은 마감일이 없어 자동 판정을 포기한 공고다("충원 시 마감").
+	 * 열려 있는 건 사실이므로 숨기지 않는다 — 상태를 나눈 이유는 관리자가 확인하기 위해서지
+	 * 사용자에게서 감추기 위해서가 아니다.
+	 */
+	private static final java.util.Set<RecruitmentStatus> VISIBLE_STATUSES =
+			java.util.EnumSet.of(RecruitmentStatus.OPEN, RecruitmentStatus.ALWAYS_OPEN);
+
 	private static final int DEADLINE_SOON_DAYS = 7;
 	/** 히어로 배너(dot 캐러셀) 노출 개수. 피그마 기준 5개. */
 	private static final int FEATURED_LIMIT = 5;
@@ -117,7 +127,7 @@ public class ScholarshipRecommendationService {
 	 */
 	private CuratedScholarshipResponse guestCurated(CuratedSort sort, int page, int size) {
 		List<Scholarship> open = scholarshipRepository.findAllOpenForRecommendation(
-				RecruitmentStatus.OPEN, LocalDateTime.now());
+				VISIBLE_STATUSES, LocalDateTime.now());
 
 		List<Scholarship> sorted = open.stream().sorted(comparatorFor(sort)).toList();
 		Page<Scholarship> paged = slice(sorted, page, size);
@@ -142,7 +152,7 @@ public class ScholarshipRecommendationService {
 	 */
 	private CuratedScholarshipResponse onboardingRequiredCurated(UUID userId) {
 		List<Scholarship> open = scholarshipRepository.findAllOpenForRecommendation(
-				RecruitmentStatus.OPEN, LocalDateTime.now());
+				VISIBLE_STATUSES, LocalDateTime.now());
 
 		// 근로장학은 추천 성격이 아니라 히어로 배너에 올리지 않는다(온보딩 완료 화면과 같은 기준).
 		List<Scholarship> featured = open.stream()
@@ -366,7 +376,7 @@ public class ScholarshipRecommendationService {
 
 	private List<ScoredScholarship> scoreOpenScholarships(MatchProfile matchProfile) {
 		List<Scholarship> openScholarships =
-				scholarshipRepository.findAllOpenForRecommendation(RecruitmentStatus.OPEN, LocalDateTime.now());
+				scholarshipRepository.findAllOpenForRecommendation(VISIBLE_STATUSES, LocalDateTime.now());
 		if (openScholarships.isEmpty()) {
 			return List.of();
 		}

@@ -86,6 +86,7 @@ public class ScholarshipAdminOverviewService {
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.OPEN),
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.UPCOMING),
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.CLOSED),
+				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.ALWAYS_OPEN),
 				scholarshipRepository.countByCreatedAtGreaterThanEqual(LocalDate.now().atStartOfDay()),
 				scholarshipRepository.findLastSyncedAt());
 	}

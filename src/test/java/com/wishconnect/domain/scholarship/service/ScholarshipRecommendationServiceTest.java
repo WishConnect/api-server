@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -162,7 +163,7 @@ class ScholarshipRecommendationServiceTest {
 			profile.completeOnboarding();
 		}
 		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.ofNullable(profile));
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(scholarships);
 		if (!scholarships.isEmpty()) {
 			// 온보딩 전 화면은 조건을 읽지 않으므로 lenient. 개인화 경로에서만 쓰인다.
@@ -347,7 +348,7 @@ class ScholarshipRecommendationServiceTest {
 		// completeOnboarding() 을 부르지 않은 프로필 = STEP 진행 중
 		UserProfile inProgress = UserProfile.builder().school(school("연세대학교")).build();
 		given(userProfileRepository.findByUserId(USER_ID)).willReturn(Optional.of(inProgress));
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(List.of(mine));
 		lenient().when(scrapRepository.findScrappedScholarshipIds(eq(USER_ID), anyList()))
 				.thenReturn(List.of());
@@ -368,7 +369,7 @@ class ScholarshipRecommendationServiceTest {
 				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(1));
 		Scholarship soon = scholarship(2L, "곧 마감", ScholarshipType.EXTERNAL,
 				LocalDateTime.now().plusDays(2), LocalDateTime.now().minusDays(30));
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(List.of(late, soon));
 
 		CuratedScholarshipResponse response = scholarshipRecommendationService
@@ -389,7 +390,7 @@ class ScholarshipRecommendationServiceTest {
 				LocalDateTime.now().plusDays(2), LocalDateTime.now().minusDays(30));
 		Scholarship fresh = scholarship(2L, "최근 등록", ScholarshipType.EXTERNAL,
 				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(1));
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(List.of(old, fresh));
 
 		CuratedScholarshipResponse response = scholarshipRecommendationService
@@ -405,7 +406,7 @@ class ScholarshipRecommendationServiceTest {
 				null, LocalDateTime.now().minusDays(30));
 		Scholarship dated = scholarship(2L, "마감 있음", ScholarshipType.EXTERNAL,
 				LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(30));
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(List.of(noDeadline, dated));
 
 		CuratedScholarshipResponse response = scholarshipRecommendationService
@@ -423,7 +424,7 @@ class ScholarshipRecommendationServiceTest {
 			pool.add(scholarship(i, "장학금" + i, ScholarshipType.EXTERNAL,
 					LocalDateTime.now().plusDays(i), LocalDateTime.now().minusDays(30)));
 		}
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(pool);
 
 		CuratedScholarshipResponse response = scholarshipRecommendationService
@@ -437,7 +438,7 @@ class ScholarshipRecommendationServiceTest {
 	@Test
 	@DisplayName("비로그인은 조건 데이터를 아예 읽지 않는다")
 	void guestSkipsConditionLookup() {
-		given(scholarshipRepository.findAllOpenForRecommendation(eq(RecruitmentStatus.OPEN), any()))
+		given(scholarshipRepository.findAllOpenForRecommendation(anyCollection(), any()))
 				.willReturn(List.of(scholarship(1L, "장학금", ScholarshipType.EXTERNAL,
 						LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(30))));
 

@@ -82,12 +82,12 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	 */
 	@Query("""
 			select s from Scholarship s
-			where s.recruitmentStatus = :status
+			where s.recruitmentStatus in :status
 			  and s.active = true
 			  and s.deletedAt is null
 			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
 			""")
-	List<Scholarship> findAllOpenForRecommendation(@Param("status") RecruitmentStatus status,
+	List<Scholarship> findAllOpenForRecommendation(@Param("status") Collection<RecruitmentStatus> status,
 												   @Param("now") LocalDateTime now);
 
 	/** 알림 배치용: 특정 기간 안에 마감되는 활성 공고를 조회한다. */

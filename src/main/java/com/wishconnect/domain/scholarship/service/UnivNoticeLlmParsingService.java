@@ -459,7 +459,7 @@ public class UnivNoticeLlmParsingService {
 						.scholarshipType(type)
 						.applicationStartAt(startAt)
 						.applicationEndAt(endAt)
-						.recruitmentStatus(resolveStatus(startAt))
+						.recruitmentStatus(resolveStatus(startAt, endAt))
 						.selectionCount(parser.resolveSelectionCount(notice.selectionCount()))
 						.amount(parser.resolveAmount(notice.amount()))
 						.primarySource(raw.getSource())
@@ -551,11 +551,24 @@ public class UnivNoticeLlmParsingService {
 		scholarshipDocumentRepository.saveAll(documents);
 	}
 
-	private RecruitmentStatus resolveStatus(LocalDateTime startAt) {
-		if (startAt != null && LocalDateTime.now().isBefore(startAt)) {
+	/**
+	 * 모집 상태를 날짜로 정한다.
+	 *
+	 * <p>마감일을 안 보고 있었다. 그래서 이미 끝난 공고도 OPEN 으로 저장돼, 배치가 다음 날
+	 * 정리할 때까지 하루 종일 노출됐다 — 재파싱을 한 번 돌릴 때마다 30건씩 되살아났다.
+	 *
+	 * <p>마감일이 아예 없는 것은 날짜로 판정할 수 없다. 자동으로 닫지 않고 관리자가 확인하도록
+	 * {@link RecruitmentStatus#ALWAYS_OPEN} 으로 둔다.
+	 */
+	private RecruitmentStatus resolveStatus(LocalDateTime startAt, LocalDateTime endAt) {
+		LocalDateTime now = LocalDateTime.now();
+		if (startAt != null && now.isBefore(startAt)) {
 			return RecruitmentStatus.UPCOMING;
 		}
-		return RecruitmentStatus.OPEN;
+		if (endAt == null) {
+			return RecruitmentStatus.ALWAYS_OPEN;
+		}
+		return now.isAfter(endAt) ? RecruitmentStatus.CLOSED : RecruitmentStatus.OPEN;
 	}
 
 	private NoticeParsingResponse.Item item(RawScholarship raw, String status, String title,
