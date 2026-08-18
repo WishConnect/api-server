@@ -55,6 +55,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_08__parse_status_image_only.sql` | `ParseStatus` 에 `IMAGE_ONLY` 추가 (raw_scholarship·notice_parse_log 양쪽 CHECK) | ✅ 2026-08-18 |
 | `V20260818_09__unify_konkuk_source.sql` | 건국대 출처 `KONKUK_NOTICE` → `UNIV_KONKUK` (재파싱 대상에서 빠져 있던 문제 해결) | ✅ 2026-08-18 |
 | `V20260818_10__remove_yonsei_non_scholarship.sql` | 연세대 수집분 중 장학 아닌 공지 18건 목록에서 내림 | ✅ 2026-08-18 |
+| `V20260818_11__scholarship_essay_interview_requirement.sql` | 장학금에 자소서·면접 필요 여부(3값+NULL)와 근거 문장 추가 | ✅ 2026-08-18 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서

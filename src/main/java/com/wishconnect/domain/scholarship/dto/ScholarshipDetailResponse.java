@@ -23,8 +23,26 @@ public record ScholarshipDetailResponse(
 		List<ScheduleStep> selectionSchedule,
 		List<RequiredDocument> requiredDocuments,
 		List<String> matchReasons,
-		List<ConditionCheck> conditionChecks
+		List<ConditionCheck> conditionChecks,
+		Selection selection
 ) {
+
+	/**
+	 * 전형 정보 — 자기소개서·면접이 필요한가.
+	 *
+	 * <p>{@code null} 은 <b>공고에 언급이 없어 모른다</b>는 뜻이다. {@code NOT_REQUIRED}
+	 * ("확인했고 없다")와 다르게 그려야 한다 — 전자는 "공고 확인 필요", 후자는 "면접 없음".
+	 *
+	 * <p>{@code evidence} 는 그렇게 판단한 공고 원문이다. 우리 판단만 보여주는 것보다
+	 * 근거 문장을 함께 보여주는 편이 신뢰를 산다. 특히 {@code CONDITIONAL} 은
+	 * "무슨 조건인지" 가 원문에 들어 있다 — "서류 합격자에 한해".
+	 */
+	public record Selection(
+			String essayRequirement,
+			String essayEvidence,
+			String interviewRequirement,
+			String interviewEvidence) {
+	}
 
 	public record Summary(
 			String targetAudience,

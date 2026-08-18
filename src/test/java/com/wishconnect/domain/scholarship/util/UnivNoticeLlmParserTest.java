@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.RequirementLevel;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,12 +25,12 @@ class UnivNoticeLlmParserTest {
 
 	private ParsedNotice notice(String start, String end, String evidence) {
 		return new ParsedNotice("제목", "경희대학교", "INTERNAL", start, end, evidence,
-				null, null, null, List.of(), List.of());
+				null, null, null, null, null, null, null, List.of(), List.of());
 	}
 
 	private ParsedNotice noticeWithConditions(ParsedNotice.Condition... conditions) {
 		return new ParsedNotice("제목", "경희대학교", "INTERNAL", null, null, null,
-				null, null, null, List.of(), List.of(conditions));
+				null, null, null, null, null, null, null, List.of(), List.of(conditions));
 	}
 
 	// --- 본문 추출 ---
@@ -435,5 +436,52 @@ class UnivNoticeLlmParserTest {
 
 		assertThat(sent).doesNotContain("[제목]");
 		assertThat(sent).contains("[본문]");
+	}
+
+	/*
+	자소서·면접은 사용자가 지원할지 말지를 정하는 정보다. boolean 으로 두면 "명시적으로 없음" 과
+	"언급 없음" 이 똑같이 false 가 되는데, 그러면 면접이 있는 장학금을 없다고 표시하게 된다.
+	 */
+	@Test
+	@DisplayName("근거 문장이 본문에 있어야 전형 판단을 받아들인다")
+	void acceptsRequirementOnlyWithGroundedEvidence() {
+		String body = "서류 합격자에 한해 면접전형을 진행합니다. 자기소개서는 전원 제출입니다.";
+
+		var interview = parser.resolveRequirement("CONDITIONAL", "서류 합격자에 한해 면접전형을 진행합니다", body, null);
+		assertThat(interview.level()).isEqualTo(RequirementLevel.CONDITIONAL);
+		assertThat(interview.evidence()).contains("서류 합격자에 한해");
+	}
+
+	@Test
+	@DisplayName("본문에 없는 문장을 근거로 대면 판단을 버린다 — 지어낸 값이 더 위험하다")
+	void dropsRequirementWhenEvidenceIsInvented() {
+		String body = "2026학년도 2학기 장학생을 모집합니다.";
+
+		var made = parser.resolveRequirement("REQUIRED", "면접전형을 실시합니다", body, null);
+
+		assertThat(made.level()).isNull();
+		assertThat(made.evidence()).isNull();
+	}
+
+	@Test
+	@DisplayName("근거 없이 값만 오면 버리고, 값이 없으면 모름으로 둔다")
+	void requiresEvidenceAndKeepsUnknown() {
+		String body = "서류 합격자에 한해 면접전형을 진행합니다.";
+
+		assertThat(parser.resolveRequirement("REQUIRED", null, body, null).level()).isNull();
+		assertThat(parser.resolveRequirement("REQUIRED", "  ", body, null).level()).isNull();
+		// 공고에 언급이 없으면 null — "없다" 로 단정하지 않는다.
+		assertThat(parser.resolveRequirement(null, null, body, null).level()).isNull();
+		// 이상한 값이 와도 터지지 않는다.
+		assertThat(parser.resolveRequirement("MAYBE", "서류 합격자에 한해", body, null).level()).isNull();
+	}
+
+	@Test
+	@DisplayName("제목에만 적힌 근거도 인정한다")
+	void acceptsEvidenceFromTitle() {
+		var result = parser.resolveRequirement("REQUIRED", "면접전형 진행",
+				"본문에는 일정만 있습니다.", "2026 장학생 모집 (면접전형 진행)");
+
+		assertThat(result.level()).isEqualTo(RequirementLevel.REQUIRED);
 	}
 }

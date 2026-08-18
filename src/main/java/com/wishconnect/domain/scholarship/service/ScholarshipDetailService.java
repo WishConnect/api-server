@@ -86,7 +86,14 @@ public class ScholarshipDetailService {
 				schedule,
 				documents,
 				scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions),
-				buildConditionChecks(userId, conditions)
+				buildConditionChecks(userId, conditions),
+				new ScholarshipDetailResponse.Selection(
+						scholarship.getEssayRequirement() == null
+								? null : scholarship.getEssayRequirement().name(),
+						scholarship.getEssayEvidence(),
+						scholarship.getInterviewRequirement() == null
+								? null : scholarship.getInterviewRequirement().name(),
+						scholarship.getInterviewEvidence())
 		);
 	}
 
