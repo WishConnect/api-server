@@ -269,7 +269,7 @@ public class UnivNoticeLlmParsingService {
 				? bodyText.substring(0, MAX_DESCRIPTION_CHARS)
 				: bodyText;
 
-		Scholarship existing = raw.getScholarship();
+		Scholarship existing = shareableTarget(raw);
 		if (existing != null) {
 			existing.applyLlmParsed(cleanTitle(title), provider, notice.summary(), description,
 					type, startAt, endAt,
@@ -423,6 +423,33 @@ public class UnivNoticeLlmParsingService {
 	}
 
 	/** 수집기와 같은 방식으로 만든다. 재파싱이 아닌 신규 저장에서만 쓴다. */
+	/**
+	 * 이 공지가 <b>단독으로</b> 쓰는 장학금 행. 다른 공지와 공유 중이면 null 을 내 새 행을 만들게 한다.
+	 *
+	 * <p>운영에서 한 장학금 행을 공지 9건이 함께 가리키는 것을 발견했다. 정규식 파서가 제목을
+	 * 못 뽑아 페이지의 공유 버튼 문구("대학공지 공유팝업 열기 카카오 공유하기…")를 제목으로 넣는
+	 * 바람에, 서로 다른 공지가 같은 제목 → 같은 dedupKey 로 한 행에 묶인 것이다.
+	 *
+	 * <p>이 상태로 재파싱하면 <b>같은 행을 순서대로 덮어써</b> 마지막 공지만 남는다. 실제로
+	 * 앞서 뽑아낸 모집기간이 뒤 공지의 빈 값에 지워졌다. 공유를 끊고 각자 행을 갖게 해야 한다 —
+	 * LLM 은 제목·기간을 제대로 뽑으므로 새 dedupKey 는 서로 갈린다.
+	 *
+	 * <p>공유를 끊어도 옛 행은 남는다. 아무 공지도 가리키지 않게 되면 관리자 화면에서 정리한다.
+	 */
+	private Scholarship shareableTarget(RawScholarship raw) {
+		Scholarship existing = raw.getScholarship();
+		if (existing == null) {
+			return null;
+		}
+		long sharedBy = rawScholarshipRepository.countByScholarship(existing);
+		if (sharedBy > 1) {
+			log.warn("[UnivLlmParsing] 장학금 {}번을 공지 {}건이 공유 중이라 분리합니다. rawId={}",
+					existing.getId(), sharedBy, raw.getId());
+			return null;
+		}
+		return existing;
+	}
+
 	private static String dedupKey(String source, String title,
 			LocalDateTime startAt, LocalDateTime endAt) {
 		String seed = source + "|" + title + "|"

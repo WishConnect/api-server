@@ -204,6 +204,36 @@ class UnivNoticeLlmParsingServiceTest {
 	}
 
 	/*
+	운영에서 장학금 한 행을 공지 9건이 함께 가리키는 것을 발견했다. 정규식 파서가 제목을 못 뽑아
+	페이지의 공유 버튼 문구를 제목으로 넣는 바람에 서로 다른 공지가 같은 dedupKey 로 묶인 것이다.
+	그 상태로 재파싱하면 같은 행을 순서대로 덮어써 마지막 공지만 남는다 — 실제로 앞서 뽑아낸
+	모집기간이 뒤 공지의 빈 값에 지워졌다.
+	 */
+	@Test
+	@DisplayName("여러 공지가 한 장학금을 공유 중이면 덮어쓰지 않고 자기 행을 만든다")
+	void splitsScholarshipSharedByMultipleNotices() {
+		Scholarship shared = existingScholarship();
+		RawScholarship target = raw(2L, html(BODY), shared, ParseStatus.PARSED);
+		givenAllTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+		// 이 장학금을 다른 공지도 가리키고 있다.
+		given(rawScholarshipRepository.countByScholarship(shared)).willReturn(9L);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		var result = service.parse(20, true, false);
+
+		assertThat(result.parsedCount()).isEqualTo(1);
+		// 공유 중인 행은 건드리지 않는다 — 다른 공지 8건의 결과가 여기 들어 있다.
+		assertThat(shared.getTitle()).isNotEqualTo("2026학년도 2학기 운연장학 신청 안내");
+		assertThat(shared.getApplicationStartAt().toLocalDate())
+				.isEqualTo(java.time.LocalDate.of(2026, 9, 1));
+		// 대신 자기 행을 새로 만든다.
+		verify(scholarshipRepository).save(any(Scholarship.class));
+	}
+
+	/*
 	조건을 정규식 추출기에서 LLM 으로 넘긴 뒤의 핵심 동작.
 	정규식은 "가계 곤란으로 학업 유지가 어려운 자" 같은 서술형 요건을 아예 못 잡았다.
 	 */
