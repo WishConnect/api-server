@@ -18,7 +18,8 @@ import lombok.NoArgsConstructor;
 
 /**
  * 사용자. 계정은 {@code (loginType, providerId)} 조합으로 구분한다.
- * 같은 이메일이 LOCAL/GOOGLE/NAVER 등에 공존 가능하므로 email 은 UNIQUE 가 아니다.
+ * 같은 이메일이 LOCAL/KAKAO/GOOGLE/NAVER 등에 공존 가능하므로 email 단독 UNIQUE 는 아니다.
+ * DB에서는 활성 계정에 한해 (email, login_type) 부분 UNIQUE 인덱스로 같은 방식의 중복만 막는다.
  */
 @Entity
 @Getter
@@ -153,7 +154,8 @@ public class User extends BaseEntity {
 	 * 그래서 탈퇴 시점에 비워 다음 가입자가 쓸 수 있게 돌려준다.
 	 *
 	 * <p>email/name/phone 은 보관 기간·파기 정책이 정해지면 함께 익명화 대상이다.
-	 * 지금은 지우지 않아도 재가입을 막지 않으므로(조회가 deletedAt 으로 걸러진다) 남겨둔다.
+	 * email 은 활성 계정만 대상으로 하는 부분 UNIQUE 인덱스를 사용하므로, 탈퇴 행에 남아 있어도
+	 * 같은 로그인 방식으로 재가입하거나 다른 로그인 방식의 계정을 만드는 것을 막지 않는다.
 	 */
 	public void withdraw() {
 		this.deletedAt = LocalDateTime.now();
