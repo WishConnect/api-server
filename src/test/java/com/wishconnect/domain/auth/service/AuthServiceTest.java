@@ -213,13 +213,14 @@ class AuthServiceTest {
 	@DisplayName("기본 로그인")
 	class Login {
 
-		private final LoginRequest request = new LoginRequest("user@example.com", "Abcd1234!");
+		private final LoginRequest request = new LoginRequest("USER01", "Abcd1234!");
 
 		@Test
 		@DisplayName("성공 시 JWT 와 사용자 정보를 반환한다")
 		void success() {
 			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
+			given(userRepository.findByLoginIdAndLoginTypeAndDeletedAtIsNull("user01", LoginType.LOCAL))
+					.willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(true);
 			stubTokenIssue();
 
@@ -231,20 +232,22 @@ class AuthServiceTest {
 		}
 
 		@Test
-		@DisplayName("존재하지 않는 이메일이면 USER_NOT_FOUND")
+		@DisplayName("존재하지 않는 아이디도 LOGIN_FAILED로 숨긴다")
 		void userNotFound() {
-			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.empty());
+			given(userRepository.findByLoginIdAndLoginTypeAndDeletedAtIsNull("user01", LoginType.LOCAL))
+					.willReturn(Optional.empty());
 
 			assertThatThrownBy(() -> authService.login(request))
 					.isInstanceOf(CustomException.class)
-					.extracting("errorCode").isEqualTo(ErrorCode.USER_NOT_FOUND);
+					.extracting("errorCode").isEqualTo(ErrorCode.LOGIN_FAILED);
 		}
 
 		@Test
 		@DisplayName("비밀번호 불일치면 LOGIN_FAILED")
 		void wrongPassword() {
 			User user = userWithId(User.createLocal("user@example.com", "user01", "encoded", "홍길동", "010"));
-			given(userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(Optional.of(user));
+			given(userRepository.findByLoginIdAndLoginTypeAndDeletedAtIsNull("user01", LoginType.LOCAL))
+					.willReturn(Optional.of(user));
 			given(passwordEncoder.matches(request.password(), "encoded")).willReturn(false);
 
 			assertThatThrownBy(() -> authService.login(request))
