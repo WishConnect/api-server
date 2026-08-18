@@ -57,6 +57,15 @@ public class NoticeParseLog extends BaseCreatedEntity {
 	private String promptVersion;
 
 	/** 본문이 상한을 넘어 잘린 채 호출됐는지. 성공한 건에도 남긴다(조용한 정보 손실 추적). */
+	/**
+	 * 본문이 이미지뿐이라 {@code alt} 설명으로 대체했는가.
+	 *
+	 * <p>이런 공고는 마감일 정도만 건지고 조건·제출서류는 비어 있다. OCR 을 붙일 때 대상이
+	 * 되는데, 상태는 PARSED 라 {@code IMAGE_ONLY} 로는 골라낼 수 없어 따로 남긴다.
+	 */
+	@Column(name = "body_from_image_alt", nullable = false)
+	private boolean bodyFromImageAlt;
+
 	@Column(name = "body_truncated", nullable = false)
 	private boolean bodyTruncated;
 
@@ -77,13 +86,14 @@ public class NoticeParseLog extends BaseCreatedEntity {
 
 	@Builder
 	private NoticeParseLog(Long rawScholarshipId, ParseStatus status, String modelId,
-			String promptVersion, boolean bodyTruncated, Integer bodyLength,
+			String promptVersion, boolean bodyTruncated, boolean bodyFromImageAlt, Integer bodyLength,
 			String parsedJson, String rawResponse, String errorMessage) {
 		this.rawScholarshipId = rawScholarshipId;
 		this.status = status;
 		this.modelId = modelId;
 		this.promptVersion = promptVersion;
 		this.bodyTruncated = bodyTruncated;
+		this.bodyFromImageAlt = bodyFromImageAlt;
 		this.bodyLength = bodyLength;
 		this.parsedJson = parsedJson;
 		this.rawResponse = rawResponse;
