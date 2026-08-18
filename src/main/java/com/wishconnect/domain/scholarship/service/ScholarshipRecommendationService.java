@@ -22,6 +22,7 @@ import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher;
 import com.wishconnect.domain.scholarship.util.MatchProfile;
+import com.wishconnect.domain.scholarship.util.ScholarshipRanker;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Evaluation;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Result;
 import com.wishconnect.domain.user.entity.User;
@@ -211,12 +212,17 @@ public class ScholarshipRecommendationService {
 				.toList();
 
 		// 그 외 추천: 지원 가능한 교외(EXTERNAL) 공고를 점수순으로. featured 중복은 제외한다.
-		List<ScholarshipCard> others = eligibleList.stream()
+		List<ScoredScholarship> otherRanked = eligibleList.stream()
 				.filter(s -> !featuredIds.contains(s.scholarship().getId()))
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.EXTERNAL)
 				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
 						.thenComparing(s -> s.scholarship().getApplicationEndAt(),
 								Comparator.nullsLast(Comparator.naturalOrder())))
+				.toList();
+		// 점수순으로만 두면 한 기관이 화면을 통째로 덮는다. 인천대는 학과마다 근로장학을 따로
+		// 올려서 상위 열 칸이 전부 같은 학교가 되는 일이 실제로 있다. 순서만 흩고 점수는 그대로 둔다.
+		List<ScholarshipCard> others = ScholarshipRanker
+				.diversify(otherRanked, s -> s.scholarship().getProvider()).stream()
 				.map(s -> s.toCard(scrappedIds, posters))
 				.toList();
 
@@ -471,19 +477,23 @@ public class ScholarshipRecommendationService {
 			}
 		}
 		Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());
-		int score = 0;
-		if (evaluableCount > 0) {
-			score += (int) Math.round(70.0 * matchCount / evaluableCount) + 10;
-		}
-		if (dDay != null && dDay >= 0 && dDay <= DEADLINE_SOON_DAYS) {
-			score += 20;
-		}
-		score = Math.min(score, 100);
+		// 순서 매기기는 랭커가 한다. 자격 판정(위)과 나눠 둬야 순서를 바꿀 때 자격 규칙을
+		// 건드리지 않는다. 점수 구성도 함께 받아 추천 이유에 그대로 쓴다.
+		ScholarshipRanker.Score scored = ScholarshipRanker.score(
+				scholarship, conditions, matchCount, evaluableCount, matchProfile.interestIds(), dDay);
+		int score = scored.total();
 
 		List<String> reasons = evaluations.stream()
 				.filter(e -> e.result() == Result.MATCH && e.description() != null)
 				.map(Evaluation::description)
 				.toList();
+		// 조건 대조에서 나온 사유가 우선이고, 점수 구성은 뒤에 붙인다. 사유가 하나도 없을 때
+		// "왜 추천됐는지" 가 빈칸으로 남지 않게 한다.
+		if (!reasons.isEmpty() || eligible) {
+			List<String> merged = new java.util.ArrayList<>(reasons);
+			scored.reasons().stream().filter(reason -> !merged.contains(reason)).forEach(merged::add);
+			reasons = List.copyOf(merged);
+		}
 		if (reasons.isEmpty() && !eligible) {
 			reasons = evaluations.stream()
 					.filter(e -> e.result() == Result.MISMATCH && e.description() != null)

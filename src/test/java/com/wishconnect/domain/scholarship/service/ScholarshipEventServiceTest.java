@@ -48,8 +48,8 @@ class ScholarshipEventServiceTest {
 		given(scholarshipEventRepository.saveAll(anyList())).willReturn(List.of());
 
 		int saved = scholarshipEventService.record(USER_ID, new ScholarshipEventRequest(List.of(
-				new Event(1L, ScholarshipEventType.IMPRESSION, 3, 80, "PERSONALIZED"),
-				new Event(2L, ScholarshipEventType.CLICK, 1, 100, "PERSONALIZED"))));
+				new Event(1L, ScholarshipEventType.IMPRESSION, 3, 80, "PERSONALIZED", "other", "v2"),
+				new Event(2L, ScholarshipEventType.CLICK, 1, 100, "PERSONALIZED", "other", "v2"))));
 
 		assertThat(saved).isEqualTo(2);
 		org.mockito.Mockito.verify(scholarshipEventRepository).saveAll(captor.capture());
@@ -67,7 +67,7 @@ class ScholarshipEventServiceTest {
 		willThrow(new RuntimeException("db down")).given(scholarshipEventRepository).saveAll(anyList());
 
 		int saved = scholarshipEventService.record(USER_ID, new ScholarshipEventRequest(
-				List.of(new Event(1L, ScholarshipEventType.IMPRESSION, 1, 50, "PERSONALIZED"))));
+				List.of(new Event(1L, ScholarshipEventType.IMPRESSION, 1, 50, "PERSONALIZED", "featured", "v2"))));
 
 		assertThat(saved).isZero();
 	}
