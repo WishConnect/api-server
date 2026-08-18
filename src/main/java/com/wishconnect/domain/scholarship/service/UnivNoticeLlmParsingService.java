@@ -333,10 +333,13 @@ public class UnivNoticeLlmParsingService {
 	 */
 	private Scholarship upsert(RawScholarship raw, ParsedNotice notice, String title,
 			String bodyText, UnivNoticeLlmParser.Period period, String noticeTitle) {
+		// 첨부 파일명도 근거로 인정한다. 본문을 첨부에만 싣는 게시판에서는 그게 유일한 단서다.
+		List<String> attachments = parser.extractAttachments(raw.getRawHtml());
 		UnivNoticeLlmParser.Requirement essay = parser.resolveRequirement(
-				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle);
+				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle, attachments);
 		UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
-				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle);
+				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle,
+				attachments);
 		UnivNoticeLlmParser.Submission submission = parser.resolveSubmission(notice, bodyText, noticeTitle);
 		NoticeKind kind = parser.resolveNoticeKind(notice.noticeKind());
 		boolean combined = Boolean.TRUE.equals(notice.combined());
