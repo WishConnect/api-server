@@ -278,6 +278,9 @@ public class ScholarshipAdminController {
 					- limit: 처리 건수 (1~100, 기본 20). 크레딧 소진을 막는 상한이다.
 					- reparse: true 면 이미 파싱된 것까지 다시 파싱해 덮어쓴다.
 					  정규식으로 잘못 파싱된 기존 데이터를 정정할 때 쓴다.
+					- rawIds: 지정하면 그 공지들만 처리한다(쉼표 구분). 프롬프트 버전 필터를 건너뛰므로
+					  이미 파싱한 공지도 다시 돌릴 수 있다. 추출기를 고쳐 같은 공지의 결과가
+					  달라졌을 때 쓴다.
 					- dryRun: true 면 DB 에 쓰지 않고 결과만 반환한다.
 					  응답의 beforePeriod(기존 정규식) / afterPeriod(LLM) 를 사람이 비교해
 					  전환 여부를 판단하는 용도다.
@@ -288,8 +291,10 @@ public class ScholarshipAdminController {
 	public ApiResponse<NoticeParsingResponse> parseUnivNoticesWithLlm(
 			@RequestParam(defaultValue = "20") int limit,
 			@RequestParam(defaultValue = "false") boolean reparse,
-			@RequestParam(defaultValue = "false") boolean dryRun) {
-		return ApiResponse.ok(univNoticeLlmParsingService.parse(limit, reparse, dryRun));
+			@RequestParam(defaultValue = "false") boolean dryRun,
+			@RequestParam(required = false) List<Long> rawIds) {
+		return ApiResponse.ok(univNoticeLlmParsingService.parse(
+				limit, reparse, dryRun, rawIds == null ? List.of() : rawIds));
 	}
 
 	@Operation(summary = "LLM 조건 구조화 추출",

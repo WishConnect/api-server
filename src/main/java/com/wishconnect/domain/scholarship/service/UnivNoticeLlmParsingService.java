@@ -96,14 +96,32 @@ public class UnivNoticeLlmParsingService {
 	 */
 	@Transactional
 	public NoticeParsingResponse parse(int limit, boolean reparse, boolean dryRun) {
+		return parse(limit, reparse, dryRun, List.of());
+	}
+
+	/**
+	 * @param rawIds 비어 있지 않으면 <b>이 공지들만</b> 처리한다. 프롬프트 버전 필터를 건너뛴다.
+	 *               추출기를 고쳐 같은 공지의 결과가 달라질 때 쓴다.
+	 */
+	@Transactional
+	public NoticeParsingResponse parse(int limit, boolean reparse, boolean dryRun, List<Long> rawIds) {
 		int size = Math.min(Math.max(limit, 1), MAX_BATCH_SIZE);
 		var page = PageRequest.of(0, size);
+		if (rawIds != null && !rawIds.isEmpty()) {
+			List<RawScholarship> picked = rawScholarshipRepository.findByIdInOrderByIdAsc(
+					rawIds.stream().distinct().limit(size).toList());
+			return run(picked, reparse, dryRun);
+		}
 		List<RawScholarship> targets = reparse
 				? rawScholarshipRepository.findReparseTargets(
 						UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page)
 				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
 						UNIV_SOURCE_PREFIX, ParseStatus.PENDING, page);
+		return run(targets, reparse, dryRun);
+	}
 
+	/** 대상이 정해진 뒤의 처리. 어떻게 골랐든 이 다음은 같다. */
+	private NoticeParsingResponse run(List<RawScholarship> targets, boolean reparse, boolean dryRun) {
 		int parsed = 0;
 		int skipped = 0;
 		int failed = 0;
@@ -115,7 +133,7 @@ public class UnivNoticeLlmParsingService {
 				items.add(outcome.item());
 				switch (outcome.status()) {
 					case PARSED -> parsed++;
-					case SKIPPED -> skipped++;
+					case SKIPPED, IMAGE_ONLY -> skipped++;
 					default -> failed++;
 				}
 			} catch (Exception e) {

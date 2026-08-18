@@ -525,4 +525,40 @@ class UnivNoticeLlmParsingServiceTest {
 		}
 		throw new NoSuchFieldException(name);
 	}
+
+	/*
+	프롬프트는 그대로인데 LLM 에게 주는 본문이 달라졌을 때가 있다. 추출기를 고치면 같은 공지라도
+	결과가 달라지는데, 평소 대상 선정은 프롬프트 버전으로 거르기 때문에 이미 파싱한 건 다시
+	잡히지 않는다. 프롬프트 버전을 올려 버리면 안 바뀐 것을 바뀌었다고 기록하는 셈이라
+	나중에 "무엇이 언제부터 달라졌는지" 를 되짚을 수 없다.
+	 */
+	@Test
+	@DisplayName("rawIds 를 주면 그 공지들만 처리한다 — 프롬프트 버전 필터를 건너뛴다")
+	void parsesOnlyTheGivenNotices() {
+		RawScholarship target = raw(7L, html(BODY), null, ParseStatus.PARSED);
+		given(rawScholarshipRepository.findByIdInOrderByIdAsc(List.of(7L))).willReturn(List.of(target));
+		given(llmClient.chat(any())).willReturn(LLM_RESPONSE);
+		given(scholarshipRepository.findByDedupKey(any())).willReturn(java.util.Optional.empty());
+		given(scholarshipRepository.save(any(Scholarship.class)))
+				.willAnswer(invocation -> invocation.getArgument(0));
+
+		var result = service.parse(20, true, false, List.of(7L));
+
+		assertThat(result.targetCount()).isEqualTo(1);
+		assertThat(result.parsedCount()).isEqualTo(1);
+		// 평소 경로(프롬프트 버전 필터)는 타지 않는다.
+		verify(rawScholarshipRepository, never()).findReparseTargets(any(), any(), any());
+	}
+
+	@Test
+	@DisplayName("rawIds 가 비어 있으면 평소대로 프롬프트 버전 기준으로 고른다")
+	void fallsBackToVersionCursorWhenNoIdsGiven() {
+		givenAllTargets(List.of());
+
+		service.parse(20, true, true, List.of());
+
+		verify(rawScholarshipRepository).findReparseTargets(eq("UNIV_"),
+				eq(UnivNoticeLlmParser.PROMPT_VERSION), any(Pageable.class));
+		verify(rawScholarshipRepository, never()).findByIdInOrderByIdAsc(any());
+	}
 }
