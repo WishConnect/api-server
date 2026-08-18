@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.wishconnect.domain.application.client.LlmClient;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
+import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,7 @@ import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import java.time.LocalDateTime;
@@ -72,6 +74,8 @@ public class UnivNoticeLlmParsingService {
 	private static final int MAX_DOCUMENTS = 12;
 
 	private final RawScholarshipRepository rawScholarshipRepository;
+	// 포스터는 수집기가 아니라 여기서 붙인다 — 수집 시점에는 아직 scholarship 이 없다.
+	private final ImageStorageService imageStorageService;
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
@@ -253,6 +257,7 @@ public class UnivNoticeLlmParsingService {
 		saveLog(raw, extracted, ParseStatus.PARSED, notice, null, note);
 		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
 		storeDocuments(scholarship, notice.safeDocuments());
+		storePoster(raw, scholarship, title);
 
 		return new Outcome(ParseStatus.PARSED,
 				item(raw, "PARSED", title, beforePeriod, afterPeriod, note));
@@ -442,6 +447,30 @@ public class UnivNoticeLlmParsingService {
 	 *
 	 * <p>공유를 끊어도 옛 행은 남는다. 아무 공지도 가리키지 않게 되면 관리자 화면에서 정리한다.
 	 */
+	/**
+	 * 공지에 실린 포스터 이미지를 장학금에 붙인다.
+	 *
+	 * <p>예전에는 수집기가 했다. 수집기가 더는 {@code scholarship} 을 만들지 않으므로
+	 * 붙일 대상이 생기는 시점인 여기로 옮겼다.
+	 *
+	 * <p>실패해도 파싱을 깨뜨리지 않는다. 포스터가 없으면 카드가 밋밋할 뿐이지만,
+	 * 이미지 하나 때문에 공고 자체가 안 들어오면 그게 더 큰 손해다.
+	 */
+	private void storePoster(RawScholarship raw, Scholarship scholarship, String title) {
+		try {
+			String baseUri = raw.getSourceUrl() == null ? "" : raw.getSourceUrl();
+			String posterUrl = NoticeHtmlExtractor.posterUrl(
+					org.jsoup.Jsoup.parse(raw.getRawHtml(), baseUri));
+			if (posterUrl == null) {
+				return;
+			}
+			imageStorageService.storeFromUrl(posterUrl, "scholarship/llm",
+					ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId(), title);
+		} catch (RuntimeException e) {
+			log.warn("[UnivLlmParsing] 포스터 저장 실패(무시). rawId={} 사유={}", raw.getId(), e.getMessage());
+		}
+	}
+
 	private Scholarship shareableTarget(RawScholarship raw) {
 		Scholarship existing = raw.getScholarship();
 		if (existing == null) {

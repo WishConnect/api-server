@@ -336,56 +336,8 @@ class UnivNoticeCollectorTest {
 				.isEqualTo("2026-2 교내장학금 신청 안내");
 	}
 
-	@Test
-	@DisplayName("[교외]/[학교추천]/[국가] 태그는 EXTERNAL + 제목에서 재단명 추출")
-	void classifiesExternalByTag() {
-		var ext = UnivNoticeCollector.classify(
-				"[교외][생활비] 2026년 정읍시민장학재단 우수인재 장학생 모집", "건국대학교");
-		org.assertj.core.api.Assertions.assertThat(ext.type())
-				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.EXTERNAL);
-		org.assertj.core.api.Assertions.assertThat(ext.provider()).isEqualTo("정읍시민장학재단");
 
-		var rec = UnivNoticeCollector.classify(
-				"[학교추천][교외] 광진구장학회 장학생 추천 선발 안내", "건국대학교");
-		org.assertj.core.api.Assertions.assertThat(rec.provider()).isEqualTo("광진구장학회");
 
-		var noProvider = UnivNoticeCollector.classify("[교외] 2026-1 정부초청 장학생 안내", "한림대학교");
-		org.assertj.core.api.Assertions.assertThat(noProvider.type())
-				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.EXTERNAL);
-		org.assertj.core.api.Assertions.assertThat(noProvider.provider()).isEqualTo("한림대학교");
-	}
-
-	@Test
-	@DisplayName("근로장학(국가근로/교내근로/일반근로)은 WORK_STUDY 로 분리한다")
-	void classifiesWorkStudy() {
-		var workStudyType = com.wishconnect.domain.scholarship.entity.ScholarshipType.WORK_STUDY;
-		// [국가근로] 태그가 있어도 EXTERNAL 이 아니라 WORK_STUDY 가 우선한다
-		org.assertj.core.api.Assertions.assertThat(
-						UnivNoticeCollector.classify("[국가근로] 2026-1 국가근로장학금 안내", "한림대학교").type())
-				.isEqualTo(workStudyType);
-		// 태그 없이 제목 표현만 있는 경우(인천대·서울여대형)도 잡는다
-		org.assertj.core.api.Assertions.assertThat(
-						UnivNoticeCollector.classify("[수학과] 2026학년도 2학기 국가근로장학생 모집 안내", "인천대학교").type())
-				.isEqualTo(workStudyType);
-		org.assertj.core.api.Assertions.assertThat(
-						UnivNoticeCollector.classify("2026학년도 2학기 교내근로 장학생 신청", "서울여자대학교").type())
-				.isEqualTo(workStudyType);
-		// 운영기관은 학교로 유지한다(근로 제공처가 학교이므로)
-		org.assertj.core.api.Assertions.assertThat(
-						UnivNoticeCollector.classify("[일반근로] 2026-2 일반근로장학생 신청", "한림대학교").provider())
-				.isEqualTo("한림대학교");
-	}
-
-	@Test
-	@DisplayName("[교내]/무태그 공지는 INTERNAL 유지")
-	void keepsInternalWithoutExternalTag() {
-		var internal = UnivNoticeCollector.classify("[공통][교내] 2026-2 교내 면학장학금 신청 안내", "한국외국어대학교");
-		org.assertj.core.api.Assertions.assertThat(internal.type())
-				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.INTERNAL);
-		var plain = UnivNoticeCollector.classify("2026학년도 2학기 성적우수장학금 안내", "연세대학교");
-		org.assertj.core.api.Assertions.assertThat(plain.type())
-				.isEqualTo(com.wishconnect.domain.scholarship.entity.ScholarshipType.INTERNAL);
-	}
 
 	@Test
 	@DisplayName("기간 표기가 없으면 null")
@@ -445,5 +397,33 @@ class UnivNoticeCollectorTest {
 		return new UnivNoticeProperties.Site("yonsei", "연세대학교", "UNIV_YONSEI",
 				"https://example.com/list", "/bbs/sc/58/", null, null, null,
 				null, null, includeCategory, 10);
+	}
+
+	/*
+	수집기는 원본만 저장한다. 정제(scholarship·조건·서류)는 LLM 파싱이 전담한다.
+
+	예전에는 수집기가 정규식으로 제목·기간·조건을 뽑아 scholarship 을 만들고, 나중에 LLM 파싱이
+	그 위를 덮어썼다. 같은 일을 두 번 하는 데다 LLM 파싱은 수동 트리거라, 누가 누르기 전까지
+	사용자에게는 정규식 결과가 노출됐다. 정규식이 LLM 보다 잘할 리 없다.
+	 */
+	@Test
+	@DisplayName("수집기는 scholarship 을 만들지 않는다 — 정제는 LLM 파싱이 전담한다")
+	void collectorNeverCreatesScholarship() throws Exception {
+		var collectorSource = java.nio.file.Files.readString(java.nio.file.Path.of(
+				"src/main/java/com/wishconnect/domain/scholarship/collector/UnivNoticeCollector.java"));
+
+		assertThat(collectorSource).doesNotContain("scholarshipRepository.save");
+		assertThat(collectorSource).doesNotContain("storeConditions");
+		assertThat(collectorSource).doesNotContain("markParsed");
+	}
+
+	@Test
+	@DisplayName("수집 결과는 PENDING 으로 남아 LLM 파싱이 자동으로 집어간다")
+	void collectedNoticesWaitForParsing() throws Exception {
+		var collectorSource = java.nio.file.Files.readString(java.nio.file.Path.of(
+				"src/main/java/com/wishconnect/domain/scholarship/collector/UnivNoticeCollector.java"));
+
+		// 마감 지난 공지만 SKIPPED, 나머지는 PENDING. PENDING 이라야 reparse 없이도 파싱 대상이 된다.
+		assertThat(collectorSource).contains("closed ? ParseStatus.SKIPPED : ParseStatus.PENDING");
 	}
 }
