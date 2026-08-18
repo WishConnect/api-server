@@ -295,7 +295,7 @@ public class UnivNoticeLlmParsingService {
 					afterPeriod, conditionCount, documentCount, posterFound, note));
 		}
 
-		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null));
+		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null), htmlTitle);
 		raw.markParsed(scholarship);
 		saveLog(raw, extracted, ParseStatus.PARSED, notice, null, note);
 		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
@@ -313,7 +313,11 @@ public class UnivNoticeLlmParsingService {
 	 * 이유는, 재파싱으로 제목·기간이 바뀌면 dedupKey 도 바뀌어 같은 공고에 행이 하나 더 생기기 때문이다.
 	 */
 	private Scholarship upsert(RawScholarship raw, ParsedNotice notice, String title,
-			String bodyText, UnivNoticeLlmParser.Period period) {
+			String bodyText, UnivNoticeLlmParser.Period period, String noticeTitle) {
+		UnivNoticeLlmParser.Requirement essay = parser.resolveRequirement(
+				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle);
+		UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
+				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle);
 
 		String provider = firstNonBlank(notice.provider(), raw.getSource());
 		ScholarshipType type = parser.resolveType(notice.scholarshipType());
@@ -329,7 +333,8 @@ public class UnivNoticeLlmParsingService {
 					type, startAt, endAt,
 					parser.resolveSelectionCount(notice.selectionCount()),
 					parser.resolveAmount(notice.amount()),
-					raw.getSourceUrl());
+					raw.getSourceUrl(),
+					essay.level(), essay.evidence(), interview.level(), interview.evidence());
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -350,6 +355,10 @@ public class UnivNoticeLlmParsingService {
 						.selectionCount(parser.resolveSelectionCount(notice.selectionCount()))
 						.amount(parser.resolveAmount(notice.amount()))
 						.primarySource(raw.getSource())
+						.essayRequirement(essay.level())
+						.essayEvidence(essay.evidence())
+						.interviewRequirement(interview.level())
+						.interviewEvidence(interview.evidence())
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));

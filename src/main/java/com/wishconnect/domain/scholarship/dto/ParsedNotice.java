@@ -37,6 +37,10 @@ public record ParsedNotice(
 		Integer selectionCount,
 		Long amount,
 		String summary,
+		String essayRequirement,
+		String essayEvidence,
+		String interviewRequirement,
+		String interviewEvidence,
 		List<String> documents,
 		List<Condition> conditions
 ) {

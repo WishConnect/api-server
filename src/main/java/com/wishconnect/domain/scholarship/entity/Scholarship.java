@@ -76,6 +76,28 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "dedup_key", length = 64, unique = true)
 	private String dedupKey;
 
+	/**
+	 * 자기소개서가 필요한가. {@code null} 이면 공고에 언급이 없어 모른다는 뜻이다.
+	 *
+	 * <p>기존 {@code ScholarshipDocument.essay} 는 서류 이름에 키워드가 있는지만 봤다.
+	 * "수학계획서"·"지원동기서" 처럼 이름이 다르면 놓치고, 언급이 없으면 무조건 false 였다.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "essay_requirement", length = 20)
+	private RequirementLevel essayRequirement;
+
+	/** 위 판단의 근거가 된 공고 문장. 사용자에게 우리 판단 대신 원문을 보여주기 위해 남긴다. */
+	@Column(name = "essay_evidence", columnDefinition = "TEXT")
+	private String essayEvidence;
+
+	/** 면접이 있는가. 대부분 CONDITIONAL("서류 합격자에 한해") 이다. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "interview_requirement", length = 20)
+	private RequirementLevel interviewRequirement;
+
+	@Column(name = "interview_evidence", columnDefinition = "TEXT")
+	private String interviewEvidence;
+
 	@Column(name = "last_synced_at")
 	private LocalDateTime lastSyncedAt;
 
@@ -110,8 +132,17 @@ public class Scholarship extends BaseEntity {
 		Long amount,
 		String primarySource,
 		String dedupKey,
-		String homepageUrl
+		String homepageUrl,
+		// 뒤에 붙인다. 위치 기반으로 호출하는 곳(ScholarshipMapper)이 있어 중간에 끼우면 깨진다.
+		RequirementLevel essayRequirement,
+		String essayEvidence,
+		RequirementLevel interviewRequirement,
+		String interviewEvidence
 	) {
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
 		this.title = title;
 		this.provider = provider;
 		this.summary = summary;
@@ -292,8 +323,16 @@ public class Scholarship extends BaseEntity {
 		LocalDateTime applicationEndAt,
 		Integer selectionCount,
 		Long amount,
-		String homepageUrl
+		String homepageUrl,
+		RequirementLevel essayRequirement,
+		String essayEvidence,
+		RequirementLevel interviewRequirement,
+		String interviewEvidence
 	) {
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
 		this.title = title;
 		this.provider = provider;
 		this.summary = summary;
