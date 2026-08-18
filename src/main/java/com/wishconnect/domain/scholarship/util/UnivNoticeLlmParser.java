@@ -289,6 +289,16 @@ public class UnivNoticeLlmParser {
 	 *
 	 * @return 본문 텍스트. 파싱할 내용이 없으면 {@code Optional.empty()}
 	 */
+	/**
+	 * 파싱에 넣을 본문. 못 고르면 {@code empty} → 호출측이 SKIPPED 로 남긴다.
+	 *
+	 * <p>예전에는 페이지 전체 텍스트({@code document.text()})를 그대로 썼다. 소음 셀렉터로 메뉴를
+	 * 걷어내긴 했지만 학교마다 마크업이 달라 다 걸리지 않았고, 결국 LLM 이 공지 대신 대학 소개문을
+	 * 읽었다. 실측에서 100건 중 35건이 그 상태였다.
+	 *
+	 * <p>이제 본문 영역을 직접 고른다. 못 고르거나 골라낸 게 메뉴처럼 보이면 <b>LLM 을 부르지 않는다.</b>
+	 * 근거 없는 값이 DB 에 남는 것보다 낫고, 크레딧도 아낀다.
+	 */
 	public Optional<ExtractedBody> extractBody(String rawHtml) {
 		if (rawHtml == null || rawHtml.isBlank()) {
 			return Optional.empty();
@@ -296,8 +306,12 @@ public class UnivNoticeLlmParser {
 		Document document = Jsoup.parse(rawHtml);
 		document.select(NOISE_SELECTOR).remove();
 
-		String text = document.text().replaceAll("\\s+", " ").trim();
-		if (text.length() < MIN_BODY_CHARS) {
+		Optional<String> selected = NoticeHtmlExtractor.body(document, null);
+		if (selected.isEmpty()) {
+			return Optional.empty();
+		}
+		String text = selected.get();
+		if (text.length() < MIN_BODY_CHARS || NoticeHtmlExtractor.looksLikeChrome(text)) {
 			return Optional.empty();
 		}
 		if (text.length() <= MAX_BODY_CHARS) {

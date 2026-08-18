@@ -42,7 +42,7 @@ class UnivNoticeLlmParserTest {
 				<body>
 				  <nav>전체메뉴 학사안내 장학 도서관</nav>
 				  <div id="header">경희대학교 로그인 검색</div>
-				  <div class="contents">2026학년도 2학기 운연장학 장학생을 모집합니다. 신청기간은 8월 12일부터 8월 21일까지이며, 제출서류는 자기소개서와 성적증명서입니다.</div>
+				  <div class="artclView">2026학년도 2학기 운연장학 장학생을 모집합니다. 신청기간은 8월 12일부터 8월 21일까지이며, 제출서류는 자기소개서와 성적증명서입니다.</div>
 				  <footer>개인정보처리방침 이메일무단수집거부 COPYRIGHT</footer>
 				</body></html>
 				""";
@@ -69,7 +69,8 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("본문이 상한을 넘으면 잘라낸다 (페이지 전체가 저장된 경우 방어)")
 	void truncatesLongBody() {
 		String long텍스트 = "장학금 신청 안내입니다. ".repeat(2000);   // 약 26,000자
-		var body = parser.extractBody("<html><body>" + long텍스트 + "</body></html>");
+		var body = parser.extractBody(
+				"<html><body><div class='artclView'>" + long텍스트 + "</div></body></html>");
 
 		assertThat(body).isPresent();
 		assertThat(body.get().text().length()).isEqualTo(6_000);

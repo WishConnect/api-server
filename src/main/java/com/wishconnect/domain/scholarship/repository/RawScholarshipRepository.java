@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /*
 외부 API 원본 데이터(raw_scholarship)를 저장하고 조회하는 Repository입니다.
@@ -33,6 +35,24 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 
 	/** 재파싱 대상: 상태와 무관하게 대학 공고 전체. 잘못 파싱된 기존 데이터를 덮어쓸 때 쓴다. */
 	List<RawScholarship> findBySourceStartingWithOrderByIdAsc(String sourcePrefix, Pageable pageable);
+
+	/**
+	 * 재파싱 대상 중 <b>이 프롬프트로는 아직 안 돌린 것</b>.
+	 *
+	 * <p>이게 없으면 재파싱이 매번 id 오름차순 첫 100건을 다시 집는다. 실제로 배치를 세 번 돌렸는데
+	 * 320회를 호출하고 처리한 공지는 100건이었다(같은 것을 3~5번씩). 프롬프트를 고쳤을 때만
+	 * 다시 돌아야 하므로 버전으로 거른다.
+	 */
+	@Query("""
+			select r from RawScholarship r
+			 where r.source like concat(:sourcePrefix, '%')
+			   and not exists (
+			       select 1 from NoticeParseLog l
+			        where l.rawScholarshipId = r.id and l.promptVersion = :promptVersion)
+			 order by r.id asc
+			""")
+	List<RawScholarship> findReparseTargets(@Param("sourcePrefix") String sourcePrefix,
+			@Param("promptVersion") String promptVersion, Pageable pageable);
 
 	long countBySourceStartingWithAndParseStatus(String sourcePrefix, ParseStatus parseStatus);
 }

@@ -131,7 +131,7 @@ class UnivNoticeLlmParsingServiceTest {
 	}
 
 	private String html(String body) {
-		return "<html><body><nav>메뉴</nav><div class='contents'>" + body + "</div></body></html>";
+		return "<html><body><nav>메뉴</nav><div class='artclView'>" + body + "</div></body></html>";
 	}
 
 	private void givenPendingTargets(List<RawScholarship> targets) {
@@ -140,8 +140,9 @@ class UnivNoticeLlmParsingServiceTest {
 	}
 
 	private void givenAllTargets(List<RawScholarship> targets) {
-		given(rawScholarshipRepository.findBySourceStartingWithOrderByIdAsc(
-				eq("UNIV_"), any(Pageable.class))).willReturn(targets);
+		given(rawScholarshipRepository.findReparseTargets(
+				eq("UNIV_"), eq(UnivNoticeLlmParser.PROMPT_VERSION), any(Pageable.class)))
+				.willReturn(targets);
 	}
 
 	// --- 신규 파싱 ---
