@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -385,5 +386,31 @@ class UnivNoticeLlmParserTest {
 	@DisplayName("conditions 가 없으면 빈 목록을 돌려준다")
 	void handlesMissingConditions() {
 		assertThat(parser.resolveConditions(notice(null, null, null), CONDITION_BODY)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("열거 필드에 union 타입을 함께 선언하지 않는다 — API 가 400 으로 거부한다")
+	void nullableEnumFieldsDeclareNoType() {
+		// 실제로 겪은 실패:
+		//   Enum value 'INTERNAL' does not match declared type '['string', 'null']'
+		// 요청이 통째로 반려돼 파서가 한 건도 처리하지 못했다. 스키마는 눈으로 검토해서는
+		// 안 걸리고 실제 호출을 해봐야 드러나므로 여기서 막는다.
+		// (운영 키로 확인함: type 이 단일 문자열이면 enum 과 같이 써도 통과한다)
+		Map<String, Object> schema = parser.buildRequest("본문".repeat(50)).outputSchema();
+		assertNoUnionTypeWithEnum(schema, "$");
+	}
+
+	@SuppressWarnings("unchecked")
+	private void assertNoUnionTypeWithEnum(Object node, String path) {
+		if (node instanceof Map<?, ?> map) {
+			// {"type":"string","enum":[...]} 는 정상이다. 거부당하는 건 타입이 목록인 경우뿐이다.
+			if (map.containsKey("enum") && map.get("type") instanceof List<?>) {
+				throw new AssertionError(
+						"enum 에 union 타입을 같이 선언했다(API 가 거부한다): " + path + " -> " + map);
+			}
+			map.forEach((key, value) -> assertNoUnionTypeWithEnum(value, path + "." + key));
+		} else if (node instanceof List<?> list) {
+			list.forEach(item -> assertNoUnionTypeWithEnum(item, path + "[]"));
+		}
 	}
 }
