@@ -149,48 +149,11 @@ class KhuNoticeCollectorTest {
 
 	// --- 분류 ---
 
-	@Test
-	@DisplayName("경희인턴은 표기가 갈려도 모두 WORK_STUDY 로 묶는다")
-	void classifiesKhuInternAsWorkStudy() {
-		// 같은 프로그램인데 '(교내인턴장학)' / '(교내장학)' 로 표기가 갈린다.
-		assertThat(KhuNoticeCollector.classify("2026학년도 2학기 경희인턴(교내인턴장학) 모집 안내").type())
-				.isEqualTo(ScholarshipType.WORK_STUDY);
-		assertThat(KhuNoticeCollector.classify("2026학년도 2학기 경희인턴(교내장학) 장학생 모집 공고").type())
-				.isEqualTo(ScholarshipType.WORK_STUDY);
-		assertThat(KhuNoticeCollector.classify("26-2학기 학기중 국가근로장학 모집 안내").type())
-				.isEqualTo(ScholarshipType.WORK_STUDY);
-	}
 
-	@Test
-	@DisplayName("제목에 외부 재단명이 있으면 EXTERNAL 이며 기관명을 뽑는다")
-	void classifiesExternalWithProvider() {
-		var classification = KhuNoticeCollector.classify("2026학년도 2학기 동산장학회 장학생 모집 안내");
 
-		assertThat(classification.type()).isEqualTo(ScholarshipType.EXTERNAL);
-		assertThat(classification.provider()).isEqualTo("동산장학회");
-	}
-
-	@Test
-	@DisplayName("그 외 교내 장학은 INTERNAL 이다")
-	void classifiesInternal() {
-		var classification = KhuNoticeCollector.classify("[서울C] 2026학년도 2학기 운연장학 신청 안내");
-
-		assertThat(classification.type()).isEqualTo(ScholarshipType.INTERNAL);
-		assertThat(classification.provider()).isEqualTo("경희대학교");
-	}
 
 	// --- 제목 정리 ---
 
-	@Test
-	@DisplayName("목록에서 딸려온 캠퍼스 라벨을 떼어낸다")
-	void stripsCampusLabel() {
-		assertThat(KhuNoticeCollector.cleanTitle("서울 [서울C] 2026학년도 2학기 운연장학 신청 안내"))
-				.isEqualTo("[서울C] 2026학년도 2학기 운연장학 신청 안내");
-		assertThat(KhuNoticeCollector.cleanTitle("국제 26-2학기 국가근로장학 모집 안내"))
-				.isEqualTo("26-2학기 국가근로장학 모집 안내");
-		assertThat(KhuNoticeCollector.cleanTitle("공통  2026년 하반기  군산시 안내"))
-				.isEqualTo("2026년 하반기 군산시 안내");
-	}
 
 	// --- 상세 주소 ---
 

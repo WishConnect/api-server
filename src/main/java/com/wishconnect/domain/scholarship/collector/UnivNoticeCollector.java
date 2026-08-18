@@ -75,11 +75,7 @@ public class UnivNoticeCollector {
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 
 	private final RawScholarshipRepository rawScholarshipRepository;
-	private final ScholarshipRepository scholarshipRepository;
-	private final ScholarshipConditionRepository scholarshipConditionRepository;
-	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final UnivNoticeProperties univNoticeProperties;
-	private final ImageStorageService imageStorageService;
 
 	/** 설정된 모든 대학을 수집한다(배치용). 사이트 간 실패는 서로 격리된다. */
 	public List<CollectResultResponse> collectAll(int pages) {
@@ -198,87 +194,14 @@ public class UnivNoticeCollector {
 			return false;
 		}
 
-		String dedupKey = ScholarshipDedupKey.of(site.source(), site.sourceIdOf(articleId));
-		Scholarship scholarship = scholarshipRepository.findByDedupKey(dedupKey).orElse(null);
-		boolean isNewScholarship = scholarship == null;
-		Classification classification = classify(title, site.provider());
-		if (scholarship == null) {
-			scholarship = scholarshipRepository.save(Scholarship.builder()
-					.title(cleanTitle(title))
-					.provider(classification.provider())
-					.summary(null)
-					.description(bodyText.length() > 2000 ? bodyText.substring(0, 2000) : bodyText)
-					.scholarshipType(classification.type())
-					.applicationStartAt(period == null ? null : period.start())
-					.applicationEndAt(period == null ? null : period.end())
-					.recruitmentStatus(resolveStatus(period))
-					.primarySource(site.source())
-					.dedupKey(dedupKey)
-					.homepageUrl(detailUrl)
-					.build());
-		}
-		raw.markParsed(scholarship);
+		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
+		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
 		rawScholarshipRepository.save(raw);
-		if (isNewScholarship) {
-			storeConditions(scholarship, title + "\n" + bodyText);
-			storeDocuments(scholarship, bodyText);
-			storePoster(site, doc, scholarship, title);
-		}
 		return true;
 	}
 
-	/**
-	 * 공지 본문에서 지원 자격 조건을 뽑아 저장한다.
-	 * 숫자 구조화(valueInt)는 이후 조건 추출 배치(ConditionExtractionService)가 이어서 처리하므로
-	 * 여기서는 원문 문장만 남긴다. 조건을 못 찾으면 아무것도 만들지 않는다.
-	 */
-	private void storeConditions(Scholarship scholarship, String text) {
-		List<ScholarshipCondition> conditions = NoticeConditionExtractor.extract(text).stream()
-				.map(extracted -> ScholarshipCondition.builder()
-						.scholarship(scholarship)
-						.conditionType(extracted.type())
-						.operator(ConditionOperator.EQ)
-						.valueString(extracted.snippet())
-						.autoExtracted(false)
-						.build())
-				.toList();
-		if (!conditions.isEmpty()) {
-			scholarshipConditionRepository.saveAll(conditions);
-		}
-	}
 
-	/**
-	 * 대학 공지 본문에서 제출서류 섹션이 보이면 서류명을 저장한다.
-	 * 학교마다 문서 양식이 달라 완벽한 구조화는 어렵기 때문에, 명확한 서류명 후보만 보수적으로 남긴다.
-	 */
-	private void storeDocuments(Scholarship scholarship, String text) {
-		List<String> documentNames = extractDocumentNames(text);
-		if (documentNames.isEmpty()) {
-			return;
-		}
-		List<ScholarshipDocument> documents = new ArrayList<>();
-		for (int i = 0; i < documentNames.size(); i++) {
-			String name = documentNames.get(i);
-			documents.add(ScholarshipDocument.builder()
-					.scholarship(scholarship)
-					.name(name)
-					.essay(ESSAY_DOCUMENT.matcher(name).find())
-					.displayOrder(i)
-					.build());
-		}
-		scholarshipDocumentRepository.saveAll(documents);
-	}
 
-	/** 본문 인라인 이미지 → 이미지 첨부 순으로 포스터 후보를 찾아 S3에 저장한다(실패해도 수집 계속). */
-	private void storePoster(Site site, Document doc, Scholarship scholarship, String title) {
-		String posterUrl = findPosterUrl(doc);
-		if (posterUrl == null) {
-			return;
-		}
-		imageStorageService.storeFromUrl(posterUrl,
-				"scholarship/" + site.code(), ImageStorageService.ENTITY_TYPE_SCHOLARSHIP,
-				scholarship.getId(), title);
-	}
 
 	private static final Pattern IMAGE_EXT = Pattern.compile("(?i)\\.(jpe?g|png|gif|webp)(\\?.*)?$");
 	private static final Pattern NON_POSTER =
@@ -367,34 +290,9 @@ public class UnivNoticeCollector {
 	}
 
 	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
-	static String findPosterUrl(Document doc) {
-		Element ogImg = doc.selectFirst("meta[property=og:image][content]");
-		if (ogImg != null) {
-			String src = ogImg.attr("content").trim();
-			if (IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
-				return src;
-			}
-		}
-		for (Element img : doc.select(
-				".board_view .view_cont img[src], .artclView img[src], .view-con img[src], "
-						+ ".view_cont img[src], .article-view img[src], .content img[src], .contents img[src], "
-						+ ".bg-white img[src], .entry-content img[src], article img[src], main img[src]")) {
-			String src = img.attr("abs:src");
-			if (!src.isBlank() && IMAGE_EXT.matcher(src).find() && !NON_POSTER.matcher(src).find()) {
-				return src;
-			}
-		}
-		for (Element link : doc.select(
-				".board_view .view_cont a[href*=download], .artclView a[href*=download], .view-con a[href*=download], "
-						+ ".view_cont a[href*=download], .article-view a[href*=download], .content a[href*=download], "
-						+ ".contents a[href*=download], .bg-white a[href*=download], .entry-content a[href*=download], "
-						+ "article a[href*=download], main a[href*=download]")) {
-			String name = link.text();
-			if (IMAGE_EXT.matcher(name.strip()).find()) {
-				return link.attr("abs:href");
-			}
-		}
-		return null;
+	/** 상세 문서에서 포스터 후보 URL을 찾는다. 없으면 null. */
+	public static String findPosterUrl(Document doc) {
+		return NoticeHtmlExtractor.posterUrl(doc);
 	}
 
 	/** 제출서류/구비서류 섹션에서 서류명 후보를 추출한다. */
@@ -451,16 +349,6 @@ public class UnivNoticeCollector {
 		return uri.getScheme() + "://" + uri.getHost();
 	}
 
-	private RecruitmentStatus resolveStatus(Period period) {
-		LocalDateTime now = LocalDateTime.now();
-		if (period == null) {
-			return RecruitmentStatus.OPEN;
-		}
-		if (period.start() != null && now.isBefore(period.start())) {
-			return RecruitmentStatus.UPCOMING;
-		}
-		return RecruitmentStatus.OPEN;
-	}
 
 	/** 근로 대가로 지급되는 근로장학금. 태그([국가근로])와 본문 표현(국가근로장학생 모집) 모두 대응한다. */
 	private static final Pattern WORK_STUDY_KEYWORD = Pattern.compile("(국가근로|교내근로|일반근로|근로장학)");
@@ -468,36 +356,8 @@ public class UnivNoticeCollector {
 	private static final Pattern PROVIDER_IN_TITLE = Pattern.compile(
 			"([가-힣A-Za-z0-9·]+(?:장학재단|장학회|문화재단|복지재단|공익재단|인재육성재단|진흥원|동문회|위원회))");
 
-	/**
-	 * 공지 제목으로 장학 유형을 분류한다.
-	 * <ol>
-	 *   <li>근로장학(국가근로/교내근로/일반근로)은 성격이 달라 WORK_STUDY로 우선 분리한다.
-	 *       ([국가근로] 태그가 있어 EXTERNAL로 잡히던 건도 여기로 온다)</li>
-	 *   <li>[교외]/[학교추천]/[정부초청] 등은 외부 재단·기관 장학의 학교 경유 공지이므로 EXTERNAL.
-	 *       이 경우 제목에서 운영기관명 추출을 시도한다.</li>
-	 *   <li>그 외([교내]/무태그)는 INTERNAL.</li>
-	 * </ol>
-	 */
-	record Classification(ScholarshipType type, String provider) {
-	}
 
-	static Classification classify(String title, String univProvider) {
-		if (WORK_STUDY_KEYWORD.matcher(title).find()) {
-			return new Classification(ScholarshipType.WORK_STUDY, univProvider);
-		}
-		if (EXTERNAL_TAG.matcher(title).find()) {
-			Matcher provider = PROVIDER_IN_TITLE.matcher(title);
-			return new Classification(ScholarshipType.EXTERNAL,
-					provider.find() ? provider.group(1) : univProvider);
-		}
-		return new Classification(ScholarshipType.INTERNAL, univProvider);
-	}
 
-	/** 제목 앞의 분류 태그([교외][등록금] 등)는 유지하되 공백을 정리한다. */
-	private String cleanTitle(String title) {
-		String cleaned = title.replaceAll("\\s+", " ").trim();
-		return cleaned.length() > 490 ? cleaned.substring(0, 490) : cleaned;
-	}
 
 	/** 텍스트에서 신청기간을 추출한다. 연도가 생략된 쪽은 앞선 연도(없으면 defaultYear)를 따른다. */
 	static Period parsePeriod(String text, int defaultYear) {
