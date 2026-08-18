@@ -141,6 +141,39 @@ class UnivNoticeLlmParserTest {
 		assertThat(result.level()).isNull();
 	}
 
+	@Test
+	@DisplayName("본문 조각만 저장된 공고도 읽는다 — 감싸는 컨테이너가 없어도")
+	void readsBodyFragmentWithoutContainer() {
+		// 서강대는 API 가 본문 조각만 내려준다. 셀렉터가 하나도 안 걸려 16건이
+		// 본문 4,000~16,000자를 갖고도 "추출할 수 없습니다" 로 버려지고 있었다.
+		String html = """
+				<p style="line-height: 200%"><span>2026-2학기 후생복지장학금 신청 안내</span></p>
+				<p>1. 신청기간 : 2026. 8. 18.(월) ~ 8. 31.(일)</p>
+				<p>2. 신청자격 : 직전학기 12학점 이상 이수한 재학생</p>
+				<p>3. 제출서류 : 신청서 1부, 가족관계증명서 1부</p>
+				""";
+
+		var body = parser.extractBody(html);
+
+		assertThat(body).isPresent();
+		assertThat(body.get().text())
+				.contains("신청기간")
+				.contains("직전학기 12학점 이상");
+	}
+
+	@Test
+	@DisplayName("메뉴가 섞인 문서는 조각으로 인정하지 않는다")
+	void stillRejectsChromeOnlyDocument() {
+		String html = """
+				<html><body>
+				<div>본문 바로가기 주메뉴 바로가기 로그인 통합검색 학사일정 강의계획서</div>
+				<div>대학안내 입학안내 대학/대학원 취업/창업 연구/산학 국제·교류</div>
+				</body></html>
+				""";
+
+		assertThat(parser.extractBody(html)).isEmpty();
+	}
+
 	// --- 본문 추출 ---
 
 	@Test
