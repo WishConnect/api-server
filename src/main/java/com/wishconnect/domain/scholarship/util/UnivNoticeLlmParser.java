@@ -97,7 +97,7 @@ public class UnivNoticeLlmParser {
 	 * 제목 판별 기준과 제목 동봉 · 자소서/면접 판단 · 공지 종류(RECRUITMENT/RESULT/GUIDE) ·
 	 * 통합 공고 · 제출 방식과 경로 · FINANCIAL_AID_TYPE 정의 축소.
 	 */
-	public static final String PROMPT_VERSION = "v4";
+	public static final String PROMPT_VERSION = "v5";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
@@ -256,7 +256,8 @@ public class UnivNoticeLlmParser {
 			- 본문에 근거가 없는 값은 반드시 null 로 둔다. 추측·유추·계산으로 값을 만들지 마라.
 			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.
-			  본문에 기간이 없으면 <반드시 [제목] 을 확인한다>. 본문을 첨부파일에만 싣고 제목에
+			  본문에 기간이 없으면 <반드시 [제목] 을 확인한다>. 제목 끝 괄호에 마감만 적는 일이
+			  아주 흔하다 — "…모집 안내 (~9/30)", "…선발(8/1~8/14)", "…신청(~9.18.금 18시)". 본문을 첨부파일에만 싣고 제목에
 			  마감을 적는 게시판이 있다 — "…선발 안내(~9.18.금 18시, 1학년 대상)".
 			  이때 [제목] 이 유일한 근거이므로 그대로 인용하면 된다.
 			- 조건도 같다. 본문에 자격이 없고 [제목] 에만 있으면([예] "1학년 대상", "대학원생 한정")
@@ -285,6 +286,8 @@ public class UnivNoticeLlmParser {
 			               <돈을 준다고 해서 장학금인 것은 아니다.> 학생의 학업을 지원하는
 			               것이 아니라 노동·참여의 대가라면 장학금이 아니다.
 			               (근로장학금은 장학금이다 — 한국장학재단 사업이고 학적이 요건이다.)
+			               기숙사 입사자 모집도 장학금이 아니다 — 주거 배정이지 학자금 지원이 아니다.
+			  이미 마감된 모집("모집 마감", "충원 완료")은 RESULT 다. 지금 지원할 수 없기 때문이다.
 			- combined: 한 공고에 서로 다른 장학금이 여러 개 실려 있으면 true.
 			  표로 장학금명·신청대상·금액·인원을 나열하는 "통합장학금" 공고가 그렇다.
 			  하나의 장학금을 여러 문단으로 설명한 것은 false 다.
@@ -298,6 +301,12 @@ public class UnivNoticeLlmParser {
 			              "학교장 명의 전자공문으로만 신청 가능", "학과 추천을 거쳐 제출"
 			  "시스템에서 신청 후 서류는 방문 제출" 처럼 섞이면 MIXED 다.
 			  <온라인 신청 + 온라인 업로드는 경로가 하나이므로 ONLINE 이다.> MIXED 가 아니다.
+			  "홈페이지에서 신청하며 서류는 신청 시 함께 업로드" → ONLINE (업로드는 별도 경로가 아니다)
+			  MIXED 는 <물리적으로 다른 행동>이 둘 이상일 때다 — 온라인 신청 + 우편 발송,
+			  이메일 제출 + 방문 제출.
+			- <문의처는 제출 경로가 아니다.> "문의 : ○○팀 (02-000-0000, a@b.ac.kr)",
+			  "이메일로 문의 가능" 은 제출 방법이 아니다. 서류를 어디로 <내는지>만 본다.
+			  제출처가 안 적혀 있으면 방식·채널·근거를 모두 null 로 둔다.
 			- submissionEvidence: submissionMethod/submissionChannel 의 근거가 된 본문 문장을
 			  그대로 인용한다. 인용할 문장이 없으면 <셋 다 null 로 둔다>. 본문이 없는 공고에
 			  "이메일로 서류 접수" 를 지어낸 일이 있었다.
@@ -337,6 +346,8 @@ public class UnivNoticeLlmParser {
 			    "국가근로장학금 신청자"   → RESTRICTION
 			    "학자금대출 이용자"      → RESTRICTION
 			    "기숙사 입사자"          → RESTRICTION
+			    "학자금 지원구간 9구간 이내" → INCOME_CRITERIA (소득 요건이지 지원 성격이 아니다)
+			    "소득분위 8분위 이하"        → INCOME_CRITERIA
 			  <학생이 충족해야 하는 상태는 전부 자격이다.> 장학금이 무엇을 지원하는지만 여기 온다.
 			  이 유형은 언제나 우대로 저장되므로, 필수 요건을 여기 넣으면 자격 없는 학생이 통과한다.
 
@@ -504,6 +515,12 @@ public class UnivNoticeLlmParser {
 	 */
 	public Requirement resolveRequirement(String level, String evidence, String bodyText,
 			String noticeTitle) {
+		return resolveRequirement(level, evidence, bodyText, noticeTitle, List.of());
+	}
+
+	/** @param attachments 첨부 파일명. 본문이 비어 있는 공고에서는 여기가 유일한 근거다. */
+	public Requirement resolveRequirement(String level, String evidence, String bodyText,
+			String noticeTitle, List<String> attachments) {
 		if (level == null || level.isBlank()) {
 			return Requirement.unknown();
 		}
@@ -514,7 +531,7 @@ public class UnivNoticeLlmParser {
 			return Requirement.unknown();
 		}
 		if (evidence == null || evidence.isBlank()
-				|| !isEvidenceGrounded(evidence, bodyText, noticeTitle)) {
+				|| !isEvidenceGrounded(evidence, bodyText, noticeTitle, attachments)) {
 			log.debug("[UnivNoticeLlmParser] 근거 없는 전형 판단이라 버림. level={}", level);
 			return Requirement.unknown();
 		}
@@ -634,12 +651,29 @@ public class UnivNoticeLlmParser {
 
 	/** 근거 문장이 본문이나 제목에 실제로 있는가. 제목까지 보는 건 제목에만 적힌 공고가 있어서다. */
 	private boolean isEvidenceGrounded(String evidence, String bodyText, String noticeTitle) {
+		return isEvidenceGrounded(evidence, bodyText, noticeTitle, List.of());
+	}
+
+	/**
+	 * 인용문이 <b>모델에게 준 것</b> 어딘가에 있는지 본다.
+	 *
+	 * <p>첨부 파일명도 원천이다. 프롬프트로는 첨부를 보내면서 대조는 본문·제목만 하고 있었다.
+	 * 그래서 모델이 파일명을 근거로 대면 "지어냈다"고 판정해 버렸다 — 첨부에
+	 * {@code "…장학금_자기소개서[1].hwp"} 가 있는데 자소서 판단이 null 로 남았다(3970).
+	 * 본문을 첨부에만 싣는 게시판에서는 파일명이 유일한 단서라 이걸 빼면 규칙 자체가 무의미하다.
+	 */
+	private boolean isEvidenceGrounded(String evidence, String bodyText, String noticeTitle,
+			List<String> attachments) {
 		String needle = normalizeForMatch(evidence);
 		if (needle.length() < 6) {
 			return false;
 		}
-		return normalizeForMatch(bodyText).contains(needle)
-				|| (noticeTitle != null && normalizeForMatch(noticeTitle).contains(needle));
+		if (normalizeForMatch(bodyText).contains(needle)
+				|| (noticeTitle != null && normalizeForMatch(noticeTitle).contains(needle))) {
+			return true;
+		}
+		return attachments != null && !attachments.isEmpty()
+				&& normalizeForMatch(String.join(" ", attachments)).contains(needle);
 	}
 
 	/** 게시판에서 공고 제목만 뽑는다. LLM 에 함께 넘기고, 폴백으로도 쓴다. */
