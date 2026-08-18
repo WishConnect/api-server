@@ -52,6 +52,8 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_05__financial_aid_type_preferred.sql` | `FINANCIAL_AID_TYPE` 조건을 `PREFERRED` 로 (지원 성격은 자격이 아니다) | ✅ 2026-08-18 |
 | `V20260818_06__create_scholarship_event.sql` | `scholarship_event` 테이블 추가 (추천 노출·클릭 기록) | ✅ 2026-08-18 |
 | `V20260818_07__add_condition_ref_backfill_action.sql` | `admin_audit_log.action` CHECK 에 `CONDITION_REF_BACKFILL` 추가 | ✅ 2026-08-18 |
+| `V20260818_08__parse_status_image_only.sql` | `ParseStatus` 에 `IMAGE_ONLY` 추가 (raw_scholarship·notice_parse_log 양쪽 CHECK) | ✅ 2026-08-18 |
+| `V20260818_09__unify_konkuk_source.sql` | 건국대 출처 `KONKUK_NOTICE` → `UNIV_KONKUK` (재파싱 대상에서 빠져 있던 문제 해결) | ✅ 2026-08-18 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서

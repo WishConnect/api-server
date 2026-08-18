@@ -111,7 +111,7 @@ scholarship:
       sites:
         - code: konkuk
           provider: 건국대학교
-          source: KONKUK_NOTICE   # 기존 수집분과의 멱등 호환을 위해 유지
+          source: UNIV_KONKUK
           list-url: https://www.konkuk.ac.kr/konkuk/2239/subview.do
           article-path: /bbs/konkuk/235/
           max-articles: 10
