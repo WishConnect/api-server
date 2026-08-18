@@ -53,10 +53,17 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	 * <p>이게 없으면 재파싱이 매번 id 오름차순 첫 100건을 다시 집는다. 실제로 배치를 세 번 돌렸는데
 	 * 320회를 호출하고 처리한 공지는 100건이었다(같은 것을 3~5번씩). 프롬프트를 고쳤을 때만
 	 * 다시 돌아야 하므로 버전으로 거른다.
+	 *
+	 * <p>본문을 못 뽑은 것(SKIPPED·IMAGE_ONLY)은 아예 뺀다. 프롬프트를 올려도 없던 본문이
+	 * 생기지는 않는데, 매번 대상으로 뽑혀 자리만 차지한다 — 124건이 그랬다. 나중에 OCR·첨부
+	 * 파싱으로 본문이 생기면 그때 PENDING 으로 되돌려 다시 태운다.
 	 */
 	@Query("""
 			select r from RawScholarship r
 			 where r.source like concat(:sourcePrefix, '%')
+			   and r.parseStatus not in (
+			       com.wishconnect.domain.scholarship.entity.ParseStatus.SKIPPED,
+			       com.wishconnect.domain.scholarship.entity.ParseStatus.IMAGE_ONLY)
 			   and not exists (
 			       select 1 from NoticeParseLog l
 			        where l.rawScholarshipId = r.id and l.promptVersion = :promptVersion)
@@ -80,6 +87,9 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	@Query("""
 			select r from RawScholarship r
 			 where r.source like concat(:sourcePrefix, '%')
+			   and r.parseStatus not in (
+			       com.wishconnect.domain.scholarship.entity.ParseStatus.SKIPPED,
+			       com.wishconnect.domain.scholarship.entity.ParseStatus.IMAGE_ONLY)
 			   and not exists (
 			       select 1 from NoticeParseLog l
 			        where l.rawScholarshipId = r.id and l.promptVersion = :promptVersion)

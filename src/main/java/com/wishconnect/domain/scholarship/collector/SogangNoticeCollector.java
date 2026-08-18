@@ -190,9 +190,9 @@ public class SogangNoticeCollector {
 		Document contentDoc = Jsoup.parse(contentHtml, BASE_URL);
 		String bodyText = contentDoc.text();
 
-		Period period = parsePeriod(data);
-		boolean closed = period != null && period.end() != null
-				&& period.end().isBefore(LocalDateTime.now());
+		// 마감 판정을 여기서 하지 않는다. 정규식이 연도를 못 읽어 올해로 가정하는 바람에
+		// 모집 중인 공고를 마감으로 버렸다 — 한 배치에서 26건이 그렇게 되살아났다.
+		// 수집기는 raw_html 만 남기고, 기간 판단은 근거를 대조하는 LLM 파싱이 맡는다.
 		String detailUrl = PAGE_URL;
 
 		RawScholarship raw = RawScholarship.builder()
@@ -200,14 +200,8 @@ public class SogangNoticeCollector {
 				.sourceId(pkId)
 				.sourceUrl(detailUrl)
 				.rawHtml(contentHtml)
-				.parseStatus(closed ? ParseStatus.SKIPPED : ParseStatus.PENDING)
-				.parseError(closed ? "모집종료일이 지난 공지입니다." : null)
+				.parseStatus(ParseStatus.PENDING)
 				.build();
-
-		if (closed) {
-			rawScholarshipRepository.save(raw);
-			return false;
-		}
 
 		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
 		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.

@@ -116,6 +116,15 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "submission_method", length = 300)
 	private String submissionMethod;
 
+	/**
+	 * 제출방식 판단의 근거가 된 본문 문장.
+	 *
+	 * <p>본문이 없는 공고에 "이메일로 서류 접수" 가 지어내진 채 저장된 일이 있었다. 근거를 함께
+	 * 남겨야 나중에 사람이 대조할 수 있다. 근거가 본문에 없으면 방식·채널과 함께 버린다.
+	 */
+	@Column(name = "submission_evidence", columnDefinition = "TEXT")
+	private String submissionEvidence;
+
 	/** 제출 경로. 화면 배지·필터용이고, 구체적인 안내는 {@link #submissionMethod} 에 있다. */
 	@Enumerated(EnumType.STRING)
 	@Column(name = "submission_channel", length = 20)
@@ -180,12 +189,14 @@ public class Scholarship extends BaseEntity {
 		NoticeKind noticeKind,
 		boolean combined,
 		String submissionMethod,
-		SubmissionChannel submissionChannel
+		SubmissionChannel submissionChannel,
+		String submissionEvidence
 	) {
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
 		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
@@ -378,12 +389,14 @@ public class Scholarship extends BaseEntity {
 		NoticeKind noticeKind,
 		boolean combined,
 		String submissionMethod,
-		SubmissionChannel submissionChannel
+		SubmissionChannel submissionChannel,
+		String submissionEvidence
 	) {
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
 		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;

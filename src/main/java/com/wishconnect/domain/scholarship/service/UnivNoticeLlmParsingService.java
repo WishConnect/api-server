@@ -26,6 +26,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -73,6 +74,10 @@ public class UnivNoticeLlmParsingService {
 			"(자기\\s*소개서|자소서|학업\\s*계획서|수학\\s*계획서|전인적\\s*성장\\s*계획서|에세이|essay)",
 			Pattern.CASE_INSENSITIVE);
 	private static final int MAX_DOCUMENTS = 12;
+
+	/** 본문을 못 뽑아 LLM 을 부르지 않은 경우의 이력용 자리표시. */
+	private static final UnivNoticeLlmParser.ExtractedBody EMPTY_BODY =
+			new UnivNoticeLlmParser.ExtractedBody("", false, 0);
 
 	private final RawScholarshipRepository rawScholarshipRepository;
 	// 포스터는 수집기가 아니라 여기서 붙인다 — 수집 시점에는 아직 scholarship 이 없다.
@@ -175,16 +180,17 @@ public class UnivNoticeLlmParsingService {
 	 * 같은 요청이 같은 지점에서 다시 잘리므로 재시도가 토큰만 태운다. 반면 형식이 깨지거나
 	 * 일시적 오류로 실패한 경우는 모델이 매번 조금씩 다르게 답하므로 한 번 더 부르면 대개 풀린다.
 	 */
-	private String callWithRetry(String noticeTitle, String bodyText, Long rawId) {
+	private String callWithRetry(String noticeTitle, String bodyText, List<String> attachments,
+			Long rawId) {
 		try {
-			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText, attachments));
 		} catch (CustomException e) {
 			if (e.getErrorCode() == ErrorCode.LLM_RESPONSE_TRUNCATED) {
 				throw e;
 			}
 			log.info("[UnivLlmParsing] LLM 호출 실패, 1회 재시도합니다. rawId={} reason={}",
 					rawId, e.getErrorCode());
-			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText));
+			return llmClient.chat(parser.buildRequest(noticeTitle, bodyText, attachments));
 		}
 	}
 
@@ -218,6 +224,8 @@ public class UnivNoticeLlmParsingService {
 					// 본문이 포스터뿐이라 alt 로 대체한 건 나중에 OCR 대상이 된다.
 					.bodyFromImageAlt(parser.isBodyFromImageAlt(raw.getRawHtml()))
 					.bodyLength(extracted.originalLength())
+					// 모델이 실제로 본 글. 검증할 때 원본을 다시 벗겨 재현하면 오진한다.
+					.bodyText(extracted.text())
 					.parsedJson(parsedJson)
 					.rawResponse(rawResponse)
 					.errorMessage(message)
@@ -241,6 +249,10 @@ public class UnivNoticeLlmParsingService {
 			ParseStatus status = imageOnly ? ParseStatus.IMAGE_ONLY : ParseStatus.SKIPPED;
 			if (!dryRun) {
 				raw.markSkipped(reason, status);
+				// 건너뛴 것도 "이 판으로 처리했다"는 사실이다. 남기지 않으면 프롬프트 버전으로
+				// 대상을 고를 때 매번 다시 뽑혀, 100칸 중 절반을 건너뛰기만 하다 끝난다.
+				// 실제로 다섯 배치에서 500칸을 쓰고 397건만 처리했다.
+				saveLog(raw, EMPTY_BODY, status, null, null, reason);
 			}
 			return new Outcome(status,
 					item(raw, status.name(), null, beforePeriod, reason));
@@ -256,7 +268,8 @@ public class UnivNoticeLlmParsingService {
 
 		String response;
 		try {
-			response = callWithRetry(htmlTitle, bodyText, raw.getId());
+			response = callWithRetry(htmlTitle, bodyText,
+					parser.extractAttachments(raw.getRawHtml()), raw.getId());
 		} catch (CustomException e) {
 			String reason = describeLlmFailure(e, extracted);
 			if (!dryRun) {
@@ -279,7 +292,10 @@ public class UnivNoticeLlmParsingService {
 		}
 
 		ParsedNotice notice = maybeNotice.get();
-		Optional<UnivNoticeLlmParser.Period> period = parser.resolvePeriod(notice, bodyText);
+		// 연도가 생략된 마감일("~8/13")은 수집 시점을 기준으로 연도를 붙인다. 공고는 대개 올라온
+		// 직후에 수집되므로 그때가 가장 가까운 기준이다. 모델에게 맡기면 2024 년으로 읽는다.
+		Optional<UnivNoticeLlmParser.Period> period = parser.resolvePeriod(notice, bodyText,
+				raw.getCrawledAt() == null ? LocalDate.now() : raw.getCrawledAt().toLocalDate());
 		// LLM 이 제목을 못 냈으면 게시판에서 뽑은 제목을 쓴다. 출처·번호로 만든 이름은 마지막 수단이다.
 		String title = firstNonBlank(notice.title(), htmlTitle, fallbackTitle(raw));
 		String afterPeriod = period.map(p -> format(p.start()) + " ~ " + format(p.end())).orElse(null);
@@ -321,6 +337,7 @@ public class UnivNoticeLlmParsingService {
 				notice.essayRequirement(), notice.essayEvidence(), bodyText, noticeTitle);
 		UnivNoticeLlmParser.Requirement interview = parser.resolveRequirement(
 				notice.interviewRequirement(), notice.interviewEvidence(), bodyText, noticeTitle);
+		UnivNoticeLlmParser.Submission submission = parser.resolveSubmission(notice, bodyText, noticeTitle);
 		NoticeKind kind = parser.resolveNoticeKind(notice.noticeKind());
 		boolean combined = Boolean.TRUE.equals(notice.combined());
 
@@ -340,8 +357,7 @@ public class UnivNoticeLlmParsingService {
 					parser.resolveAmount(notice.amount()),
 					raw.getSourceUrl(),
 					essay.level(), essay.evidence(), interview.level(), interview.evidence(),
-					kind, combined, trimTo(notice.submissionMethod(), 300),
-					parser.resolveSubmissionChannel(notice.submissionChannel()));
+					kind, combined, submission.method(), submission.channel(), submission.evidence());
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -368,8 +384,9 @@ public class UnivNoticeLlmParsingService {
 						.interviewEvidence(interview.evidence())
 						.noticeKind(kind)
 						.combined(combined)
-						.submissionMethod(trimTo(notice.submissionMethod(), 300))
-						.submissionChannel(parser.resolveSubmissionChannel(notice.submissionChannel()))
+						.submissionMethod(submission.method())
+						.submissionChannel(submission.channel())
+						.submissionEvidence(submission.evidence())
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));

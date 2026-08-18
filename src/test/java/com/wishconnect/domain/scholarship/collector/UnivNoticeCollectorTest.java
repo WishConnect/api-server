@@ -418,12 +418,16 @@ class UnivNoticeCollectorTest {
 	}
 
 	@Test
-	@DisplayName("수집 결과는 PENDING 으로 남아 LLM 파싱이 자동으로 집어간다")
+	@DisplayName("수집 결과는 언제나 PENDING 이다 — 마감 판정을 수집기가 하지 않는다")
 	void collectedNoticesWaitForParsing() throws Exception {
 		var collectorSource = java.nio.file.Files.readString(java.nio.file.Path.of(
 				"src/main/java/com/wishconnect/domain/scholarship/collector/UnivNoticeCollector.java"));
 
-		// 마감 지난 공지만 SKIPPED, 나머지는 PENDING. PENDING 이라야 reparse 없이도 파싱 대상이 된다.
-		assertThat(collectorSource).contains("closed ? ParseStatus.SKIPPED : ParseStatus.PENDING");
+		// PENDING 이라야 reparse 없이도 파싱 대상이 된다.
+		assertThat(collectorSource).contains(".parseStatus(ParseStatus.PENDING)");
+		// 정규식 마감 판정은 연도를 못 읽어 올해로 가정했고, 모집 중인 공고를 버렸다.
+		// 한 배치에서 26건이 되살아났다. 기간 판단은 근거를 대조하는 LLM 파싱만 한다.
+		assertThat(collectorSource).doesNotContain("boolean closed");
+		assertThat(collectorSource).doesNotContain("모집종료일이 지난 공지입니다.");
 	}
 }

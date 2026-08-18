@@ -41,6 +41,14 @@ public record ParsedNotice(
 		Boolean combined,
 		String submissionMethod,
 		String submissionChannel,
+
+		/**
+		 * 제출방식 판단의 근거가 된 본문 문장.
+		 *
+		 * <p>기간·조건·자소서에는 인용 대조가 있는데 제출방식만 없어서, 본문이 없는 공고에
+		 * "이메일로 서류 접수" 가 지어내진 채 저장됐다. 근거가 본문에 없으면 방식·채널을 함께 버린다.
+		 */
+		String submissionEvidence,
 		String essayRequirement,
 		String essayEvidence,
 		String interviewRequirement,
