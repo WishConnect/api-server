@@ -97,4 +97,37 @@ class NoticeHtmlExtractorTest {
 		// 한 개만 걸리는 건 본문에도 흔한 말이라 넘긴다.
 		assertThat(NoticeHtmlExtractor.looksLikeChrome("신청 바로가기 를 눌러 접수하세요")).isFalse();
 	}
+
+	@Test
+	@DisplayName("본문이 포스터 이미지뿐이면 '내용 없음'이 아니라 '이미지 전용'으로 구분한다")
+	void marksImageOnlyNoticesSeparately() throws Exception {
+		Document hongik = load("4051");   // .fr-view 안에 포스터 이미지 한 장뿐
+
+		assertThat(NoticeHtmlExtractor.body(hongik, null)).isEmpty();
+		assertThat(NoticeHtmlExtractor.imageOnly(hongik, null)).isTrue();
+		// 글이 있는 공지는 이미지가 섞여 있어도 이미지 전용이 아니다.
+		assertThat(NoticeHtmlExtractor.imageOnly(load("4041"), null)).isFalse();
+	}
+
+	@Test
+	@DisplayName("이미지 설명(alt)에 내용이 있으면 그것을 본문으로 쓴다")
+	void usesImageAltWhenItCarriesTheContent() throws Exception {
+		// 한국외대는 접근성 때문에 포스터 내용을 alt 에 적어 둔다 — 모집기간까지 들어 있다.
+		Optional<String> body = NoticeHtmlExtractor.body(load("1951"), null);
+
+		assertThat(body).isPresent();
+		assertThat(body.get()).contains("한국장학재단 학자금 대출 신청 안내");
+		assertThat(body.get()).contains("11월 17일");
+		assertThat(NoticeHtmlExtractor.imageOnly(load("1951"), null)).isFalse();
+	}
+
+	@Test
+	@DisplayName("전용 수집기를 쓰는 게시판도 본문을 집는다 — LLM 파서는 출처별 설정을 모른다")
+	void handlesBoardsOwnedByDedicatedCollectors() throws Exception {
+		// 파서는 raw_html 만 받으므로 사이트별 셀렉터를 쓸 수 없다. 공용 후보에 들어 있어야 한다.
+		assertThat(NoticeHtmlExtractor.body(load("4282"), null))   // 경희대
+				.get().asString().contains("경희인턴장학");
+		assertThat(NoticeHtmlExtractor.body(load("4060"), null))   // 숭실대(워드프레스)
+				.get().asString().contains("학자금대출 이자 지원");
+	}
 }

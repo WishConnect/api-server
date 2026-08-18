@@ -105,8 +105,18 @@ public class RawScholarship extends BaseEntity {
 	}
 
 	public void markSkipped(String parseError) {
+		markSkipped(parseError, ParseStatus.SKIPPED);
+	}
+
+	/**
+	 * 건너뜀. 사유에 따라 상태를 나눠 남긴다.
+	 *
+	 * <p>{@link ParseStatus#IMAGE_ONLY} 는 나중에 OCR·이미지 모델로 다시 볼 대상이라
+	 * 그냥 건너뛴 것과 섞이면 골라낼 수 없다.
+	 */
+	public void markSkipped(String parseError, ParseStatus status) {
 		this.scholarship = null;
-		this.parseStatus = ParseStatus.SKIPPED;
+		this.parseStatus = status;
 		this.parseError = parseError;
 	}
 

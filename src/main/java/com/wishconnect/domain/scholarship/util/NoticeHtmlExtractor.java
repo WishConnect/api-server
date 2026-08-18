@@ -26,6 +26,9 @@ public final class NoticeHtmlExtractor {
 	/** 본문으로 인정할 최소 길이. 이보다 짧으면 제목만 있는 껍데기로 본다. */
 	private static final int MIN_BODY_CHARS = 40;
 
+	/** 이미지 설명으로 인정할 최소 길이. "포스터", "이미지1" 같은 건 내용이 아니다. */
+	private static final int MIN_ALT_CHARS = 20;
+
 	/**
 	 * 본문 영역 후보. 실제 수집 대상 게시판을 열어 확인한 순서다.
 	 *
@@ -38,12 +41,16 @@ public final class NoticeHtmlExtractor {
 			".hwp_editor_board_content",  // 한글 에디터 공통
 			".artclView",                 // 전북·인천 등 표준 스킨
 			".board-view",                // 연세대 · 한림대
+			".board02 .row.contents",      // 경희대
+			".row.contents",
+			".entry-content",             // 워드프레스 계열
 			".board_view",
 			".bbs_view",
 			".view-con",
 			".view_content",
 			".b-content",
-			".board_cont");
+			".board_cont",
+			".col-12.col-lg-9");          // 숭실대(부트스트랩 그리드) — 가장 마지막에 둔다
 
 	/** 제목 영역 후보. 홍익대는 이게 없어 페이지 문서 제목("공유팝업 열기…")을 쓰고 있었다. */
 	private static final List<String> TITLE_SELECTORS = List.of(
@@ -81,6 +88,31 @@ public final class NoticeHtmlExtractor {
 			}
 		}
 		return Optional.empty();
+	}
+
+	/**
+	 * 본문 자리에 <b>이미지만</b> 있는가.
+	 *
+	 * <p>본문 영역은 찾았는데 읽을 글자가 없고 그림만 있는 경우다. 공고 내용이 포스터 안에 다 들어
+	 * 있으므로 "내용 없음" 과는 다르게 다뤄야 한다 — 나중에 OCR 이나 이미지를 읽는 모델로 살릴 수 있다.
+	 * 그때 대상을 골라내려면 지금 구분해 둬야 한다.
+	 */
+	public static boolean imageOnly(Document doc, String preferred) {
+		if (doc == null || body(doc, preferred).isPresent()) {
+			return false;
+		}
+		for (String selector : candidates(preferred)) {
+			Element element;
+			try {
+				element = doc.selectFirst(selector);
+			} catch (RuntimeException e) {
+				continue;
+			}
+			if (element != null && !element.select("img").isEmpty()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Optional<String> title(Document doc, String preferred) {
@@ -142,7 +174,31 @@ public final class NoticeHtmlExtractor {
 			return Optional.empty();
 		}
 		String text = normalize(element.text());
+		if (text.length() < MIN_BODY_CHARS) {
+			text = normalize(text + " " + imageDescriptions(element));
+		}
 		return text.length() >= MIN_BODY_CHARS ? Optional.of(text) : Optional.empty();
+	}
+
+	/**
+	 * 본문이 포스터 이미지 한 장뿐일 때, 이미지에 달린 설명을 본문으로 쓴다.
+	 *
+	 * <p>공고를 이미지로만 올리는 게시판이 많다. 그런 공지는 읽을 글자가 없어 건너뛸 수밖에 없는데,
+	 * 접근성 때문에 {@code alt} 에 내용을 성실히 적어 두는 곳이 있다. 한국외대가 그렇다 —
+	 * "2026년 7월 1일 수요일 오전 9시부터 11월 17일 화요일 오후 6시까지 신청 가능" 처럼
+	 * <b>모집기간까지</b> 들어 있다. 공짜로 건질 수 있는 것을 버릴 이유가 없다.
+	 *
+	 * <p>{@code alt} 가 파일명이거나 "이미지"·"포스터" 같은 한 단어면 내용이 아니므로 버린다.
+	 */
+	private static String imageDescriptions(Element element) {
+		StringBuilder joined = new StringBuilder();
+		for (Element image : element.select("img[alt]")) {
+			String alt = normalize(image.attr("alt"));
+			if (alt.length() >= MIN_ALT_CHARS && !alt.matches(".*\\.(png|jpe?g|gif|webp|bmp)$")) {
+				joined.append(alt).append(' ');
+			}
+		}
+		return joined.toString().trim();
 	}
 
 	/**

@@ -193,11 +193,18 @@ public class UnivNoticeLlmParsingService {
 
 		Optional<UnivNoticeLlmParser.ExtractedBody> body = parser.extractBody(raw.getRawHtml());
 		if (body.isEmpty()) {
+			// 포스터 이미지뿐인 공지는 따로 표시한다. 내용이 없는 게 아니라 형식이 달라서,
+			// 나중에 OCR·이미지 모델을 붙이면 살릴 수 있는 대상이다.
+			boolean imageOnly = parser.isImageOnly(raw.getRawHtml());
+			String reason = imageOnly
+					? "본문이 포스터 이미지뿐입니다(OCR·이미지 모델 대상)."
+					: "본문을 추출할 수 없습니다.";
+			ParseStatus status = imageOnly ? ParseStatus.IMAGE_ONLY : ParseStatus.SKIPPED;
 			if (!dryRun) {
-				raw.markSkipped("본문을 추출할 수 없습니다(첨부·이미지 전용 공지로 추정).");
+				raw.markSkipped(reason, status);
 			}
-			return new Outcome(ParseStatus.SKIPPED,
-					item(raw, "SKIPPED", null, beforePeriod, "본문 없음"));
+			return new Outcome(status,
+					item(raw, status.name(), null, beforePeriod, reason));
 		}
 
 		UnivNoticeLlmParser.ExtractedBody extracted = body.get();

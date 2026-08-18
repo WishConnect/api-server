@@ -299,6 +299,16 @@ public class UnivNoticeLlmParser {
 	 * <p>이제 본문 영역을 직접 고른다. 못 고르거나 골라낸 게 메뉴처럼 보이면 <b>LLM 을 부르지 않는다.</b>
 	 * 근거 없는 값이 DB 에 남는 것보다 낫고, 크레딧도 아낀다.
 	 */
+	/** 본문 자리가 포스터 이미지뿐인가. {@link #extractBody} 가 비었을 때 사유를 가르는 데 쓴다. */
+	public boolean isImageOnly(String rawHtml) {
+		if (rawHtml == null || rawHtml.isBlank()) {
+			return false;
+		}
+		Document document = Jsoup.parse(rawHtml);
+		document.select(NOISE_SELECTOR).remove();
+		return NoticeHtmlExtractor.imageOnly(document, null);
+	}
+
 	public Optional<ExtractedBody> extractBody(String rawHtml) {
 		if (rawHtml == null || rawHtml.isBlank()) {
 			return Optional.empty();
