@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.RequirementLevel;
+import com.wishconnect.domain.scholarship.entity.SubmissionChannel;
+import com.wishconnect.domain.scholarship.entity.NoticeKind;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,13 +26,24 @@ class UnivNoticeLlmParserTest {
 	private final UnivNoticeLlmParser parser = new UnivNoticeLlmParser(new ObjectMapper());
 
 	private ParsedNotice notice(String start, String end, String evidence) {
-		return new ParsedNotice("제목", "경희대학교", "INTERNAL", start, end, evidence,
-				null, null, null, null, null, null, null, List.of(), List.of());
+		return notice(start, end, evidence, List.of());
 	}
 
 	private ParsedNotice noticeWithConditions(ParsedNotice.Condition... conditions) {
-		return new ParsedNotice("제목", "경희대학교", "INTERNAL", null, null, null,
-				null, null, null, null, null, null, null, List.of(), List.of(conditions));
+		return notice(null, null, null, List.of(conditions));
+	}
+
+	/** 필드가 19개라 위치로 쓰면 읽기도 고치기도 어렵다. 테스트가 신경 쓰는 것만 인자로 받는다. */
+	private ParsedNotice notice(String start, String end, String evidence,
+			List<ParsedNotice.Condition> conditions) {
+		return new ParsedNotice(
+				"제목", "경희대학교", "INTERNAL",   // title · provider · scholarshipType
+				start, end, evidence,              // 신청기간과 그 근거
+				null, null, null,                  // selectionCount · amount · summary
+				null, null,                        // noticeKind · combined
+				null, null,                        // submissionMethod · submissionChannel
+				null, null, null, null,            // 자소서·면접 판단과 근거
+				List.of(), conditions);            // documents · conditions
 	}
 
 	// --- 본문 추출 ---
@@ -483,5 +496,42 @@ class UnivNoticeLlmParserTest {
 				"본문에는 일정만 있습니다.", "2026 장학생 모집 (면접전형 진행)");
 
 		assertThat(result.level()).isEqualTo(RequirementLevel.REQUIRED);
+	}
+
+	/*
+	오프라인 제출 공고가 마감일 손실의 원인이었다. 온라인은 "신청기간 : A ~ B" 로 깔끔한데
+	우편·방문은 "도착분에 한함", "우편 소인" 처럼 제각각이라, LLM 이 인용을 다듬다가 대조에 걸렸다.
+	 */
+	@Test
+	@DisplayName("인용 끝이 달라도 날짜가 본문에 있으면 기간을 살린다")
+	void keepsPeriodWhenQuotedDateExistsInBody() {
+		String body = "8. 제출방법 : 네이버폼 9. 접수마감 : ~2026.07.30(목) 오전 10:00 도착분에 한함";
+		// LLM 이 "도착분에 한함" 을 "까지" 로 바꿔 썼다. 뜻은 같지만 원문은 아니다.
+		var parsed = parser.resolvePeriod(
+				notice(null, "2026-07-30", "~2026.07.30(목) 오전 10:00까지"), body);
+
+		assertThat(parsed).isPresent();
+		assertThat(parsed.get().end().toLocalDate()).isEqualTo(java.time.LocalDate.of(2026, 7, 30));
+	}
+
+	@Test
+	@DisplayName("인용에 있는 날짜가 본문에 없으면 지어낸 것으로 보고 버린다")
+	void dropsPeriodWhenQuotedDateIsAbsent() {
+		String body = "접수마감 : ~2026.07.30(목) 오전 10:00 도착분에 한함";
+
+		assertThat(parser.resolvePeriod(
+				notice(null, "2026-08-15", "~2026.08.15(금)까지"), body)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("공지 종류·제출 경로는 이상한 값이 와도 null 로 떨어진다")
+	void resolvesEnumsSafely() {
+		assertThat(parser.resolveNoticeKind("RECRUITMENT")).isEqualTo(NoticeKind.RECRUITMENT);
+		assertThat(parser.resolveNoticeKind("recruitment")).isEqualTo(NoticeKind.RECRUITMENT);
+		assertThat(parser.resolveNoticeKind("???")).isNull();
+		assertThat(parser.resolveNoticeKind(null)).isNull();
+
+		assertThat(parser.resolveSubmissionChannel("MIXED")).isEqualTo(SubmissionChannel.MIXED);
+		assertThat(parser.resolveSubmissionChannel("카카오톡")).isNull();
 	}
 }

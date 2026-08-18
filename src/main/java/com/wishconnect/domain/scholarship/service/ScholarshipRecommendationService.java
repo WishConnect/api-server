@@ -390,10 +390,17 @@ public class ScholarshipRecommendationService {
 		if (conditions.isEmpty()) {
 			return List.of();
 		}
+		// 통합 공고는 판정하지 않는다. 조건이 서로 다른 장학금 것이라, "시각디자인전공 불충족" 같은
+		// 표시는 지원 가능한 학생을 돌려보낸다. 목록에서는 보이는데 상세에 엑스가 잔뜩이면
+		// 앞뒤도 안 맞는다.
+		boolean judge = conditions.stream()
+				.noneMatch(c -> c.getScholarship() != null && c.getScholarship().isCombined());
 		MatchProfile matchProfile = matchProfileOf(userId);
 		return conditions.stream()
 				.map(condition -> {
-					Evaluation evaluation = ConditionMatcher.evaluate(condition, matchProfile);
+					Evaluation evaluation = judge
+							? ConditionMatcher.evaluate(condition, matchProfile)
+							: new Evaluation(Result.UNKNOWN, null);
 					return new ConditionJudgement(
 							condition.getConditionType(), condition.getNecessity(),
 							condition.getValueString(), evaluation.result(), evaluation.description());
@@ -440,12 +447,17 @@ public class ScholarshipRecommendationService {
 		long mismatchCount = evaluations.stream().filter(e -> e.result() == Result.MISMATCH).count();
 		long evaluableCount = matchCount + mismatchCount;
 
+		// 여러 장학금이 한 공고에 실린 경우, 조건은 서로 다른 장학금의 것이 섞여 있다.
+		// 그대로 AND 로 걸면 아무도 통과하지 못해 공고가 목록에서 사라진다(실측: 조건 11개가
+		// 뭉쳐 시각디자인전공이면서 선교사 자녀인 학생만 지원 가능해졌다).
 		boolean eligible = true;
-		for (int i = 0; i < conditions.size(); i++) {
-			if (evaluations.get(i).result() == Result.MISMATCH
-					&& conditions.get(i).getNecessity() == ConditionNecessity.REQUIRED) {
-				eligible = false;
-				break;
+		if (!scholarship.isCombined()) {
+			for (int i = 0; i < conditions.size(); i++) {
+				if (evaluations.get(i).result() == Result.MISMATCH
+						&& conditions.get(i).getNecessity() == ConditionNecessity.REQUIRED) {
+					eligible = false;
+					break;
+				}
 			}
 		}
 		Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());

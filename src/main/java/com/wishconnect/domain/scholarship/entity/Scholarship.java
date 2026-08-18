@@ -82,6 +82,45 @@ public class Scholarship extends BaseEntity {
 	 * <p>기존 {@code ScholarshipDocument.essay} 는 서류 이름에 키워드가 있는지만 봤다.
 	 * "수학계획서"·"지원동기서" 처럼 이름이 다르면 놓치고, 언급이 없으면 무조건 false 였다.
 	 */
+	/**
+	 * 공지 종류. {@code null} 이면 판단하지 못한 것이다.
+	 *
+	 * <p>{@code GUIDE} 는 장학금이 아니므로 목록에서 뺀다. {@code RESULT} 는 모집기간이 없는 게
+	 * 정상이라, 채움률을 잴 때 분모에서 빼야 지표가 정확해진다.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "notice_kind", length = 20)
+	private NoticeKind noticeKind;
+
+	/**
+	 * 한 공고에 <b>여러 장학금</b>이 함께 실려 있는가.
+	 *
+	 * <p>"교외통합장학금" 처럼 표로 7~8개를 나열하는 공고가 있다. 조건을 성실히 뽑으면 서로 다른
+	 * 장학금의 요건이 한 행에 섞이는데, {@code eligible = mismatchCount == 0} 규칙상 전부 AND 로
+	 * 걸린다. 실측에서 조건 11개가 뭉쳐 <b>아무도 통과할 수 없는 상태</b>가 됐다 —
+	 * 시각디자인전공이면서 선교사 자녀인 학생만 지원 가능해진다.
+	 *
+	 * <p>참이면 <b>조건을 게이트로 쓰지 않는다.</b> 조건은 사실대로 REQUIRED 로 저장하되 판정에서만
+	 * 제외한다. 나중에 장학금별로 행을 나누게 되면 데이터를 고칠 필요 없이 이 예외만 걷어내면 된다.
+	 */
+	@Column(name = "is_combined", nullable = false)
+	private boolean combined;
+
+	/**
+	 * 어떻게 내는가. 온라인 신청인지, 우편·방문 제출인지.
+	 *
+	 * <p>마감이 "온라인 자정" 인지 "오전 10시 도착분에 한함" 인지에 따라 준비가 완전히 달라진다.
+	 * 오프라인 제출 공고가 실제로 마감일 추출도 어렵게 만들고 있었다 — 표현이 제각각이라
+	 * ("도착분에 한함", "우편 소인", "방문 접수") LLM 이 인용을 다듬다가 근거 대조에 걸렸다.
+	 */
+	@Column(name = "submission_method", length = 300)
+	private String submissionMethod;
+
+	/** 제출 경로. 화면 배지·필터용이고, 구체적인 안내는 {@link #submissionMethod} 에 있다. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "submission_channel", length = 20)
+	private SubmissionChannel submissionChannel;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "essay_requirement", length = 20)
 	private RequirementLevel essayRequirement;
@@ -137,8 +176,16 @@ public class Scholarship extends BaseEntity {
 		RequirementLevel essayRequirement,
 		String essayEvidence,
 		RequirementLevel interviewRequirement,
-		String interviewEvidence
+		String interviewEvidence,
+		NoticeKind noticeKind,
+		boolean combined,
+		String submissionMethod,
+		SubmissionChannel submissionChannel
 	) {
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
@@ -327,8 +374,16 @@ public class Scholarship extends BaseEntity {
 		RequirementLevel essayRequirement,
 		String essayEvidence,
 		RequirementLevel interviewRequirement,
-		String interviewEvidence
+		String interviewEvidence,
+		NoticeKind noticeKind,
+		boolean combined,
+		String submissionMethod,
+		SubmissionChannel submissionChannel
 	) {
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
