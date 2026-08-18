@@ -18,6 +18,7 @@ import com.wishconnect.domain.auth.dto.response.SignupResponse;
 import com.wishconnect.domain.auth.dto.response.SocialLoginResponse;
 import com.wishconnect.domain.auth.dto.response.TokenResponse;
 import com.wishconnect.domain.auth.util.PasswordValidator;
+import com.wishconnect.domain.auth.util.LoginIdNormalizer;
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.user.entity.AgreementType;
@@ -47,10 +48,6 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-
-	/** 영문 소문자·숫자·언더스코어 4~20자. 이메일과 헷갈리지 않도록 @ 와 점은 막는다. */
-	private static final java.util.regex.Pattern LOGIN_ID_PATTERN =
-			java.util.regex.Pattern.compile("^[a-z0-9_]{4,20}$");
 
 	private static final String SOCIAL_EMAIL_FORMAT = "%s_%s@wishconnect.kr"; // prefix, providerId
 	/**
@@ -85,7 +82,7 @@ public class AuthService {
 		if (userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)) {
 			throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
 		}
-		String loginId = normalizeLoginId(request.loginId());
+		String loginId = LoginIdNormalizer.normalize(request.loginId());
 		if (userRepository.existsByLoginIdAndDeletedAtIsNull(loginId)) {
 			throw new CustomException(ErrorCode.DUPLICATE_LOGIN_ID);
 		}
@@ -103,12 +100,13 @@ public class AuthService {
 		return new SignupResponse(user.getId(), tokens.accessToken(), tokens.refreshToken());
 	}
 
-	/** 기본 로그인. */
+	/** 기본 로그인. 소셜 계정과 구분되는 LOCAL 로그인 아이디를 사용한다. */
 	@Transactional(readOnly = true)
 	public LoginResponse login(LoginRequest request) {
-		// 탈퇴 회원은 조회 단계에서 걸러진다 → 미가입과 동일한 응답(계정 존재 여부를 흘리지 않는다).
-		User user = userRepository.findByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)
-				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+		String loginId = LoginIdNormalizer.normalize(request.loginId());
+		// 존재하지 않는 아이디와 비밀번호 불일치를 같은 응답으로 처리해 계정 존재 여부를 숨긴다.
+		User user = userRepository.findByLoginIdAndLoginTypeAndDeletedAtIsNull(loginId, LoginType.LOCAL)
+				.orElseThrow(() -> new CustomException(ErrorCode.LOGIN_FAILED));
 
 		if (!StringUtils.hasText(user.getPassword())
 				|| !passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -271,21 +269,10 @@ public class AuthService {
 	 * 로그인 아이디 정규화·검증. 대소문자 구분으로 생기는 혼동(Junho vs junho)을 막으려고
 	 * 소문자로 낮춰 저장한다. 그래서 중복 검사도 같은 기준으로 걸린다.
 	 */
-	private String normalizeLoginId(String value) {
-		if (!StringUtils.hasText(value)) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
-		}
-		String normalized = value.trim().toLowerCase();
-		if (!LOGIN_ID_PATTERN.matcher(normalized).matches()) {
-			throw new CustomException(ErrorCode.INVALID_LOGIN_ID_FORMAT);
-		}
-		return normalized;
-	}
-
 	/** 회원가입 화면의 아이디 "중복 확인" 버튼. 사용 가능하면 true. */
 	@Transactional(readOnly = true)
 	public boolean isLoginIdAvailable(String loginId) {
-		return !userRepository.existsByLoginIdAndDeletedAtIsNull(normalizeLoginId(loginId));
+		return !userRepository.existsByLoginIdAndDeletedAtIsNull(LoginIdNormalizer.normalize(loginId));
 	}
 
 
