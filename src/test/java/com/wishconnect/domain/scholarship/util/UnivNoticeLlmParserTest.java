@@ -534,4 +534,28 @@ class UnivNoticeLlmParserTest {
 		assertThat(parser.resolveSubmissionChannel("MIXED")).isEqualTo(SubmissionChannel.MIXED);
 		assertThat(parser.resolveSubmissionChannel("카카오톡")).isNull();
 	}
+
+	@Test
+	@DisplayName("근거에 날짜가 하나뿐이면 시작일을 버린다 — 하루만 접수하는 것처럼 보인다")
+	void dropsStartWhenEvidenceHasSingleDate() {
+		String body = "□ 지원방법 ㅇ 서류제출기간 : 2026. 8. 2.(일) 까지 ㅇ 제출방법 : 이메일 제출";
+		// LLM 이 시작일에도 같은 날짜를 넣었다. 화면에는 "8/2 ~ 8/2" 로 나온다.
+		var parsed = parser.resolvePeriod(
+				notice("2026-08-02", "2026-08-02", "서류제출기간 : 2026. 8. 2.(일) 까지"), body);
+
+		assertThat(parsed).isPresent();
+		assertThat(parsed.get().start()).isNull();
+		assertThat(parsed.get().end().toLocalDate()).isEqualTo(java.time.LocalDate.of(2026, 8, 2));
+	}
+
+	@Test
+	@DisplayName("근거에 날짜가 둘이면 시작일을 그대로 둔다")
+	void keepsStartWhenEvidenceHasTwoDates() {
+		String body = "2. 신청기간 : 2026. 07. 21.(화) ~ 2026. 08. 06.(목) 자정까지";
+		var parsed = parser.resolvePeriod(
+				notice("2026-07-21", "2026-08-06", "신청기간 : 2026. 07. 21.(화) ~ 2026. 08. 06.(목)"), body);
+
+		assertThat(parsed).isPresent();
+		assertThat(parsed.get().start().toLocalDate()).isEqualTo(java.time.LocalDate.of(2026, 7, 21));
+	}
 }

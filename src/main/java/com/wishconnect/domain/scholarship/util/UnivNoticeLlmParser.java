@@ -293,7 +293,12 @@ public class UnivNoticeLlmParser {
 			- RESTRICTION: 지원 제한 (중복수혜 불가, 휴학생 제외, 기수혜자 제외 등)
 			- RECOMMENDATION_REQUIRED: 지도교수·학교장 추천 등 추천이 필요한 요건
 			- UNIVERSITY_TYPE: 대학 구분 요건 (4년제·전문대·대학원·해외대학 등)
-			- FINANCIAL_AID_TYPE: 지원 성격 (등록금·생활비·해외연수·창업·취업 등)
+			- FINANCIAL_AID_TYPE: 이 장학금이 <무엇을 지원하는가> (등록금·생활비·해외연수·창업·취업 등).
+			  <무엇을 해야 하는가>는 여기가 아니다. 아래는 자격 요건이므로 다른 유형으로 분류한다.
+			    "국가장학금 신청자"      → RESTRICTION (신청 절차를 밟아야 지원 가능)
+			    "등록금 완납자"          → RESTRICTION
+			    "국가근로장학금 신청자"   → RESTRICTION
+			  이 유형은 언제나 우대로 저장되므로, 필수 요건을 여기 넣으면 자격 없는 학생이 통과한다.
 
 			necessity: 자격요건이면 REQUIRED, 우대사항·가산점이면 PREFERRED.
 			- "우대", "가산점", "우선 선발", "~하면 유리" 는 PREFERRED 다.
@@ -546,6 +551,12 @@ public class UnivNoticeLlmParser {
 			log.warn("[UnivLlmParser] 신청기간이 아닌 라벨 → 기간 폐기. evidence={}", notice.periodEvidence());
 			return Optional.empty();
 		}
+		// 근거에 날짜가 하나뿐이면 시작일의 근거가 없다. "서류제출기간 : 2026. 8. 2.(일) 까지" 를
+		// 보고 시작일에도 같은 날짜를 넣은 사례가 있었다 — 화면에는 "8/2 ~ 8/2" 로 나와
+		// 하루만 접수하는 것처럼 보인다. 실제로는 그 전부터 받았을 가능성이 높다.
+		if (start != null && !looksLikeDateRange(notice.periodEvidence())) {
+			start = null;
+		}
 		if (start != null) {
 			if (end.isBefore(start)) {
 				return Optional.empty();
@@ -602,6 +613,36 @@ public class UnivNoticeLlmParser {
 		}
 		return found;
 	}
+
+	/**
+	 * 인용문이 <b>기간</b>을 가리키는가, 아니면 <b>한 시점</b>만 가리키는가.
+	 *
+	 * <p>시작일의 근거가 있는지 보는 데 쓴다. "서류제출기간 : 2026. 8. 2.(일) 까지" 를 보고
+	 * 시작일에도 같은 날짜를 넣은 사례가 있었다 — 화면에는 "8/2 ~ 8/2" 로 나와 하루만 접수하는
+	 * 것처럼 보인다.
+	 *
+	 * <p>날짜 개수로만 세면 안 된다. 공고는 뒤 날짜의 연도를 생략하는 일이 흔하다 —
+	 * {@code "2026. 8. 1. ~ 8. 14."}. 그래서 <b>물결·범위 표시가 두 값 사이에 있는지</b>도 본다.
+	 */
+	private static boolean looksLikeDateRange(String evidence) {
+		if (evidence == null) {
+			return false;
+		}
+		java.util.Set<String> found = new java.util.LinkedHashSet<>();
+		java.util.regex.Matcher matcher = EVIDENCE_DATE.matcher(evidence);
+		while (matcher.find()) {
+			found.add(normalizeForMatch(matcher.group()));
+		}
+		if (found.size() >= 2) {
+			return true;
+		}
+		// "2026. 8. 1. ~ 8. 14." 처럼 뒤쪽 연도가 생략된 범위.
+		return RANGE_BETWEEN_NUMBERS.matcher(evidence).find();
+	}
+
+	/** 숫자 사이에 놓인 범위 표시. 연도가 생략된 "8. 1. ~ 8. 14." 를 잡는다. */
+	private static final java.util.regex.Pattern RANGE_BETWEEN_NUMBERS =
+			java.util.regex.Pattern.compile("\\d\\s*[.]?\\s*[~∼〜\\-–—]\\s*\\d");
 
 	/** 인용문에서 날짜를 집는다. "2026.07.30", "2026-07-30", "2026년 7월 30일" */
 	private static final java.util.regex.Pattern EVIDENCE_DATE = java.util.regex.Pattern.compile(
