@@ -13,6 +13,8 @@ import com.wishconnect.domain.application.service.AnswerService;
 import com.wishconnect.domain.application.service.EssayApplicationService;
 import com.wishconnect.domain.application.dto.response.EssayQuestionGenerationResponse;
 import com.wishconnect.domain.application.service.EssayQuestionGenerationService;
+import com.wishconnect.domain.application.dto.response.InterviewPrepResponse;
+import com.wishconnect.domain.application.service.InterviewPrepService;
 import com.wishconnect.domain.application.service.InterviewService;
 import com.wishconnect.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,6 +48,7 @@ public class ApplicationController {
 
 	private final EssayApplicationService essayApplicationService;
 	private final InterviewService interviewService;
+	private final InterviewPrepService interviewPrepService;
 	private final EssayQuestionGenerationService essayQuestionGenerationService;
 	private final AnswerService answerService;
 
@@ -175,6 +178,52 @@ public class ApplicationController {
 	 * ⑤ STEP2 답변 관리. action=DRAFT/SAVE/CONFIRM 로 세 동작을 통합 처리한다.
 	 * CONFIRM 이 지원서의 마지막 미완료 문항을 완료시키면 essay 를 자동 COMPLETED 로 전환한다.
 	 */
+	@Operation(summary = "⑥ 면접 준비 자료 조회",
+			description = """
+					자기소개서 작성 완료 화면에서 쓰는 면접 준비 자료다. **LLM 을 부르지 않는다.**
+
+					질문 하나마다 네 가지가 함께 온다.
+					- `intent` : 질문의도 — 면접관이 무엇을 보려는지
+					- `answerTip` : 답변 Tip
+					- `sampleAnswer` : 예시답변 — **사용자가 쓴 자소서를 바탕으로 만든 것.** 없으면 null
+					- `guideSteps` : 구성 가이드 3단계 (STEP1 → STEP2 → STEP3)
+
+					`sampleAnswer` 만 지원서 단위이고 나머지는 장학금 단위로 공유한다.
+					비어 있으면 ⑥-1 생성 API 를 호출할 것.
+					""")
+	@GetMapping("/{applicationId}/interview-prep")
+	public ApiResponse<InterviewPrepResponse> getInterviewPrep(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId) {
+		return ApiResponse.ok(
+				interviewPrepService.getForEssay(UUID.fromString(userId), applicationId));
+	}
+
+	@Operation(summary = "⑥-1 면접 예시답변 생성",
+			description = """
+					사용자가 쓴 자기소개서를 바탕으로 **예시답변만** 만든다.
+					질문·의도·Tip·구성가이드는 장학금 단위로 이미 만들어져 있어야 한다
+					(`POST /api/v1/scholarships/{id}/interview-questions`).
+
+					**실패해도 200 이다.** 예시답변은 보조 자료라, 자소서가 비어 있거나 LLM 이
+					실패하면 예시답변 없이 질문만 돌려준다. 화면은 `sampleAnswer` 가 null 인 항목의
+					예시답변 영역만 비우면 된다.
+
+					**호출 시점**: 자소서 작성 완료 후 면접 준비 화면 진입 시.
+					자소서를 고쳐 다시 부르면 예시답변을 새로 만든다.
+
+					**에러**
+					- 404 : 지원서 없음 (타인 소유 포함)
+					- 429 : 생성 한도 초과
+					""")
+	@PostMapping("/{applicationId}/interview-prep")
+	public ApiResponse<InterviewPrepResponse> generateInterviewPrep(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId) {
+		return ApiResponse.ok(
+				interviewPrepService.generateSampleAnswers(UUID.fromString(userId), applicationId));
+	}
+
 	@Operation(summary = "⑤ STEP2 답변 관리 (draft/save/confirm)",
 			description = "action 파라미터로 세 동작 통합: DRAFT(LLM 초안 생성 = Sonnet), "
 					+ "SAVE(임시저장), CONFIRM(완료 확정 + 전 문항 완료 시 essay 자동 COMPLETED).")
