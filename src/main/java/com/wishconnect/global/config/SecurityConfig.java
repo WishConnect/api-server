@@ -62,7 +62,9 @@ public class SecurityConfig {
 			// 비로그인 큐레이팅. 가입 전에 어떤 장학금이 있는지 보여주지 못하면 가입할 이유가 없다.
 			// 토큰이 있으면 필터가 인증을 채워 주므로, 열어 둬도 로그인 사용자는 개인화 응답을 받는다.
 			"/api/v1/scholarships/curated",
-			"/api/v1/insights"
+			"/api/v1/insights",
+			// 권리자·기관 담당자는 회원이 아닐 수 있으므로 콘텐츠 이용 문의 접수는 공개한다.
+			"/api/v1/content-inquiries"
 	};
 
 	/**

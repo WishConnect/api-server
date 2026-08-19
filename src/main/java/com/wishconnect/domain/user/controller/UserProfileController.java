@@ -33,14 +33,14 @@ public class UserProfileController {
 
 	private final UserProfileService userProfileService;
 
-	@Operation(summary = "프로필 상세 조회", description = "내 프로필 전체를 조회합니다. 온보딩 재진입, 프로필 수정, 추천 기준 수정 화면에서 사용합니다.")
+	@Operation(summary = "프로필 상세 조회", description = "내 프로필 전체와 현재 온보딩 단계를 조회합니다. 소셜 로그인 신규 사용자는 STEP_1부터, 일반 회원가입 사용자는 저장된 단계부터 재진입할 때 사용합니다.")
 	@GetMapping
 	public ApiResponse<ProfileResponse> getProfile(@AuthenticationPrincipal String userId) {
 		return ApiResponse.ok(userProfileService.getProfile(UUID.fromString(userId)));
 	}
 
 	// STEP 1: 이름, 생년, 연락처, 성별, 국적, 거주지역 저장
-	@Operation(summary = "프로필 기본 정보 저장/수정", description = "온보딩 STEP 1 또는 마이페이지 프로필 수정에서 이름, 생년, 연락처, 성별, 국적, 거주지역을 저장합니다.")
+	@Operation(summary = "프로필 기본 정보 저장/수정", description = "소셜 로그인 온보딩 STEP 1 또는 마이페이지 프로필 수정에서 이름, 생년월일, 연락처, 성별, 국적, 거주지역을 저장합니다.")
 	@PutMapping("/basic")
 	public ApiResponse<OnboardingStepResponse> saveBasic(
 			@AuthenticationPrincipal String userId,

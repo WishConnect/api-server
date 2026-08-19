@@ -54,6 +54,7 @@ class UserProfileControllerTest {
 				"서울 중구",
 				50,
 				false,
+				"STEP_1",
 				null,
 				null,
 				java.util.List.of());
