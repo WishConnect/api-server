@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.common.entity.Major;
 import com.wishconnect.domain.common.entity.MajorCategory;
+import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
 import com.wishconnect.domain.common.repository.RegionRepository;
@@ -20,7 +21,9 @@ import com.wishconnect.domain.user.dto.request.ProfileHouseholdRequest;
 import com.wishconnect.domain.user.dto.response.OnboardingCompleteResponse;
 import com.wishconnect.domain.user.entity.FamilyCategory;
 import com.wishconnect.domain.user.entity.FamilyType;
+import com.wishconnect.domain.user.entity.Gender;
 import com.wishconnect.domain.user.entity.Interest;
+import com.wishconnect.domain.user.entity.Nationality;
 import com.wishconnect.domain.user.entity.SecondMajorType;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserFamilyType;
@@ -35,6 +38,7 @@ import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,6 +100,23 @@ class UserProfileServiceTest {
 
 		given(userRepository.findById(userId)).willReturn(Optional.of(user));
 		given(userProfileRepository.findByUserId(userId)).willReturn(Optional.of(profile));
+	}
+
+	@Test
+	@DisplayName("프로필 조회 시 시군구와 상위 시도 정보를 함께 반환한다")
+	void getProfile_includesParentRegion() {
+		Region sido = Region.builder().name("서울").build();
+		Region sigungu = Region.builder().name("중구").parent(sido).build();
+		ReflectionTestUtils.setField(sido, "id", 1L);
+		ReflectionTestUtils.setField(sigungu, "id", 2L);
+		profile.updateBasic(LocalDate.of(2002, 4, 14), Gender.FEMALE, Nationality.DOMESTIC, sigungu);
+
+		var response = userProfileService.getProfile(userId);
+
+		assertThat(response.region().regionId()).isEqualTo(2L);
+		assertThat(response.region().name()).isEqualTo("중구");
+		assertThat(response.region().parentId()).isEqualTo(1L);
+		assertThat(response.region().parentName()).isEqualTo("서울");
 	}
 
 	@Test

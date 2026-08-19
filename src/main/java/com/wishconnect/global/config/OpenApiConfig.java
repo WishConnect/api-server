@@ -7,6 +7,7 @@ import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import java.util.List;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -33,6 +34,37 @@ public class OpenApiConfig {
 						new Server().url("http://localhost:8080").description("로컬 서버")))
 				.addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
 				.components(new Components().addSecuritySchemes(SECURITY_SCHEME_NAME, bearerScheme()));
+	}
+
+	/**
+	 * 새 DTO 가 추가돼도 Swagger 의 스키마 설명이 빈칸으로 남지 않게 하는 안전망.
+	 *
+	 * <p>화면 계약에 중요한 모델은 DTO 의 {@code @Schema} 로 구체적으로 설명하고, 그 밖의
+	 * 내부 중첩 모델에는 역할에 따른 기본 설명을 붙인다. Springdoc 은 필드 구조는 자동으로
+	 * 만들지만 모델 설명은 자동으로 만들지 않아, 설명이 없으면 프론트가 요청과 응답을 구분하기 어렵다.
+	 */
+	@Bean
+	public OpenApiCustomizer schemaDescriptionFallback() {
+		return openApi -> {
+			if (openApi.getComponents() == null || openApi.getComponents().getSchemas() == null) {
+				return;
+			}
+			openApi.getComponents().getSchemas().forEach((name, schema) -> {
+				if (schema.getDescription() == null || schema.getDescription().isBlank()) {
+					schema.setDescription(defaultSchemaDescription(name));
+				}
+			});
+		};
+	}
+
+	private String defaultSchemaDescription(String schemaName) {
+		if (schemaName.endsWith("Request")) {
+			return schemaName + " API 요청 본문";
+		}
+		if (schemaName.endsWith("Response")) {
+			return schemaName + " API 응답 데이터";
+		}
+		return schemaName + " API 데이터 모델";
 	}
 
 	private Info apiInfo() {

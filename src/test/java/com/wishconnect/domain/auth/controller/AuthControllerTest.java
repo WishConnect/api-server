@@ -56,7 +56,7 @@ class AuthControllerTest {
 				 "phone":"010-1234-5678",
 				 "gender":"FEMALE","nationality":"DOMESTIC","birthDate":"2002-04-14","region":"서울",
 				 "agreements":[{"type":"TERMS","isAgreed":true},{"type":"PRIVACY","isAgreed":true},
-				 {"type":"THIRD_PARTY","isAgreed":true},{"type":"AGE_14","isAgreed":true}]}
+				 {"type":"AGE_14","isAgreed":true}]}
 				""";
 
 		@Test

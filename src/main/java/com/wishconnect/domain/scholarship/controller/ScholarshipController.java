@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.dto.*;
+import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.service.ScholarshipCalendarService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
@@ -12,7 +13,10 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /*
@@ -29,6 +34,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RestController
 @RequestMapping("/api/v1/scholarships")
 @RequiredArgsConstructor
+@Validated
 public class ScholarshipController {
 
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
@@ -48,7 +54,7 @@ public class ScholarshipController {
 	 *
 	 * <p>기록 실패는 응답을 실패시키지 않는다. 저장된 건수를 돌려준다.
 	 */
-	@Operation(summary = "추천 노출·클릭 기록")
+	@Operation(summary = "추천 노출·클릭 기록", description = "큐레이팅 응답의 rankerVersion과 각 카드 section을 그대로 실어 최대 100건을 한 번에 기록합니다. 스크랩·지원서 작성 시작은 서버가 직접 기록하므로 보내지 않습니다.")
 	@PostMapping("/events")
 	public ApiResponse<Integer> recordEvents(
 			@AuthenticationPrincipal String userId,
@@ -66,19 +72,41 @@ public class ScholarshipController {
 	 * <p>{@code sort} 는 비로그인 화면의 드롭다운(최신 등록순/마감 임박순)이다. 로그인 상태에는
 	 * 화면에 드롭다운이 없어 무시된다. category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
 	 */
+	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
+			GUEST, ONBOARDING_REQUIRED, PERSONALIZED가 모두 사용하는 API입니다.
+			PERSONALIZED의 featured는 지원 가능한 전체를 점수 내림차순·동점이면 마감 임박순으로 내려줍니다.
+			campusScholarships는 지원 가능하고 운영기관에 사용자 학교명이 포함된 교내 장학금입니다.
+			유형·마감·금액·스크랩 필터는 마지막 영역의 ineligibleScholarships와 otherScholarships에만 공통 적용됩니다.
+			응답의 rankerVersion과 카드별 section은 POST /events에 그대로 전달해야 합니다.
+			category는 현재 수용만 하고 필터링하지 않으며, sort는 GUEST에서만 사용합니다.
+			""")
 	@GetMapping("/curated")
 	public ApiResponse<CuratedScholarshipResponse> getCurated(
 			@AuthenticationPrincipal String userIdStr,
-			@RequestParam(required = false) String category,
 			@RequestParam(defaultValue = "DEADLINE") CuratedSort sort,
+			@Parameter(description = "마지막 목록 유형: INTERNAL, EXTERNAL, WORK_STUDY")
+			@RequestParam(required = false) ScholarshipType scholarshipType,
+			@Parameter(description = "마지막 목록 마감 형태: ALL, HAS_DEADLINE, ALWAYS_OPEN")
+			@RequestParam(defaultValue = "ALL") DeadlineFilter deadline,
+			@Parameter(description = "마지막 목록에서 D-day가 이 일수 이하인 공고만 조회", example = "14")
+			@RequestParam(required = false) @Positive Integer deadlineWithinDays,
+			@Parameter(description = "마지막 목록 최소 지원금(원)", example = "1000000")
+			@RequestParam(required = false) @PositiveOrZero Long minAmount,
+			@Parameter(description = "마지막 목록 최대 지원금(원)", example = "5000000")
+			@RequestParam(required = false) @PositiveOrZero Long maxAmount,
+			@Parameter(description = "true면 마지막 목록에서 내가 스크랩한 장학금만 조회")
+			@RequestParam(defaultValue = "false") boolean scrappedOnly,
 			@RequestParam(defaultValue = "1") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		return ApiResponse.ok(scholarshipRecommendationService.getCuratedScholarships(
-				resolveUserId(userIdStr), sort, page, size));
+				resolveUserId(userIdStr), sort, page, size,
+				new CuratedFilters(scholarshipType, deadline, deadlineWithinDays,
+						minAmount, maxAmount, scrappedOnly)));
 	}
 
 	/** 홈 - 오늘의 장학금 소식 요약(신규 맞춤/이번 주 마감 건수). */
 	@GetMapping("/home-summary")
+	@Operation(summary = "홈 장학금 소식 요약", description = "로그인 사용자의 신규 맞춤 장학금, 이번 주 마감, 작성 중 지원서, 새 인사이트 건수를 반환합니다.")
 	public ApiResponse<HomeSummaryResponse> getHomeSummary(@AuthenticationPrincipal String userId) {
 		return ApiResponse.ok(scholarshipRecommendationService.getHomeSummary(UUID.fromString(userId)));
 	}
@@ -90,6 +118,7 @@ public class ScholarshipController {
 	 * 전체를 다 띄우면 달력이 빽빽해 쓸모없어서 기본은 지원 가능한 것만 준다.
 	 */
 	@GetMapping("/calendar")
+	@Operation(summary = "장학금 일정 달력", description = "모집 시작·마감을 달력 이벤트로 반환합니다. year·month 생략 시 이번 달이며 scope는 MATCHED(기본), SCRAPPED, ALL입니다.")
 	public ApiResponse<ScholarshipCalendarResponse> getCalendar(
 			@AuthenticationPrincipal String userId,
 			@RequestParam(required = false) Integer year,
@@ -101,6 +130,7 @@ public class ScholarshipController {
 
 	/** 장학금 상세(요약 테이블 + 선발 일정 타임라인 + 제출 서류 + 매칭 사유). */
 	@GetMapping("/{scholarshipId}")
+	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다.")
 	public ApiResponse<ScholarshipDetailResponse> getDetail(
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {
@@ -109,6 +139,7 @@ public class ScholarshipController {
 
 	/** 장학금을 키워드·카테고리로 검색한다. 비로그인도 조회 가능하며 이때 isScrapped 는 항상 false 다. */
 	@GetMapping("/search")
+	@Operation(summary = "장학금 검색", description = "키워드·카테고리·정렬·스크랩 여부로 장학금을 검색합니다. 비로그인도 호출할 수 있으며 이때 isScrapped는 false입니다.")
 	public ApiResponse<ScholarshipSearchResponse> searchScholarships(
 			@AuthenticationPrincipal String userIdStr,
 			@RequestParam(required = false) String keyword,
