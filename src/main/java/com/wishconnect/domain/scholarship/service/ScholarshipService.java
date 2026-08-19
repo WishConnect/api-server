@@ -86,6 +86,7 @@ public class ScholarshipService {
         // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
         // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
         ScholarshipType categoryType = parseCategory(category);
+        LocalDateTime now = LocalDateTime.now();
 
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
@@ -96,13 +97,13 @@ public class ScholarshipService {
         if (scrappedOnly) {
             // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
             scholarshipPage = (normalizedKeyword == null)
-                    ? scholarshipRepository.findScrappedByUser(userId, categoryType, pageable)
-                    : searchScrappedBySort(userId, keywordNoSpace, searchKeywords, keywordType, categoryType, sort, pageable);
+                    ? scholarshipRepository.findScrappedByUser(userId, categoryType, now, pageable)
+                    : searchScrappedBySort(userId, keywordNoSpace, searchKeywords, keywordType, categoryType, now, sort, pageable);
 
         } else if (normalizedKeyword == null) {
-            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, pageable);
+            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, now, pageable);
         } else {
-            scholarshipPage = searchBySort(keywordNoSpace, searchKeywords, keywordType, categoryType, sort, pageable);
+            scholarshipPage = searchBySort(keywordNoSpace, searchKeywords, keywordType, categoryType, now, sort, pageable);
         }
 
         // 4.유저의 스크랩 여부 확인
@@ -136,15 +137,16 @@ public class ScholarshipService {
             List<String> searchKeywords,
             ScholarshipType keywordType,
             ScholarshipType category,
+            LocalDateTime now,
             String sort,
             Pageable pageable
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchByKeywordOrderByRelevance(
-                    keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
+                    keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
         }
         return scholarshipRepository.searchByKeyword(
-                keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
+                keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
     }
 
     private Page<Scholarship> searchScrappedBySort(
@@ -153,15 +155,16 @@ public class ScholarshipService {
             List<String> searchKeywords,
             ScholarshipType keywordType,
             ScholarshipType category,
+            LocalDateTime now,
             String sort,
             Pageable pageable
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchScrappedByUserAndKeywordOrderByRelevance(
-                    userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
+                    userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
         }
         return scholarshipRepository.searchScrappedByUserAndKeyword(
-                userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
+                userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
     }
 
     private void validateSearchRequest(String keyword, int page, int size) {
