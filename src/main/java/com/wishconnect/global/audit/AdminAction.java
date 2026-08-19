@@ -12,6 +12,10 @@ public enum AdminAction {
 
 	SCHOLARSHIP_CREATE,
 	SCHOLARSHIP_UPDATE,
+	/** 조건·서류·심사 분기를 포함한 관리자 통합 수정. */
+	SCHOLARSHIP_AGGREGATE_UPDATE,
+	SCHOLARSHIP_IMAGE_UPDATE,
+	MERGE_CANDIDATE_MANUAL_CREATE,
 	/** 목록에서 내리기(soft delete). */
 	SCHOLARSHIP_DELETE,
 

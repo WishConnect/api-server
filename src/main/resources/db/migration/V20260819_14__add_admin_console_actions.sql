@@ -1,0 +1,17 @@
+-- 관리자 감사로그 action CHECK가 있는 운영 DB에서도 새 작업을 기록할 수 있게 한다.
+BEGIN;
+
+ALTER TABLE admin_audit_log DROP CONSTRAINT IF EXISTS admin_audit_log_action_check;
+ALTER TABLE admin_audit_log ADD CONSTRAINT admin_audit_log_action_check CHECK (action IN (
+    'EXCEL_IMPORT', 'SCHOLARSHIP_CREATE', 'SCHOLARSHIP_UPDATE', 'SCHOLARSHIP_AGGREGATE_UPDATE',
+    'SCHOLARSHIP_IMAGE_UPDATE', 'SCHOLARSHIP_DELETE', 'REPORT_RESOLVE', 'CONTENT_INQUIRY_RESOLVE',
+    'SYNC_TRIGGER', 'COLLECT_TRIGGER', 'CONDITION_EXTRACT_TRIGGER', 'CONDITION_REF_BACKFILL',
+    'ENRICH_TRIGGER', 'MERGE_DETECT_TRIGGER', 'MERGE_CANDIDATE_MANUAL_CREATE',
+    'SCHOLARSHIP_MERGE', 'SCHOLARSHIP_MERGE_REJECT'
+));
+
+COMMIT;
+
+-- 검증
+--   SELECT pg_get_constraintdef(oid) FROM pg_constraint
+--    WHERE conname = 'admin_audit_log_action_check';

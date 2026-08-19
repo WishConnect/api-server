@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
 import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
+import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
+import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipMergeCandidate;
@@ -276,6 +278,38 @@ class ScholarshipDedupServiceTest {
 		service.detect(100);
 
 		verify(mergeExecutor, never()).merge(any(), any());
+	}
+
+	@Test
+	@DisplayName("관리자가 고른 두 장학금은 병합하지 않고 MANUAL 승인 후보로만 올린다")
+	void queuesManualCandidateWithoutMerging() {
+		Scholarship primary = scholarship("남길 장학금");
+		Scholarship duplicate = scholarship("중복 장학금");
+		given(scholarshipRepository.findById(primary.getId())).willReturn(Optional.of(primary));
+		given(scholarshipRepository.findById(duplicate.getId())).willReturn(Optional.of(duplicate));
+		ArgumentCaptor<ScholarshipMergeCandidate> captor =
+				ArgumentCaptor.forClass(ScholarshipMergeCandidate.class);
+
+		service.queueManual(new ManualMergeCandidateRequest(
+				primary.getId(), duplicate.getId(), "관리자 비교 완료"));
+
+		verify(mergeCandidateRepository).save(captor.capture());
+		assertThat(captor.getValue().getOrigin()).isEqualTo(MergeCandidateOrigin.MANUAL);
+		assertThat(captor.getValue().getStatus()).isEqualTo(MergeCandidateStatus.PENDING);
+		assertThat(captor.getValue().getReason()).isEqualTo("관리자 비교 완료");
+		verify(mergeExecutor, never()).merge(any(), any());
+	}
+
+	@Test
+	@DisplayName("같은 장학금을 수기 중복 후보 양쪽에 선택하면 거부한다")
+	void rejectsManualSelfPair() {
+		Scholarship scholarship = scholarship("한 장학금");
+
+		assertThatThrownBy(() -> service.queueManual(new ManualMergeCandidateRequest(
+				scholarship.getId(), scholarship.getId(), null)))
+				.isInstanceOf(CustomException.class);
+
+		verify(mergeCandidateRepository, never()).save(any());
 	}
 
 	// --- 승인·반려 ---

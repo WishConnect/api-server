@@ -34,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -221,11 +222,7 @@ class ScholarshipAdminOverviewServiceTest {
 		Scholarship target = scholarship(31L, "UNIV_KONKUK", "요약", 500_000L,
 				"https://example.com/31");
 		given(imageRepository.findEntityIdsByEntityType(anyString())).willReturn(List.of(31L));
-		given(scholarshipRepository.searchForAdmin(
-				org.mockito.ArgumentMatchers.eq("건국"),
-				org.mockito.ArgumentMatchers.eq("UNIV_KONKUK"),
-				org.mockito.ArgumentMatchers.eq(RecruitmentStatus.OPEN),
-				org.mockito.ArgumentMatchers.eq(false), any(Pageable.class)))
+		given(scholarshipRepository.findAll(any(Specification.class), any(Pageable.class)))
 				.willReturn(new PageImpl<>(List.of(target)));
 
 		var result = service.search("  건국  ", " UNIV_KONKUK ",
@@ -261,7 +258,7 @@ class ScholarshipAdminOverviewServiceTest {
 				.parseError("마감일 근거 불일치")
 				.build();
 		ReflectionTestUtils.setField(raw, "id", 10L);
-		given(rawScholarshipRepository.findByParseStatusInOrderByUpdatedAtDesc(any(), any(Pageable.class)))
+		given(rawScholarshipRepository.findAll(any(Specification.class), any(Pageable.class)))
 				.willReturn(new PageImpl<>(List.of(raw)));
 
 		var response = service.failures(Pageable.ofSize(20)).getContent().get(0);
@@ -280,7 +277,7 @@ class ScholarshipAdminOverviewServiceTest {
 				.applicationEndAt(LocalDateTime.now().plusDays(3))
 				.build();
 		ReflectionTestUtils.setField(target, "id", 88L);
-		given(scholarshipRepository.findAdminAnomalies(any(Pageable.class)))
+		given(scholarshipRepository.findAll(any(Specification.class), any(Pageable.class)))
 				.willReturn(new PageImpl<>(List.of(target)));
 		given(scholarshipConditionRepository.countByScholarshipId(88L)).willReturn(0L);
 

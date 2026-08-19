@@ -62,4 +62,15 @@ public class Image extends BaseCreatedEntity {
 	public void updateSourceUrl(String sourceUrl) {
 		this.sourceUrl = sourceUrl;
 	}
+
+	/** 관리자 교체 시 행 ID와 연결 대상은 유지하고 새 S3 객체의 메타데이터로 바꾼다. */
+	public void replaceStorage(String s3Key, String originalName, String contentType,
+			Long fileSize, String imageType, String sourceUrl) {
+		this.s3Key = s3Key;
+		this.originalName = originalName;
+		this.contentType = contentType;
+		this.fileSize = fileSize;
+		this.imageType = imageType;
+		this.sourceUrl = sourceUrl;
+	}
 }

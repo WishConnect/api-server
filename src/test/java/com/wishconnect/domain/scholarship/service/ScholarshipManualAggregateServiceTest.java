@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
@@ -41,6 +42,23 @@ class ScholarshipManualAggregateServiceTest {
 
 		assertThat(response.imageSaved()).isTrue();
 		assertThat(response.scholarshipId()).isEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("통합 수정의 이미지 URL은 기존 이미지 교체 경로로 저장한다")
+	void replacesImageAfterAggregateEdit() {
+		ScholarshipManualFullRequest request = minimal("https://example.com/new.jpg");
+		given(aggregateStore.update(9L, request)).willReturn(
+				new ScholarshipManualAggregateStore.SavedAggregate(9L, null, 0, 0, 0, "장학금"));
+		given(imageStorageService.replaceFromUrl(
+				"https://example.com/new.jpg", "scholarships/admin", "SCHOLARSHIP", 9L, "장학금"))
+				.willReturn("https://signed.example.com/new.jpg");
+
+		ScholarshipManualFullResponse response = service.update(9L, request);
+
+		assertThat(response.imageSaved()).isTrue();
+		verify(imageStorageService).replaceFromUrl(
+				"https://example.com/new.jpg", "scholarships/admin", "SCHOLARSHIP", 9L, "장학금");
 	}
 
 	private ScholarshipManualFullRequest minimal(String imageUrl) {

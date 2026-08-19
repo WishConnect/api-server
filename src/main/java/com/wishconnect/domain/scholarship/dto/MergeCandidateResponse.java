@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.dto;
 
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
+import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.ScholarshipMergeCandidate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,6 +20,7 @@ public record MergeCandidateResponse(
 	public record Item(
 			Long candidateId,
 			MergeCandidateStatus status,
+			MergeCandidateOrigin origin,
 			String reason,
 			String note,
 			LocalDateTime reviewedAt,
@@ -71,7 +73,7 @@ public record MergeCandidateResponse(
 	public static MergeCandidateResponse of(List<ScholarshipMergeCandidate> candidates, int total) {
 		return new MergeCandidateResponse(total, candidates.stream()
 				.map(c -> new Item(
-						c.getId(), c.getStatus(), c.getReason(), c.getNote(), c.getReviewedAt(),
+						c.getId(), c.getStatus(), c.getOrigin(), c.getReason(), c.getNote(), c.getReviewedAt(),
 						Side.of(c.getPrimary()), Side.of(c.getDuplicate())))
 				.toList());
 	}

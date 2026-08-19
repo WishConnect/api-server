@@ -6,12 +6,13 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /*
 중복 장학금 병합 후보 큐를 다루는 Repository 입니다.
  */
 public interface ScholarshipMergeCandidateRepository
-		extends JpaRepository<ScholarshipMergeCandidate, Long> {
+		extends JpaRepository<ScholarshipMergeCandidate, Long>, JpaSpecificationExecutor<ScholarshipMergeCandidate> {
 
 	/** 어드민 승인 대기 목록. */
 	Page<ScholarshipMergeCandidate> findByStatusOrderByIdAsc(

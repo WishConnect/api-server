@@ -62,8 +62,16 @@ public record ScholarshipManualFullRequest(
 			Integer valueInt,
 			Integer valueIntMax,
 			@NotBlank String valueString,
-			@Schema(description = "지역·전공·가정형태 등 화면에서 선택한 마스터 라벨") List<String> refLabels
+			@Schema(description = "지역·전공·가정형태 등 화면에서 선택한 마스터 라벨") List<String> refLabels,
+			@Schema(description = "통합 수정 시 기존 숫자 참조 보존용") List<Long> refIds,
+			@Schema(description = "통합 수정 시 기존 enum 코드 참조 보존용") List<String> refCodes
 	) {
+		public Condition(ConditionType conditionType, ConditionOperator operator,
+				ConditionNecessity necessity, Integer valueInt, Integer valueIntMax,
+				String valueString, List<String> refLabels) {
+			this(conditionType, operator, necessity, valueInt, valueIntMax,
+					valueString, refLabels, List.of(), List.of());
+		}
 	}
 
 	@Schema(description = "제출 서류")

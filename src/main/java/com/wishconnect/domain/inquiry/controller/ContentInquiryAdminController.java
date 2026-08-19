@@ -3,6 +3,7 @@ package com.wishconnect.domain.inquiry.controller;
 import com.wishconnect.domain.inquiry.dto.ContentInquiryResolveRequest;
 import com.wishconnect.domain.inquiry.dto.ContentInquiryResponse;
 import com.wishconnect.domain.inquiry.entity.ContentInquiryStatus;
+import com.wishconnect.domain.inquiry.entity.ContentInquiryType;
 import com.wishconnect.domain.inquiry.service.ContentInquiryService;
 import com.wishconnect.global.audit.AdminAction;
 import com.wishconnect.global.audit.AdminAuditLogService;
@@ -37,8 +38,11 @@ public class ContentInquiryAdminController {
 	@Operation(summary = "콘텐츠 이용 문의 목록", description = "상태 미지정 시 전체를 최신순으로 반환합니다. ADMIN 전용입니다.")
 	public ApiResponse<Page<ContentInquiryResponse>> findAll(
 			@Parameter(description = "처리 상태 필터: PENDING, RESOLVED, REJECTED")
-			@RequestParam(required = false) ContentInquiryStatus status, Pageable pageable) {
-		return ApiResponse.ok(contentInquiryService.findAll(status, pageable));
+			@RequestParam(required = false) ContentInquiryStatus status,
+			@RequestParam(required = false) ContentInquiryType type,
+			@RequestParam(required = false) String keyword,
+			Pageable pageable) {
+		return ApiResponse.ok(contentInquiryService.findAll(status, type, keyword, pageable));
 	}
 
 	@PatchMapping("/{inquiryId}")

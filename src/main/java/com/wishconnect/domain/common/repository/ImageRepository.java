@@ -14,6 +14,8 @@ public interface ImageRepository extends JpaRepository<Image, Long> {
 
 	Optional<Image> findFirstByEntityTypeAndEntityIdOrderByIdAsc(String entityType, Long entityId);
 
+	Optional<Image> findFirstByEntityTypeAndEntityIdOrderByIdDesc(String entityType, Long entityId);
+
 	List<Image> findAllByEntityTypeAndEntityIdOrderByIdAsc(String entityType, Long entityId);
 
 	boolean existsByEntityTypeAndEntityId(String entityType, Long entityId);
