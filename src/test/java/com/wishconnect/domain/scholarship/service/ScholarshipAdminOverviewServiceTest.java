@@ -205,12 +205,14 @@ class ScholarshipAdminOverviewServiceTest {
 		given(rawScholarshipRepository.countByParseStatus(ParseStatus.PENDING)).willReturn(1L);
 		given(rawScholarshipRepository.countByParseStatus(ParseStatus.PARSED)).willReturn(363L);
 		given(rawScholarshipRepository.countByParseStatus(ParseStatus.SKIPPED)).willReturn(3669L);
+		given(rawScholarshipRepository.countByParseStatus(ParseStatus.IMAGE_ONLY)).willReturn(14L);
 		given(rawScholarshipRepository.countByParseStatus(ParseStatus.FAILED)).willReturn(2L);
 
 		AdminOverviewResponse.RawSummary raw = service.overview().raw();
 
-		assertThat(raw.total()).isEqualTo(4035L);
+		assertThat(raw.total()).isEqualTo(4049L);
 		assertThat(raw.parsed()).isEqualTo(363L);
+		assertThat(raw.imageOnly()).isEqualTo(14L);
 	}
 
 	@Test

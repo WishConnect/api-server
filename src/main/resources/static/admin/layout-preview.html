@@ -49,22 +49,22 @@
 		</nav>
 		<div class="nav-label">REVIEW QUEUE</div>
 		<nav class="nav">
-			<button data-page="intake">◫　신규 수집 <span class="count">18</span></button>
-			<button data-page="failures">↻　실패 재처리 <span class="count">7</span></button>
-			<button data-page="anomaly">△　데이터 이상 <span class="count">12</span></button>
+			<button data-page="intake">◫　신규 수집 <span class="count" data-nav-count="intake">-</span></button>
+			<button data-page="failures">↻　실패 재처리 <span class="count" data-nav-count="failures">-</span></button>
+			<button data-page="anomaly">△　데이터 이상 <span class="count" data-nav-count="anomaly">-</span></button>
 		</nav>
 		<div class="nav-label">SCHOLARSHIPS</div>
 		<nav class="nav">
 			<button data-page="all">▤　전체 장학금</button>
-			<button data-page="always">∞　상시모집 <span class="count">9</span></button>
-			<button data-page="duplicate">⧉　중복 판정 <span class="count">6</span></button>
+			<button data-page="always">∞　상시모집 <span class="count" data-nav-count="always">-</span></button>
+			<button data-page="duplicate">⧉　중복 판정 <span class="count" data-nav-count="duplicate">-</span></button>
 			<button data-page="images">▧　이미지 관리</button>
-			<button data-page="reports">⚑　신고 처리 <span class="count">3</span></button>
+			<button data-page="reports">⚑　신고 처리 <span class="count" data-nav-count="reports">-</span></button>
 			<button data-page="excel">⇅　수기·엑셀 등록</button>
 		</nav>
 		<div class="nav-label">OPERATIONS</div>
 		<nav class="nav">
-			<button data-page="system">◉　시스템 상태 <span class="count">2</span></button>
+			<button data-page="system">◉　시스템 상태 <span class="count" data-nav-count="system">-</span></button>
 			<button data-page="batches">◷　배치 실행 이력</button>
 			<button data-page="audit">⌁　감사·복구</button>
 			<button data-page="swagger">↗　Swagger</button>
@@ -72,10 +72,10 @@
 	</aside>
 
 	<main class="main">
-		<header class="topbar"><div class="breadcrumb">운영 콘솔 / <strong id="pageName">대시보드</strong></div><div class="top-actions"><input class="search" placeholder="장학금·기관·ID 통합 검색"><button class="icon-btn">알림 2</button><button class="icon-btn" id="logout">로그아웃</button></div></header>
+		<header class="topbar"><div class="breadcrumb">운영 콘솔 / <strong id="pageName">대시보드</strong></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="장학금·기관 통합 검색"><button class="icon-btn" id="systemAlert">알림 -</button><button class="icon-btn" id="logout">로그아웃</button></div></header>
 		<div class="content">
 			<section class="page active" id="dashboard">
-				<div class="page-head"><div><h1>운영 대시보드</h1><p>오늘 처리해야 할 데이터와 파이프라인 상태를 한눈에 확인합니다.</p></div><button class="btn">새로고침</button></div>
+				<div class="page-head"><div><h1>운영 대시보드</h1><p>오늘 처리해야 할 데이터와 파이프라인 상태를 한눈에 확인합니다.</p></div><button class="btn" id="refreshDashboard">새로고침</button></div>
 				<div class="stats">
 					<div class="stat"><div class="label">오늘 신규 수집</div><div class="value" data-stat="createdToday">-</div><div class="trend green">정상 수집 중</div></div>
 					<div class="stat"><div class="label">전체 장학금</div><div class="value" data-stat="total">-</div><div class="trend muted">정제 데이터</div></div>
@@ -86,16 +86,12 @@
 				</div>
 				<div class="grid-2">
 					<div class="card"><div class="card-head"><h2>작업 큐</h2><span class="muted">우선순위순</span></div><div class="queue">
-						<div class="queue-item"><span class="dot" style="background:var(--red)"></span><span>수집·파싱 실패</span><b>7</b></div>
-						<div class="queue-item"><span class="dot" style="background:var(--yellow)"></span><span>신규 수집 검수</span><b>18</b></div>
-						<div class="queue-item"><span class="dot" style="background:var(--blue)"></span><span>중복 후보 판정</span><b>6</b></div>
-						<div class="queue-item"><span class="dot" style="background:var(--green)"></span><span>사용자 신고</span><b>3</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--red)"></span><span>수집·파싱 실패</span><b data-queue="failures">-</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--yellow)"></span><span>신규 수집 검수</span><b data-queue="intake">-</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--blue)"></span><span>중복 후보 판정</span><b data-queue="duplicate">-</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--green)"></span><span>사용자 신고</span><b data-queue="reports">-</b></div>
 					</div></div>
-					<div class="card"><div class="card-head"><h2>최근 배치</h2><span class="badge green">정상</span></div><div class="timeline">
-						<div class="event"><span class="event-dot"></span><div><b>대학 공지 수집</b><div class="muted">42건 수집 · 2건 실패</div></div><small>09:10</small></div>
-						<div class="event"><span class="event-dot"></span><div><b>LLM 파싱</b><div class="muted">35건 성공 · 예상비용 ₩1,820</div></div><small>09:18</small></div>
-						<div class="event"><span class="event-dot"></span><div><b>모집 상태 갱신</b><div class="muted">14건 마감 처리</div></div><small>09:24</small></div>
-					</div></div>
+					<div class="card"><div class="card-head"><h2>최근 배치</h2><span class="muted">실제 실행 이력</span></div><div class="timeline" id="dashboardJobs"><div class="muted">실행 이력을 불러오는 중입니다.</div></div></div>
 				</div>
 				<div class="card"><div class="card-head"><h2>최근 수집 장학금</h2><button class="btn" data-go="intake">검수함 열기</button></div><table><thead><tr><th>이미지</th><th>장학금</th><th>출처</th><th>파싱</th><th>조건</th><th>수집시각</th></tr></thead><tbody>
 					<tr><td colspan="6" class="muted">운영 데이터를 불러오는 중입니다.</td></tr>
@@ -163,12 +159,13 @@
 		return body.data;
 	}
 	async function loadDashboard(){
-		const data=await api('/api/v1/scholarships/admin/overview');
+		const [data,rows]=await Promise.all([api('/api/v1/scholarships/admin/overview'),api('/api/v1/scholarships/admin/recent?size=10')]);
 		const values={createdToday:data.scholarship.createdToday,total:data.scholarship.total,failed:data.raw.failed,open:data.scholarship.open,upcoming:data.scholarship.upcoming,softDeleted:data.scholarship.softDeleted};
 		Object.entries(values).forEach(([key,value])=>{const el=document.querySelector('[data-stat="'+key+'"]');if(el)el.textContent=value;});
-		const rows=await api('/api/v1/scholarships/admin/recent?size=10');
 		const body=document.querySelector('#dashboard table tbody');
 		body.innerHTML=rows.length?rows.map(row=>'<tr><td><div class="thumb"></div></td><td class="title">'+escapeHtml(row.title)+'</td><td>'+escapeHtml(row.provider||'-')+'</td><td><span class="badge '+(row.softDeleted?'red':'green')+'">'+(row.softDeleted?'비노출':'저장')+'</span></td><td>'+escapeHtml(row.source||'-')+'</td><td>'+escapeHtml((row.applicationEndAt||'').replace('T',' ').slice(0,16)||'-')+'</td></tr>').join(''):'<tr><td colspan="6" class="muted">최근 데이터가 없습니다.</td></tr>';
+		const optional=await Promise.allSettled([api('/api/v1/admin/jobs?page=0&size=20'),api('/api/v1/scholarships/merge/candidates?status=PENDING&page=0&size=1'),api('/api/v1/scholarships/reports?status=PENDING&page=0&size=1'),api('/api/v1/scholarships/admin/anomalies?page=0&size=1')]);
+		const jobs=optional[0].status==='fulfilled'?optional[0].value:{content:[]};const merges=optional[1].status==='fulfilled'?optional[1].value:{totalCount:0};const reports=optional[2].status==='fulfilled'?optional[2].value:{totalElements:0};const anomalies=optional[3].status==='fulfilled'?optional[3].value:{totalElements:0};const failures=data.raw.failed+data.raw.skipped+data.raw.imageOnly;const counts={intake:data.raw.pending,failures,anomaly:anomalies.totalElements||0,always:data.scholarship.alwaysOpen,duplicate:merges.totalCount||0,reports:reports.totalElements||0};Object.entries(counts).forEach(([key,value])=>{document.querySelectorAll('[data-nav-count="'+key+'"],[data-queue="'+key+'"]').forEach(el=>el.textContent=value);});const warningCount=jobs.content.filter(job=>['WARNING','FAILED'].includes(job.status)).length;document.querySelector('[data-nav-count="system"]').textContent=warningCount;document.getElementById('systemAlert').textContent='알림 '+warningCount;document.getElementById('dashboardJobs').innerHTML=jobs.content.length?jobs.content.slice(0,3).map(job=>'<div class="event"><span class="event-dot" style="background:'+(job.status==='SUCCEEDED'?'var(--green)':job.status==='RUNNING'?'var(--blue)':job.status==='WARNING'?'var(--yellow)':'var(--red)')+'"></span><div><b>'+escapeHtml(job.jobType)+'</b><div class="muted">'+escapeHtml(job.errorMessage||job.summary||job.status)+'</div></div><small>'+escapeHtml(formatDate(job.startedAt))+'</small></div>').join(''):'<div class="muted">기록된 배치가 없습니다.</div>';
 	}
 	let auditById=new Map();let selectedAuditId=null;
 	async function loadAudit(){
@@ -213,6 +210,7 @@
 	document.getElementById('refreshIntake').addEventListener('click',()=>loadIntake().catch(e=>toast(e.message,true)));document.getElementById('refreshAlways').addEventListener('click',()=>loadAlways().catch(e=>toast(e.message,true)));document.getElementById('refreshDuplicates').addEventListener('click',()=>loadDuplicates().catch(e=>toast(e.message,true)));document.getElementById('refreshImages').addEventListener('click',()=>loadImages().catch(e=>toast(e.message,true)));document.getElementById('refreshReports').addEventListener('click',()=>loadReports().catch(e=>toast(e.message,true)));document.getElementById('searchScholarships').addEventListener('click',()=>loadScholarships().catch(e=>toast(e.message,true)));document.getElementById('scholarshipKeyword').addEventListener('keydown',event=>{if(event.key==='Enter')loadScholarships().catch(e=>toast(e.message,true));});
 	document.getElementById('refreshFailures').addEventListener('click',()=>loadFailures().catch(e=>toast(e.message,true)));document.getElementById('retryFailures').addEventListener('click',()=>retryFailures().catch(e=>toast(e.message,true)));document.getElementById('refreshAnomalies').addEventListener('click',()=>loadAnomalies().catch(e=>toast(e.message,true)));document.getElementById('refreshJobs').addEventListener('click',()=>loadJobs().catch(e=>toast(e.message,true)));
 	document.getElementById('refreshSystem').addEventListener('click',()=>loadSystem().catch(e=>toast(e.message,true)));document.getElementById('refreshLogs').addEventListener('click',()=>loadLogs().catch(e=>toast(e.message,true)));document.getElementById('logKeyword').addEventListener('keydown',event=>{if(event.key==='Enter')loadLogs().catch(e=>toast(e.message,true));});document.getElementById('closeAuditDialog').addEventListener('click',()=>document.getElementById('auditDialog').close());document.getElementById('restoreAudit').addEventListener('click',async()=>{if(!selectedAuditId||!confirm('이 로그의 변경 전 값으로 장학금을 복구할까요?'))return;await api('/api/v1/admin/audit-log/'+selectedAuditId+'/restore',{method:'PATCH'});document.getElementById('auditDialog').close();toast('변경 이전 상태로 복구했습니다.');await loadAudit();});
+	document.getElementById('refreshDashboard').addEventListener('click',()=>loadDashboard().catch(e=>toast(e.message,true)));document.getElementById('systemAlert').addEventListener('click',()=>showPage('batches'));document.getElementById('globalSearch').addEventListener('keydown',event=>{if(event.key!=='Enter')return;document.getElementById('scholarshipKeyword').value=event.currentTarget.value;showPage('all');});
 	document.getElementById('addCondition').addEventListener('click',addCondition);document.getElementById('addDocument').addEventListener('click',addDocument);document.getElementById('manualFullForm').addEventListener('submit',event=>submitManual(event).catch(error=>toast(error.message,true)));
 	document.getElementById('exportExcel').addEventListener('click',async()=>{const response=await fetch('/api/v1/scholarships/admin/excel',{headers:{Authorization:'Bearer '+token}});if(!response.ok)return toast('엑셀 내보내기 실패',true);const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='scholarships-'+new Date().toISOString().slice(0,10)+'.xlsx';link.click();URL.revokeObjectURL(url);});
 	async function downloadManualTemplate(){const response=await fetch('/api/v1/scholarships/admin/manual-excel/template',{headers:{Authorization:'Bearer '+token}});if(!response.ok)throw new Error('양식을 받지 못했습니다.');const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='scholarship-manual-template.xlsx';link.click();URL.revokeObjectURL(url);}

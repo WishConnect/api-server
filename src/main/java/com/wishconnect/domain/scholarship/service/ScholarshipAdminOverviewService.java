@@ -209,9 +209,11 @@ public class ScholarshipAdminOverviewService {
 		long pending = rawScholarshipRepository.countByParseStatus(ParseStatus.PENDING);
 		long parsed = rawScholarshipRepository.countByParseStatus(ParseStatus.PARSED);
 		long skipped = rawScholarshipRepository.countByParseStatus(ParseStatus.SKIPPED);
+		long imageOnly = rawScholarshipRepository.countByParseStatus(ParseStatus.IMAGE_ONLY);
 		long failed = rawScholarshipRepository.countByParseStatus(ParseStatus.FAILED);
 		return new AdminOverviewResponse.RawSummary(
-				pending + parsed + skipped + failed, pending, parsed, skipped, failed);
+				pending + parsed + skipped + imageOnly + failed,
+				pending, parsed, skipped, imageOnly, failed);
 	}
 
 	private AdminOverviewResponse.ScholarshipSummary scholarshipSummary() {
