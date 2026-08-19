@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.wishconnect.domain.common.dto.RegionResponse;
 import com.wishconnect.domain.user.dto.response.OnboardingCompleteResponse;
 import com.wishconnect.domain.user.dto.response.ProfileResponse;
 import com.wishconnect.domain.user.service.UserProfileService;
@@ -41,7 +40,7 @@ class UserProfileControllerTest {
 	private WithdrawnTokenStore withdrawnTokenStore;
 
 	@Test
-	@DisplayName("프로필 조회 시 시군구와 상위 시도 정보를 함께 반환한다")
+	@DisplayName("프로필 조회 시 시군구를 상위 시도와 함께 반환한다")
 	void getProfileIncludesParentRegion() throws Exception {
 		UUID userId = UUID.randomUUID();
 		ProfileResponse response = new ProfileResponse(
@@ -52,7 +51,7 @@ class UserProfileControllerTest {
 				null,
 				null,
 				null,
-				new RegionResponse(2L, "중구", 1L, "서울"),
+				"서울 중구",
 				50,
 				false,
 				null,
@@ -65,10 +64,7 @@ class UserProfileControllerTest {
 		mockMvc.perform(get("/api/v1/users/me/profile")
 						.header("Authorization", "Bearer valid-token"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.region.regionId").value(2))
-				.andExpect(jsonPath("$.data.region.name").value("중구"))
-				.andExpect(jsonPath("$.data.region.parentId").value(1))
-				.andExpect(jsonPath("$.data.region.parentName").value("서울"));
+				.andExpect(jsonPath("$.data.region").value("서울 중구"));
 	}
 
 	@Test

@@ -72,14 +72,15 @@ public class ScholarshipController {
 	 * <p>{@code sort} 는 비로그인 화면의 드롭다운(최신 등록순/마감 임박순)이다. 로그인 상태에는
 	 * 화면에 드롭다운이 없어 무시된다. category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
 	 */
-	@GetMapping("/curated")
 	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
-			비로그인·온보딩 미완료·온보딩 완료 사용자가 모두 호출하는 동일 API입니다.
-			- GUEST: 개인화 없이 모집 중 장학금을 sort 기준으로 제공합니다.
-			- ONBOARDING_REQUIRED: 마감 임박 featured만 제공하고 개인화 영역은 잠금 처리합니다.
-			- PERSONALIZED: 프로필 기반 자격 판정·점수 계산 후 featured, campus, other, ineligible로 나눕니다.
-			응답의 rankerVersion과 카드별 section은 POST /events에 그대로 전달해야 합니다. category는 현재 수용만 하고 필터링하지 않으며, sort는 GUEST에서만 사용합니다.
+			GUEST, ONBOARDING_REQUIRED, PERSONALIZED가 모두 사용하는 API입니다.
+			PERSONALIZED의 featured는 지원 가능한 전체를 점수 내림차순·동점이면 마감 임박순으로 내려줍니다.
+			campusScholarships는 지원 가능하고 운영기관에 사용자 학교명이 포함된 교내 장학금입니다.
+			유형·마감·금액·스크랩 필터는 마지막 영역의 ineligibleScholarships와 otherScholarships에만 공통 적용됩니다.
+			응답의 rankerVersion과 카드별 section은 POST /events에 그대로 전달해야 합니다.
+			category는 현재 수용만 하고 필터링하지 않으며, sort는 GUEST에서만 사용합니다.
 			""")
+	@GetMapping("/curated")
 	public ApiResponse<CuratedScholarshipResponse> getCurated(
 			@AuthenticationPrincipal String userIdStr,
 			@RequestParam(defaultValue = "DEADLINE") CuratedSort sort,
@@ -129,11 +130,11 @@ public class ScholarshipController {
 
 	/** 장학금 상세(요약 테이블 + 선발 일정 타임라인 + 제출 서류 + 매칭 사유). */
 	@GetMapping("/{scholarshipId}")
-	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다.")
+	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다. 비로그인도 조회할 수 있으며 이때 isScrapped는 false, matchReasons는 빈 배열, 조건 판정은 UNKNOWN입니다.")
 	public ApiResponse<ScholarshipDetailResponse> getDetail(
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {
-		return ApiResponse.ok(scholarshipDetailService.getDetail(UUID.fromString(userId), scholarshipId));
+		return ApiResponse.ok(scholarshipDetailService.getDetail(resolveUserId(userId), scholarshipId));
 	}
 
 	/** 장학금을 키워드·카테고리로 검색한다. 비로그인도 조회 가능하며 이때 isScrapped 는 항상 false 다. */

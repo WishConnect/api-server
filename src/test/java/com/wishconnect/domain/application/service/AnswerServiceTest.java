@@ -172,18 +172,34 @@ class AnswerServiceTest {
 	}
 
 	@Test
-	@DisplayName("SAVE: blank(빈 문자열) 은 임시저장 특성상 허용된다")
-	void save_blankContent_allowed() {
-		Essay essay = essay(EssayStatus.IN_PROGRESS);
+	@DisplayName("SAVE: 작성 전인 지원서에 공백만 저장하면 NOT_STARTED를 유지한다")
+	void save_blankContent_keepsNotStarted() {
+		Essay essay = essay(EssayStatus.NOT_STARTED);
 		EssayAnswer answer = answer(false);
 		stubLookup(essay, question(500), answer);
 
 		AnswerActionResponse response = answerService.handle(
 				USER_ID, APP_ID, QUESTION_ID,
-				new AnswerActionRequest(AnswerAction.SAVE, ""));
+				new AnswerActionRequest(AnswerAction.SAVE, "   \n\t"));
 
-		assertThat(answer.getUserContent()).isEqualTo("");
+		assertThat(answer.getUserContent()).isEqualTo("   \n\t");
+		assertThat(essay.getStatus()).isEqualTo(EssayStatus.NOT_STARTED);
 		assertThat(response.isCompleted()).isFalse();
+	}
+
+	@Test
+	@DisplayName("SAVE: 공백을 제외한 내용이 있으면 IN_PROGRESS로 전환한다")
+	void save_nonBlankContent_marksInProgress() {
+		Essay essay = essay(EssayStatus.NOT_STARTED);
+		EssayAnswer answer = answer(false);
+		stubLookup(essay, question(500), answer);
+
+		answerService.handle(
+				USER_ID, APP_ID, QUESTION_ID,
+				new AnswerActionRequest(AnswerAction.SAVE, "  작성한 내용  "));
+
+		assertThat(answer.getUserContent()).isEqualTo("  작성한 내용  ");
+		assertThat(essay.getStatus()).isEqualTo(EssayStatus.IN_PROGRESS);
 	}
 
 	// --- CONFIRM ---
