@@ -73,10 +73,12 @@ class ScholarshipServiceTest {
 
 		scholarshipService.search(null, "건대", null, "deadline", false, 1, 10);
 
+		ArgumentCaptor<String> keywordNoSpace = ArgumentCaptor.forClass(String.class);
 		ArgumentCaptor<List<String>> keywords = ArgumentCaptor.forClass(List.class);
 		verify(scholarshipRepository).searchByKeyword(
-				any(), keywords.capture(), isNull(), isNull(), any(Pageable.class));
+				keywordNoSpace.capture(), keywords.capture(), isNull(), isNull(), any(Pageable.class));
 
+		assertThat(keywordNoSpace.getValue()).isEqualTo("건국대학교");
 		assertThat(keywords.getValue()).contains("건대", "건국대학교");
 	}
 

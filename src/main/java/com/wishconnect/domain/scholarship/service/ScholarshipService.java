@@ -37,10 +37,25 @@ public class ScholarshipService {
     private final ScholarshipRepository scholarshipRepository;
     private final ScrapRepository scrapRepository;
 
-    private static final Map<String, List<String>> KEYWORD_ALIASES = Map.of(
-            "건대", List.of("건국대학교"),
-            "외대", List.of("한국외국어대학교"),
-            "시립대", List.of("서울시립대학교")
+    private static final Map<String, List<String>> KEYWORD_ALIASES = Map.ofEntries(
+            Map.entry("건대", List.of("건국대학교")),
+            Map.entry("건국대", List.of("건국대학교")),
+            Map.entry("한림대", List.of("한림대학교")),
+            Map.entry("연대", List.of("연세대학교")),
+            Map.entry("연세대", List.of("연세대학교")),
+            Map.entry("외대", List.of("한국외국어대학교")),
+            Map.entry("한국외대", List.of("한국외국어대학교")),
+            Map.entry("한국외국어대", List.of("한국외국어대학교")),
+            Map.entry("인천대", List.of("인천대학교")),
+            Map.entry("서울여대", List.of("서울여자대학교")),
+            Map.entry("세종대", List.of("세종대학교")),
+            Map.entry("시립대", List.of("서울시립대학교")),
+            Map.entry("서울시립대", List.of("서울시립대학교")),
+            Map.entry("동국대", List.of("동국대학교")),
+            Map.entry("국민대", List.of("국민대학교")),
+            Map.entry("홍대", List.of("홍익대학교")),
+            Map.entry("홍익대", List.of("홍익대학교")),
+            Map.entry("숭실대", List.of("숭실대학교"))
     );
 
     public ScholarshipSearchResponse search(
@@ -123,10 +138,10 @@ public class ScholarshipService {
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchByKeywordOrderByRelevance(
-                    withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+                    keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
         }
         return scholarshipRepository.searchByKeyword(
-                withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+                keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
     }
 
     private Page<Scholarship> searchScrappedBySort(
@@ -140,10 +155,10 @@ public class ScholarshipService {
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchScrappedByUserAndKeywordOrderByRelevance(
-                    userId, withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+                    userId, keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
         }
         return scholarshipRepository.searchScrappedByUserAndKeyword(
-                userId, withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+                userId, keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
     }
 
     private String normalizeKeyword(String keyword) {
@@ -169,6 +184,11 @@ public class ScholarshipService {
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .distinct()
                 .toList();
+    }
+
+    private String keywordSearchTerm(String keyword) {
+        List<String> aliases = KEYWORD_ALIASES.get(keyword);
+        return withoutSpaces(aliases == null || aliases.isEmpty() ? keyword : aliases.get(0));
     }
 
     private ScholarshipType resolveKeywordType(String keyword) {
