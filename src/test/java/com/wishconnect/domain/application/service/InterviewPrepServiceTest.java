@@ -14,6 +14,8 @@ import com.wishconnect.domain.application.client.LlmClient;
 import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmModel;
 import com.wishconnect.domain.application.dto.response.InterviewPrepResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wishconnect.domain.application.service.prompt.InterviewSampleAnswerPromptBuilder;
 import com.wishconnect.domain.application.service.prompt.InterviewPrepPromptBuilder;
 import com.wishconnect.domain.scholarship.entity.RequirementLevel;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
@@ -56,13 +58,21 @@ class InterviewPrepServiceTest {
 	private static final Long SCHOLARSHIP_ID = 1L;
 
 	private static final String LLM_RESPONSE = """
-			1. 이 장학금에 지원한 이유는 무엇인가요? | 장학금 취지 이해도를 봅니다.
-			2. 학업 중 가장 어려웠던 순간과 대응을 말씀해주세요. | 문제 해결 태도를 봅니다.
-			3. 수혜 후 계획은 무엇인가요? | 지속성과 기여 의지를 봅니다.
+			[{"question":"이 장학금에 지원한 이유는 무엇인가요?",
+			  "intent":"장학금 취지 이해도를 봅니다.",
+			  "answerTip":"공고에서 본 내용을 근거로 말하세요.",
+			  "guide":[{"title":"동기제시","description":"이유를 먼저 밝히세요."},
+			           {"title":"경험 설명","description":"관련 경험으로 뒷받침하세요."},
+			           {"title":"계획","description":"수혜 후 계획으로 마무리하세요."}]},
+			 {"question":"학업 중 가장 어려웠던 순간과 대응을 말씀해주세요.",
+			  "intent":"문제 해결 태도를 봅니다."},
+			 {"question":"수혜 후 계획은 무엇인가요?",
+			  "intent":"지속성과 기여 의지를 봅니다."}]
 			""";
 
 	@Mock private InterviewPrepStore store;
 	@Mock private LlmClient llmClient;
+	@Mock private com.wishconnect.global.lock.RedisLock redisLock;
 	@Mock private StringRedisTemplate redisTemplate;
 	@Mock private ValueOperations<String, String> valueOperations;
 
@@ -70,12 +80,13 @@ class InterviewPrepServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new InterviewPrepService(store, new InterviewPrepPromptBuilder(),
-				llmClient, redisTemplate);
+		service = new InterviewPrepService(store, new InterviewPrepPromptBuilder(new ObjectMapper()),
+				new InterviewSampleAnswerPromptBuilder(new ObjectMapper()),
+				llmClient, redisLock, redisTemplate);
 		given(redisTemplate.opsForValue()).willReturn(valueOperations);
 		// 기본값: 잠금 획득 성공, 한도 여유 있음
-		given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-				.willReturn(true);
+		given(redisLock.tryLock(anyString(), any(Duration.class)))
+				.willReturn(java.util.Optional.of("token"));
 		given(valueOperations.increment(anyString())).willReturn(1L);
 		given(store.prepare(SCHOLARSHIP_ID)).willReturn(needsGeneration());
 		given(store.find(SCHOLARSHIP_ID)).willReturn(empty());
@@ -145,8 +156,7 @@ class InterviewPrepServiceTest {
 	@Test
 	@DisplayName("잠금을 못 잡으면 LLM 을 부르지 않고 먼저 만들어진 질문을 받는다")
 	void waitsInsteadOfCallingLlmTwice() {
-		given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-				.willReturn(false);
+		given(redisLock.tryLock(anyString(), any(Duration.class))).willReturn(java.util.Optional.empty());
 		// 기다리는 사이 다른 요청이 저장을 마친다.
 		AtomicInteger calls = new AtomicInteger();
 		given(store.find(SCHOLARSHIP_ID))
@@ -162,8 +172,7 @@ class InterviewPrepServiceTest {
 	@Test
 	@DisplayName("끝까지 기다려도 없으면 빈 목록을 준다 — 오류로 만들지 않는다")
 	void returnsEmptyWhenPeerNeverFinishes() {
-		given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-				.willReturn(false);
+		given(redisLock.tryLock(anyString(), any(Duration.class))).willReturn(java.util.Optional.empty());
 
 		InterviewPrepResponse response = service.generate(USER_ID, SCHOLARSHIP_ID);
 
@@ -207,7 +216,7 @@ class InterviewPrepServiceTest {
 		assertThatThrownBy(() -> service.generate(USER_ID, SCHOLARSHIP_ID))
 				.isInstanceOf(RuntimeException.class);
 
-		verify(redisTemplate).delete("interview-prep:lock:" + SCHOLARSHIP_ID);
+		verify(redisLock).unlock("interview-prep:lock:" + SCHOLARSHIP_ID, "token");
 	}
 
 	// --- 비용 ---
@@ -284,19 +293,21 @@ class InterviewPrepServiceTest {
 	private InterviewPrepResponse filled(int count) {
 		return new InterviewPrepResponse(
 				java.util.stream.IntStream.range(0, count)
-						.mapToObj(i -> new InterviewPrepResponse.Item(i, "질문 " + i + " 인가요?", null))
+						.mapToObj(i -> new InterviewPrepResponse.Item(
+								(long) i, i, "질문 " + i + " 인가요?", null, null, null, false, List.of()))
 						.toList(),
 				count, RequirementLevel.CONDITIONAL, "면접 진행");
 	}
 
-	private InterviewPrepResponse generated(List<InterviewPrepPromptBuilder.Generated> items) {
+	private InterviewPrepResponse generated(List<InterviewPrepPromptBuilder.GeneratedQuestion> items) {
 		if (items == null) {
 			return empty();
 		}
 		return new InterviewPrepResponse(
 				java.util.stream.IntStream.range(0, items.size())
 						.mapToObj(i -> new InterviewPrepResponse.Item(
-								i, items.get(i).questionText(), items.get(i).intent()))
+								(long) i, i, items.get(i).questionText(), items.get(i).intent(),
+								items.get(i).answerTip(), items.get(i).sampleAnswer(), false, List.of()))
 						.toList(),
 				items.size(), RequirementLevel.CONDITIONAL, "면접 진행");
 	}
