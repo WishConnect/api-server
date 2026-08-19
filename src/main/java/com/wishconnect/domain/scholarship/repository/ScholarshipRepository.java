@@ -365,6 +365,28 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			@Param("includeDeleted") boolean includeDeleted,
 			Pageable pageable);
 
+	/** 관리자 이상 탐지 큐. 정상 행 전체를 애플리케이션으로 가져오지 않고 의심 행만 조회한다. */
+	@Query("""
+			select s from Scholarship s
+			where s.deletedAt is null
+			  and (trim(s.title) = ''
+			       or s.provider is null or trim(s.provider) = ''
+			       or (s.applicationStartAt is not null and s.applicationEndAt is not null
+			           and s.applicationStartAt > s.applicationEndAt)
+			       or (s.recruitmentStatus = com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN
+			           and s.applicationEndAt < current_timestamp)
+			       or (s.recruitmentStatus in (
+			             com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN,
+			             com.wishconnect.domain.scholarship.entity.RecruitmentStatus.ALWAYS_OPEN)
+			           and (s.homepageUrl is null or trim(s.homepageUrl) = '')
+			           and (s.detailUrl is null or trim(s.detailUrl) = ''))
+			       or (s.recruitmentStatus in (
+			             com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN,
+			             com.wishconnect.domain.scholarship.entity.RecruitmentStatus.ALWAYS_OPEN)
+			           and not exists (select 1 from ScholarshipCondition c where c.scholarship = s)))
+			""")
+	org.springframework.data.domain.Page<Scholarship> findAdminAnomalies(Pageable pageable);
+
 
 
 	/**

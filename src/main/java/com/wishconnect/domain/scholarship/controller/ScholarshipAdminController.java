@@ -3,6 +3,8 @@ package com.wishconnect.domain.scholarship.controller;
 import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
@@ -160,6 +162,21 @@ public class ScholarshipAdminController {
 	public ApiResponse<AdminScholarshipDetailResponse> adminScholarshipDetail(
 			@PathVariable Long scholarshipId) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.detail(scholarshipId));
+	}
+
+	@Operation(summary = "파싱 실패·건너뜀 원본 목록",
+			description = "FAILED, SKIPPED, IMAGE_ONLY 원본을 최근 실패 순으로 조회합니다. "
+					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다.")
+	@GetMapping("/admin/failures")
+	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.failures(pageable));
+	}
+
+	@Operation(summary = "장학금 데이터 이상 탐지",
+			description = "날짜 역전, 종료일이 지난 OPEN, 기관·링크·조건 누락을 DB 규칙으로 탐지합니다.")
+	@GetMapping("/admin/anomalies")
+	public ApiResponse<Page<AdminScholarshipAnomalyResponse>> adminAnomalies(Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.anomalies(pageable));
 	}
 
 	@Operation(summary = "장학금 엑셀 내보내기",

@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,6 +30,9 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 
 	/** 관리자 화면: 원본 수집 데이터의 파싱 상태 분포. */
 	long countByParseStatus(ParseStatus parseStatus);
+
+	Page<RawScholarship> findByParseStatusInOrderByUpdatedAtDesc(
+			Collection<ParseStatus> statuses, Pageable pageable);
 
 	/**
 	 * LLM 파싱 대상: 아직 파싱되지 않은 대학 공고.

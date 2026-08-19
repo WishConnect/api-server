@@ -12,6 +12,7 @@ import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
@@ -245,5 +246,45 @@ class ScholarshipAdminOverviewServiceTest {
 		service.confirmAlwaysOpen(77L);
 
 		assertThat(target.getAlwaysOpenReviewedAt()).isNotNull();
+	}
+
+	@Test
+	@DisplayName("실패 재처리함은 실패 사유와 원본 식별자를 반환한다")
+	void failuresExposeRetryMaterial() {
+		RawScholarship raw = RawScholarship.builder()
+				.source("UNIV_KONKUK")
+				.sourceId("notice-10")
+				.sourceUrl("https://example.com/10")
+				.parseStatus(ParseStatus.FAILED)
+				.parseError("마감일 근거 불일치")
+				.build();
+		ReflectionTestUtils.setField(raw, "id", 10L);
+		given(rawScholarshipRepository.findByParseStatusInOrderByUpdatedAtDesc(any(), any(Pageable.class)))
+				.willReturn(new PageImpl<>(List.of(raw)));
+
+		var response = service.failures(Pageable.ofSize(20)).getContent().get(0);
+
+		assertThat(response.rawId()).isEqualTo(10L);
+		assertThat(response.status()).isEqualTo("FAILED");
+		assertThat(response.error()).contains("마감일");
+	}
+
+	@Test
+	@DisplayName("모집 중인데 기관·링크·조건이 없으면 이상 유형을 모두 표시한다")
+	void anomaliesDescribeEveryMatchedRule() {
+		Scholarship target = Scholarship.builder()
+				.title("기관 미상 장학금")
+				.recruitmentStatus(RecruitmentStatus.OPEN)
+				.applicationEndAt(LocalDateTime.now().plusDays(3))
+				.build();
+		ReflectionTestUtils.setField(target, "id", 88L);
+		given(scholarshipRepository.findAdminAnomalies(any(Pageable.class)))
+				.willReturn(new PageImpl<>(List.of(target)));
+		given(scholarshipConditionRepository.countByScholarshipId(88L)).willReturn(0L);
+
+		var response = service.anomalies(Pageable.ofSize(20)).getContent().get(0);
+
+		assertThat(response.anomalyTypes())
+				.containsExactly("MISSING_PROVIDER", "MISSING_LINK", "MISSING_CONDITION");
 	}
 }

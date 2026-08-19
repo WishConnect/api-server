@@ -4,6 +4,8 @@ import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
@@ -147,6 +149,44 @@ public class ScholarshipAdminOverviewService {
 				.toList();
 
 		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images);
+	}
+
+	public Page<AdminRawFailureResponse> failures(Pageable pageable) {
+		return rawScholarshipRepository.findByParseStatusInOrderByUpdatedAtDesc(
+				List.of(ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY), pageable)
+				.map(raw -> new AdminRawFailureResponse(
+						raw.getId(), raw.getScholarship() == null ? null : raw.getScholarship().getId(),
+						raw.getSource(), raw.getSourceId(), raw.getSourceUrl(), raw.getParseStatus().name(),
+						raw.getParseError(), raw.getCrawledAt(), raw.getUpdatedAt()));
+	}
+
+	public Page<AdminScholarshipAnomalyResponse> anomalies(Pageable pageable) {
+		return scholarshipRepository.findAdminAnomalies(pageable)
+				.map(value -> new AdminScholarshipAnomalyResponse(
+						value.getId(), value.getTitle(), value.getProvider(), name(value.getRecruitmentStatus()),
+						value.getApplicationStartAt(), value.getApplicationEndAt(), value.getPrimarySource(),
+						anomalyTypes(value)));
+	}
+
+	private List<String> anomalyTypes(Scholarship value) {
+		java.util.ArrayList<String> result = new java.util.ArrayList<>();
+		if (!StringUtils.hasText(value.getTitle())) result.add("EMPTY_TITLE");
+		if (!StringUtils.hasText(value.getProvider())) result.add("MISSING_PROVIDER");
+		if (value.getApplicationStartAt() != null && value.getApplicationEndAt() != null
+				&& value.getApplicationStartAt().isAfter(value.getApplicationEndAt())) result.add("DATE_REVERSED");
+		if (value.getRecruitmentStatus() == RecruitmentStatus.OPEN && value.getApplicationEndAt() != null
+				&& value.getApplicationEndAt().isBefore(LocalDateTime.now())) result.add("OPEN_BUT_ENDED");
+		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
+				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
+				&& !StringUtils.hasText(value.getHomepageUrl()) && !StringUtils.hasText(value.getDetailUrl())) {
+			result.add("MISSING_LINK");
+		}
+		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
+				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
+				&& scholarshipConditionRepository.countByScholarshipId(value.getId()) == 0) {
+			result.add("MISSING_CONDITION");
+		}
+		return List.copyOf(result);
 	}
 
 	private AdminScholarshipDetailResponse.ScholarshipData scholarshipData(Scholarship value) {
