@@ -7,6 +7,7 @@ import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -98,6 +99,8 @@ public class SecurityConfig {
 						session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(ADMIN_ENDPOINTS).hasRole("ADMIN")
+						// 추천·검색 목록을 비로그인에게 보여주므로, 해당 카드의 상세도 열어야 한다.
+						.requestMatchers(HttpMethod.GET, "/api/v1/scholarships/{scholarshipId}").permitAll()
 						.requestMatchers(PUBLIC_ENDPOINTS).permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(handler ->

@@ -105,14 +105,17 @@ public class AnswerService {
 			EssayAnswer answer,
 			AnswerActionRequest request) {
 		// 임시저장은 사용자가 방금 본문을 지운 상태(빈 문자열)도 그대로 보존해야 하므로
-		// blank 는 허용한다. null 만 방어하고, 빈 문자열/공백은 그대로 저장.
-		// (CONFIRM 은 최종 제출이라 blank 를 별도로 거부한다)
+		// blank 는 허용한다. null 만 방어하고, 빈 문자열/공백은 그대로 저장한다.
+		// 다만 공백을 제외한 실제 내용이 있을 때만 작성 시작(IN_PROGRESS)으로 전환한다.
+		// 이미 작성 중인 글을 비웠다고 NOT_STARTED 로 되돌리지는 않는다.
 		if (request.userContent() == null) {
 			throw new CustomException(ErrorCode.ANSWER_CONTENT_REQUIRED);
 		}
 
 		answer.updateUserContent(request.userContent());
-		essay.markInProgress();
+		if (!request.userContent().isBlank()) {
+			essay.markInProgress();
+		}
 
 		return new AnswerActionResponse(
 				question.getId(),

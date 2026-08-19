@@ -279,6 +279,7 @@ class ScholarshipRecommendationServiceTest {
 		CuratedScholarshipResponse response = curate();
 
 		assertThat(response.featured()).hasSize(7);
+		assertThat(response.featuredCount()).isEqualTo(7);
 		assertThat(idsOf(response.featured())).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L);
 		assertThat(response.rankerVersion())
 				.isEqualTo(com.wishconnect.domain.scholarship.util.ScholarshipRanker.RANKER_VERSION);
@@ -423,6 +424,7 @@ class ScholarshipRecommendationServiceTest {
 		assertThat(idsOf(response.otherScholarships())).containsExactly(2L, 1L);
 		// 비로그인 화면에는 히어로 배너도, 교내/조건미충족 섹션도 없다
 		assertThat(response.featured()).isEmpty();
+		assertThat(response.featuredCount()).isZero();
 		assertThat(response.campusScholarships()).isEmpty();
 		assertThat(response.ineligibleScholarships()).isEmpty();
 	}
@@ -491,6 +493,23 @@ class ScholarshipRecommendationServiceTest {
 		// 프로필이 없으면 모든 조건이 판정 불가라 점수가 전부 같아진다. 읽어도 쓸 데가 없다.
 		verify(scholarshipConditionRepository, never()).findAllByScholarshipIn(anyList());
 		verifyNoInteractions(scrapRepository);
+	}
+
+	@Test
+	@DisplayName("비로그인 상세 판정은 프로필 조회 없이 UNKNOWN을 반환한다")
+	void guestDetailJudgesConditionsAsUnknownWithoutProfileLookup() {
+		Scholarship scholarship = scholarship(1L, "장학금", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(1));
+		ScholarshipCondition condition = condition(scholarship, ConditionType.ACADEMIC_CRITERIA,
+				ConditionOperator.GTE, 300, "평점 3.0 이상");
+
+		List<ScholarshipRecommendationService.ConditionJudgement> judgements =
+				scholarshipRecommendationService.judgeConditions(null, List.of(condition));
+
+		assertThat(judgements).hasSize(1);
+		assertThat(judgements.get(0).result())
+				.isEqualTo(com.wishconnect.domain.scholarship.util.ConditionMatcher.Result.UNKNOWN);
+		verify(userProfileRepository, never()).findByUserId(any());
 	}
 
 	@Test

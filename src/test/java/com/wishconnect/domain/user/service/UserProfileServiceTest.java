@@ -103,7 +103,7 @@ class UserProfileServiceTest {
 	}
 
 	@Test
-	@DisplayName("프로필 조회 시 시군구와 상위 시도 정보를 함께 반환한다")
+	@DisplayName("프로필 조회 시 시군구를 상위 시도와 함께 반환한다")
 	void getProfile_includesParentRegion() {
 		Region sido = Region.builder().name("서울").build();
 		Region sigungu = Region.builder().name("중구").parent(sido).build();
@@ -113,10 +113,18 @@ class UserProfileServiceTest {
 
 		var response = userProfileService.getProfile(userId);
 
-		assertThat(response.region().regionId()).isEqualTo(2L);
-		assertThat(response.region().name()).isEqualTo("중구");
-		assertThat(response.region().parentId()).isEqualTo(1L);
-		assertThat(response.region().parentName()).isEqualTo("서울");
+		assertThat(response.region()).isEqualTo("서울 중구");
+	}
+
+	@Test
+	@DisplayName("프로필 조회 시 시도만 저장된 경우 시도명만 반환한다")
+	void getProfile_returnsSidoNameWhenRegionHasNoParent() {
+		Region sido = Region.builder().name("서울").build();
+		profile.updateBasic(LocalDate.of(2002, 4, 14), Gender.FEMALE, Nationality.DOMESTIC, sido);
+
+		var response = userProfileService.getProfile(userId);
+
+		assertThat(response.region()).isEqualTo("서울");
 	}
 
 	@Test
