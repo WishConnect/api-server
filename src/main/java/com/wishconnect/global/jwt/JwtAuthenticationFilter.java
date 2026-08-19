@@ -2,6 +2,7 @@ package com.wishconnect.global.jwt;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -62,6 +63,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		if (StringUtils.hasText(bearer) && bearer.startsWith(BEARER_PREFIX)) {
 			return bearer.substring(BEARER_PREFIX.length());
 		}
+		// 관리자 쿠키는 화면과 API 문서를 읽는 GET/HEAD 에서만 인정한다.
+		// 변경 API는 계속 Authorization 헤더가 필요해, 브라우저가 쿠키를 자동 전송하는 CSRF를 막는다.
+		if (isAdminViewRequest(request) && request.getCookies() != null) {
+			for (Cookie cookie : request.getCookies()) {
+				if (AdminAuthCookie.NAME.equals(cookie.getName()) && StringUtils.hasText(cookie.getValue())) {
+					return cookie.getValue();
+				}
+			}
+		}
 		return null;
+	}
+
+	private boolean isAdminViewRequest(HttpServletRequest request) {
+		String method = request.getMethod();
+		if (!("GET".equals(method) || "HEAD".equals(method))) {
+			return false;
+		}
+		String path = request.getRequestURI();
+		return path.startsWith("/admin/")
+				|| path.startsWith("/swagger-ui/")
+				|| "/swagger-ui.html".equals(path)
+				|| path.startsWith("/v3/api-docs/")
+				|| "/v3/api-docs".equals(path);
 	}
 }

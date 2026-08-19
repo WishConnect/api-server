@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 
 import java.util.UUID;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ class AdminAuditLogServiceTest {
 
 	@Mock
 	private AdminAuditLogRepository adminAuditLogRepository;
+	@Mock
+	private ObjectMapper objectMapper;
 
 	@InjectMocks
 	private AdminAuditLogService service;
@@ -87,5 +90,20 @@ class AdminAuditLogServiceTest {
 
 		verify(adminAuditLogRepository).findAllByActionOrderByIdDesc(
 				org.mockito.ArgumentMatchers.eq(AdminAction.EXCEL_IMPORT), any());
+	}
+
+	@Test
+	@DisplayName("변경 기록은 전후 스냅샷 JSON을 함께 저장한다")
+	void recordsBeforeAndAfterSnapshots() throws Exception {
+		given(objectMapper.writeValueAsString("before")).willReturn("{\"title\":\"before\"}");
+		given(objectMapper.writeValueAsString("after")).willReturn("{\"title\":\"after\"}");
+
+		service.recordChange(ACTOR, AdminAction.SCHOLARSHIP_UPDATE, "SCHOLARSHIP", 5L,
+				"제목 수정", "before", "after");
+
+		ArgumentCaptor<AdminAuditLog> captor = ArgumentCaptor.forClass(AdminAuditLog.class);
+		verify(adminAuditLogRepository).save(captor.capture());
+		assertThat(captor.getValue().getBeforeJson()).contains("before");
+		assertThat(captor.getValue().getAfterJson()).contains("after");
 	}
 }

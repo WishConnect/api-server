@@ -23,6 +23,7 @@ public record AdminOverviewResponse(
 			long pending,
 			long parsed,
 			long skipped,
+			long imageOnly,
 			long failed
 	) {
 	}

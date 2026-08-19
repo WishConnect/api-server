@@ -3,15 +3,21 @@ package com.wishconnect.domain.scholarship.service;
 import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
-import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipSourceAggregate;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -20,7 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -44,6 +52,8 @@ public class ScholarshipAdminOverviewService {
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ImageRepository imageRepository;
+	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
+	private final ImageStorageService imageStorageService;
 
 	public AdminOverviewResponse overview() {
 		Map<String, Long> posterCountBySource = posterCountBySource();
@@ -78,17 +88,132 @@ public class ScholarshipAdminOverviewService {
 				.findByRecruitmentStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
 						RecruitmentStatus.ALWAYS_OPEN, pageable)
 				.map(s -> new AlwaysOpenScholarshipResponse(s.getId(), s.getTitle(), s.getProvider(),
-						s.getCreatedAt(), scholarshipConditionRepository.countByScholarshipId(s.getId()),
+						s.getCreatedAt(), s.getAlwaysOpenReviewedAt(),
+						scholarshipConditionRepository.countByScholarshipId(s.getId()),
 						StringUtils.hasText(s.getDetailUrl()) ? s.getDetailUrl() : s.getHomepageUrl()));
+	}
+
+	@Transactional
+	public void confirmAlwaysOpen(Long scholarshipId) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		try {
+			scholarship.confirmAlwaysOpen();
+		} catch (IllegalStateException exception) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+	}
+
+	public Page<AdminScholarshipRow> search(
+			String keyword, String source, RecruitmentStatus status, boolean includeDeleted, Pageable pageable) {
+		Set<Long> posterIds = posterScholarshipIds();
+		return scholarshipRepository.searchForAdmin(
+				StringUtils.hasText(keyword) ? keyword.trim() : null,
+				StringUtils.hasText(source) ? source.trim() : null,
+				status,
+				includeDeleted,
+				pageable).map(scholarship -> toRow(scholarship, posterIds));
+	}
+
+	public AdminScholarshipDetailResponse detail(Long scholarshipId) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		List<AdminScholarshipDetailResponse.RawData> raw = rawScholarshipRepository
+				.findAllByScholarshipIdOrderByIdDesc(scholarshipId).stream()
+				.map(value -> new AdminScholarshipDetailResponse.RawData(
+						value.getId(), value.getSource(), value.getSourceId(), value.getSourceUrl(),
+						value.getRawJson(), value.getRawHtml(), value.getParseStatus().name(),
+						value.getParseError(), value.getCrawledAt()))
+				.toList();
+		List<AdminScholarshipDetailResponse.ConditionData> conditions = scholarshipConditionRepository
+				.findAllByScholarshipId(scholarshipId).stream()
+				.map(value -> new AdminScholarshipDetailResponse.ConditionData(
+						value.getId(), value.getConditionType().name(), value.getOperator().name(),
+						value.getNecessity().name(), value.getValueInt(), value.getValueIntMax(),
+						value.getValueString(), value.isAutoExtracted(), value.getRefs().stream()
+								.map(ref -> new AdminScholarshipDetailResponse.RefData(ref.getRefId(), ref.getRefCode()))
+								.toList()))
+				.toList();
+		List<AdminScholarshipDetailResponse.DocumentData> documents = scholarshipDocumentRepository
+				.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId).stream()
+				.map(value -> new AdminScholarshipDetailResponse.DocumentData(
+						value.getId(), value.getName(), value.isEssay(), value.getDisplayOrder(),
+						value.getDownloadUrl()))
+				.toList();
+		List<AdminScholarshipDetailResponse.ImageData> images = imageRepository
+				.findAllByEntityTypeAndEntityIdOrderByIdAsc(
+						ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId).stream()
+				.map(value -> new AdminScholarshipDetailResponse.ImageData(
+						value.getId(), value.getImageType(), value.getOriginalName(), value.getContentType(),
+						value.getFileSize(), value.getSourceUrl(), imageStorageService.publicUrl(value.getS3Key())))
+				.toList();
+
+		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images);
+	}
+
+	public Page<AdminRawFailureResponse> failures(Pageable pageable) {
+		return rawScholarshipRepository.findByParseStatusInOrderByUpdatedAtDesc(
+				List.of(ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY), pageable)
+				.map(raw -> new AdminRawFailureResponse(
+						raw.getId(), raw.getScholarship() == null ? null : raw.getScholarship().getId(),
+						raw.getSource(), raw.getSourceId(), raw.getSourceUrl(), raw.getParseStatus().name(),
+						raw.getParseError(), raw.getCrawledAt(), raw.getUpdatedAt()));
+	}
+
+	public Page<AdminScholarshipAnomalyResponse> anomalies(Pageable pageable) {
+		return scholarshipRepository.findAdminAnomalies(pageable)
+				.map(value -> new AdminScholarshipAnomalyResponse(
+						value.getId(), value.getTitle(), value.getProvider(), name(value.getRecruitmentStatus()),
+						value.getApplicationStartAt(), value.getApplicationEndAt(), value.getPrimarySource(),
+						anomalyTypes(value)));
+	}
+
+	private List<String> anomalyTypes(Scholarship value) {
+		java.util.ArrayList<String> result = new java.util.ArrayList<>();
+		if (!StringUtils.hasText(value.getTitle())) result.add("EMPTY_TITLE");
+		if (!StringUtils.hasText(value.getProvider())) result.add("MISSING_PROVIDER");
+		if (value.getApplicationStartAt() != null && value.getApplicationEndAt() != null
+				&& value.getApplicationStartAt().isAfter(value.getApplicationEndAt())) result.add("DATE_REVERSED");
+		if (value.getRecruitmentStatus() == RecruitmentStatus.OPEN && value.getApplicationEndAt() != null
+				&& value.getApplicationEndAt().isBefore(LocalDateTime.now())) result.add("OPEN_BUT_ENDED");
+		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
+				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
+				&& !StringUtils.hasText(value.getHomepageUrl()) && !StringUtils.hasText(value.getDetailUrl())) {
+			result.add("MISSING_LINK");
+		}
+		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
+				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
+				&& scholarshipConditionRepository.countByScholarshipId(value.getId()) == 0) {
+			result.add("MISSING_CONDITION");
+		}
+		return List.copyOf(result);
+	}
+
+	private AdminScholarshipDetailResponse.ScholarshipData scholarshipData(Scholarship value) {
+		return new AdminScholarshipDetailResponse.ScholarshipData(
+				value.getId(), value.getTitle(), value.getProvider(), value.getSummary(), value.getDescription(),
+				name(value.getScholarshipType()), name(value.getRecruitmentStatus()), value.getApplicationStartAt(),
+				value.getApplicationEndAt(), value.getSelectionCount(), value.getAmount(), value.isActive(),
+				value.isVerified(), value.getPrimarySource(), value.getHomepageUrl(), value.getDetailUrl(),
+				name(value.getNoticeKind()), value.isCombined(), value.getSubmissionMethod(),
+				name(value.getSubmissionChannel()), value.getSubmissionEvidence(), value.getContact(),
+				name(value.getEssayRequirement()), value.getEssayEvidence(), name(value.getInterviewRequirement()),
+				value.getInterviewEvidence(), value.getCreatedAt(), value.getUpdatedAt(), value.getDeletedAt());
+	}
+
+	private String name(Enum<?> value) {
+		return value == null ? null : value.name();
 	}
 
 	private AdminOverviewResponse.RawSummary rawSummary() {
 		long pending = rawScholarshipRepository.countByParseStatus(ParseStatus.PENDING);
 		long parsed = rawScholarshipRepository.countByParseStatus(ParseStatus.PARSED);
 		long skipped = rawScholarshipRepository.countByParseStatus(ParseStatus.SKIPPED);
+		long imageOnly = rawScholarshipRepository.countByParseStatus(ParseStatus.IMAGE_ONLY);
 		long failed = rawScholarshipRepository.countByParseStatus(ParseStatus.FAILED);
 		return new AdminOverviewResponse.RawSummary(
-				pending + parsed + skipped + failed, pending, parsed, skipped, failed);
+				pending + parsed + skipped + imageOnly + failed,
+				pending, parsed, skipped, imageOnly, failed);
 	}
 
 	private AdminOverviewResponse.ScholarshipSummary scholarshipSummary() {
