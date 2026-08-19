@@ -23,7 +23,8 @@ public record ScholarshipEventRequest(
 			Long scholarshipId,
 
 			@NotNull
-			@Schema(description = "IMPRESSION(노출) / CLICK(카드 클릭)", example = "IMPRESSION")
+			@Schema(description = "IMPRESSION(노출) / CLICK(카드 클릭) / APPLY_CLICK(원문으로 나감) "
+					+ "/ DISMISS(추천에서 치움) / UNSCRAP(스크랩 취소)", example = "IMPRESSION")
 			ScholarshipEventType eventType,
 
 			@Schema(description = "목록에서 몇 번째로 보였는가(1부터). 목록 밖이면 생략.", example = "3")
@@ -33,6 +34,15 @@ public record ScholarshipEventRequest(
 			Integer matchScore,
 
 			@Schema(description = "어느 화면인가", example = "PERSONALIZED")
-			String viewMode) {
+			String viewMode,
+
+			@Schema(description = "어느 섹션인가. featured(마감임박) / campus(교내) / other(추천) "
+					+ "/ ineligible(조건 미충족). 섹션별로 나눠 봐야 무엇이 먹히는지 알 수 있다.",
+					example = "other")
+			String section,
+
+			@Schema(description = "노출 당시의 점수식 판. 판을 올린 뒤 지표가 좋아졌는지 비교하는 데 쓴다.",
+					example = "v2")
+			String rankerVersion) {
 	}
 }

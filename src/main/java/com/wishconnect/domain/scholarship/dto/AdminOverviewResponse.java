@@ -34,6 +34,15 @@ public record AdminOverviewResponse(
 			long open,
 			long upcoming,
 			long closed,
+
+			/**
+			 * 마감일이 없어 자동으로 닫을 수 없는 공고.
+			 *
+			 * <p>"충원 시 마감" 처럼 마감일이 없는 것이 정상인 공고가 있다. 날짜가 없으니
+			 * 배치가 손댈 수 없어 그대로 두면 작년 것이 영원히 목록에 남는다. 여기 모아 두고
+			 * 사람이 확인해 닫는다.
+			 */
+			long alwaysOpen,
 			long createdToday,
 			LocalDateTime lastSyncedAt
 	) {

@@ -116,6 +116,9 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "submission_method", length = 300)
 	private String submissionMethod;
 
+	@Column(name = "contact", length = 500)
+	private String contact;
+
 	/**
 	 * 공공데이터 장학금의 <b>보조 정보만</b> 채운다.
 	 *
@@ -129,8 +132,10 @@ public class Scholarship extends BaseEntity {
 			String interviewEvidence,
 			String submissionMethod,
 			SubmissionChannel submissionChannel,
-			String submissionEvidence
+			String submissionEvidence,
+			String contact
 	) {
+		this.contact = contact;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
@@ -214,8 +219,10 @@ public class Scholarship extends BaseEntity {
 		boolean combined,
 		String submissionMethod,
 		SubmissionChannel submissionChannel,
-		String submissionEvidence
+		String submissionEvidence,
+		String contact
 	) {
+		this.contact = contact;
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
@@ -414,8 +421,10 @@ public class Scholarship extends BaseEntity {
 		boolean combined,
 		String submissionMethod,
 		SubmissionChannel submissionChannel,
-		String submissionEvidence
+		String submissionEvidence,
+		String contact
 	) {
+		this.contact = contact;
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
@@ -451,10 +460,22 @@ public class Scholarship extends BaseEntity {
 		this.active = false;
 	}
 
+	public void updateRecruitmentStatusByAdmin(RecruitmentStatus recruitmentStatus) {
+		this.recruitmentStatus = recruitmentStatus;
+		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
+	}
+
 	public boolean isDeleted() {
 		return deletedAt != null;
 	}
 
+	/**
+	 * 날짜로 모집 상태를 정한다.
+	 *
+	 * <p>마감일이 없으면 OPEN 으로 두고 있었다. 날짜가 없으니 배치도 닫을 수 없어 영원히
+	 * 목록에 남는다 — 운영에서 183건이 그랬다. 마감일 없는 공고 자체는 정상이므로
+	 * ({@code "충원 시 마감"}) 닫지 않되, 자동 판정을 포기했다는 사실을 상태로 남긴다.
+	 */
 	private static RecruitmentStatus resolveStatus(LocalDateTime startAt, LocalDateTime endAt) {
 		LocalDateTime now = LocalDateTime.now();
 		if (endAt != null && endAt.isBefore(now)) {
@@ -463,6 +484,6 @@ public class Scholarship extends BaseEntity {
 		if (startAt != null && startAt.isAfter(now)) {
 			return RecruitmentStatus.UPCOMING;
 		}
-		return RecruitmentStatus.OPEN;
+		return endAt == null ? RecruitmentStatus.ALWAYS_OPEN : RecruitmentStatus.OPEN;
 	}
 }

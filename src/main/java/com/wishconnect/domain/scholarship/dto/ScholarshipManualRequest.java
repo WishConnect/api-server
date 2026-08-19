@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.dto;
 
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
+import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -35,6 +36,8 @@ public record ScholarshipManualRequest(
 		@Schema(description = "지원 금액(원)") @PositiveOrZero Long amount,
 
 		@Schema(description = "신청 페이지 URL") @Size(max = 1000) String homepageUrl
+		,
+		@Schema(description = "관리자가 확인한 모집 상태") RecruitmentStatus recruitmentStatus
 ) {
 
 	/** 등록에 필요한 최소 조건. 수정에는 적용하지 않는다. */
