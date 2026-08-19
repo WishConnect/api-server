@@ -115,6 +115,17 @@ public enum ErrorCode {
 	/** 마감된 공고. 준비할 면접이 없어 생성 대상에서 뺀다. */
 	INTERVIEW_PREP_CLOSED_SCHOLARSHIP(HttpStatus.BAD_REQUEST,
 			"마감된 장학금입니다."),
+	/**
+	 * 이미 작성을 시작해 문항을 바꿀 수 없는 경우.
+	 *
+	 * <p>문항을 교체하려면 그 문항에 딸린 답변과 사전 인터뷰를 지워야 한다. 학생이 쓴 글을
+	 * 없애는 것은 어떤 맞춤 문항보다 나쁘므로, 작성 전에만 허용한다.
+	 */
+	ESSAY_QUESTIONS_LOCKED(HttpStatus.CONFLICT,
+			"이미 작성을 시작해 문항을 변경할 수 없습니다."),
+	/** 한 사용자가 짧은 시간에 너무 많은 지원서의 문항을 생성하려 한 경우. */
+	ESSAY_QUESTION_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS,
+			"문항 생성 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 
