@@ -13,6 +13,8 @@ public enum ErrorCode {
 	// 공통
 	INVALID_INPUT(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
 	UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
+	/** 로그인은 했지만 권한이 모자란 경우. 인증 실패(401)와 구분해야 프론트가 재로그인을 시키지 않는다. */
+	FORBIDDEN(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
 	WITHDRAWN_USER(HttpStatus.UNAUTHORIZED, "탈퇴한 계정입니다. 다시 로그인해주세요."),
 	/** 매핑된 엔드포인트가 없는 경로. 리소스 하나가 없는 경우(~_NOT_FOUND)와 구분한다. */
@@ -98,6 +100,17 @@ public enum ErrorCode {
 	/** LLM 이 면접 예상 질문을 하나도 만들지 못한 경우. 재시도하면 대개 해소된다. */
 	INTERVIEW_PREP_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE,
 			"면접 예상 질문을 생성하지 못했습니다. 잠시 후 다시 시도해주세요."),
+	/**
+	 * 한 사용자가 짧은 시간에 너무 많은 장학금의 질문을 새로 만들려 한 경우.
+	 *
+	 * <p>생성은 LLM 크레딧을 쓰므로, 장학금 ID 를 순회하며 호출하면 비용이 그대로 나간다.
+	 * <b>이미 만들어진 질문 조회는 이 제한에 걸리지 않는다.</b>
+	 */
+	INTERVIEW_PREP_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS,
+			"면접 예상 질문 생성 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
+	/** 마감된 공고. 준비할 면접이 없어 생성 대상에서 뺀다. */
+	INTERVIEW_PREP_CLOSED_SCHOLARSHIP(HttpStatus.BAD_REQUEST,
+			"마감된 장학금입니다."),
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 

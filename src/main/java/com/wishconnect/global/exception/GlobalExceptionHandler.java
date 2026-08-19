@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -28,6 +29,24 @@ public class GlobalExceptionHandler {
 		log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
 		return ResponseEntity.status(errorCode.getStatus())
 				.body(ApiResponse.fail(errorCode.getMessage()));
+	}
+
+	/**
+	 * {@code @PreAuthorize} 로 막힌 요청.
+	 *
+	 * <p>없으면 catch-all 로 떨어져 <b>권한 부족이 500 으로 나간다.</b> 경로 규칙(SecurityConfig)
+	 * 으로 막는 엔드포인트는 필터에서 403 이 나므로 이 문제가 드러나지 않았는데, 같은 경로에
+	 * 일반 사용자용 메서드와 관리자용 메서드가 함께 있으면 경로 규칙을 쓸 수 없어 어노테이션에
+	 * 의존하게 된다. 그 경우를 여기서 받는다.
+	 *
+	 * <p>401 이 아니라 403 이어야 한다. 401 로 내리면 프론트가 토큰이 만료된 줄 알고
+	 * 재로그인을 시킨다.
+	 */
+	@ExceptionHandler(AuthorizationDeniedException.class)
+	public ResponseEntity<ApiResponse<Void>> handleAuthorizationDenied(AuthorizationDeniedException e) {
+		log.warn("[AuthorizationDenied] {}", e.getMessage());
+		return ResponseEntity.status(ErrorCode.FORBIDDEN.getStatus())
+				.body(ApiResponse.fail(ErrorCode.FORBIDDEN.getMessage()));
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)

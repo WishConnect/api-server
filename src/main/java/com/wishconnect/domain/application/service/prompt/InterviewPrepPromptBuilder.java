@@ -6,7 +6,9 @@ import com.wishconnect.domain.application.client.dto.LlmModel;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
@@ -27,8 +29,21 @@ public class InterviewPrepPromptBuilder {
 	/** 장학금당 생성할 면접 예상 질문 개수. */
 	public static final int QUESTION_COUNT = 6;
 
-	/** 질문 한 줄의 최대 길이. 이보다 길면 화면에서 잘린다. */
+	/** 질문 한 줄의 최대 길이. 이보다 길면 화면에서 잘리고, 프롬프트에도 같은 값을 적어 보낸다. */
 	private static final int MAX_QUESTION_LENGTH = 70;
+
+	/** 이보다 짧으면 질문이 아니다("네?", "1." 같은 파편). */
+	private static final int MIN_QUESTION_LENGTH = 8;
+
+	/** 의도 문구 길이 상한. 화면 보조 텍스트라 길 이유가 없다. */
+	private static final int MAX_INTENT_LENGTH = 120;
+
+	/** 한국어 질문 종결. 물음표가 없어도 "~인가요", "~해주세요" 형태는 질문으로 본다. */
+	private static final Pattern QUESTION_ENDING = Pattern.compile(
+			"(\\?|요\\.?$|까\\.?$|나요\\.?$|세요\\.?$|십시오\\.?$|주세요\\.?$)");
+
+	/** 코드펜스·볼드·머리말 장식. 이런 줄은 질문이 아니라 모델의 설명이다. */
+	private static final Pattern MARKDOWN_NOISE = Pattern.compile("^(```|#{1,6}\\s|\\*\\*|---)");
 
 	/** 프롬프트에 넣을 자격조건 개수 상한. 전부 넣으면 토큰만 늘고 질문이 산만해진다. */
 	private static final int MAX_CONDITIONS = 8;
@@ -57,10 +72,14 @@ public class InterviewPrepPromptBuilder {
 	/**
 	 * LLM 응답에서 질문과 의도를 뽑는다.
 	 *
-	 * <p>번호 목록을 우선 파싱하고, 모델이 형식을 어겨 번호가 없으면 비어 있지 않은 줄을 그대로
-	 * 질문으로 쓴다. 의도({@code |} 뒤)는 없어도 된다 — 질문만으로도 쓸모가 있어 버리지 않는다.
+	 * <p>번호 목록을 우선 파싱하고, 모델이 형식을 어겨 번호가 없으면 비어 있지 않은 줄도 본다.
+	 * 의도({@code |} 뒤)는 없어도 된다 — 질문만으로도 쓸모가 있어 버리지 않는다.
 	 *
-	 * @return 추출된 질문 목록. 하나도 뽑지 못하면 빈 리스트
+	 * <p><b>뽑은 줄을 그대로 저장하지 않는다.</b> 모델이 형식을 어기면 머리말("아래와 같이
+	 * 만들었습니다"), 코드펜스, 맺음말이 섞여 들어오는데, 그대로 두면 화면에 질문이 아닌 문장이
+	 * 뜬다. {@link #isQuestion} 으로 질문 형태만 남기고 길이·중복도 여기서 거른다.
+	 *
+	 * @return 추출된 질문 목록. 쓸 만한 것이 없으면 빈 리스트
 	 */
 	public List<Generated> parse(String response) {
 		if (response == null || response.isBlank()) {
@@ -68,15 +87,16 @@ public class InterviewPrepPromptBuilder {
 		}
 
 		List<Generated> questions = new ArrayList<>();
+		Set<String> seen = new LinkedHashSet<>();
 		for (String line : response.split("\\R")) {
 			Matcher matcher = NUMBERED_LINE.matcher(line);
 			if (matcher.matches()) {
-				addIfNotBlank(questions, matcher.group(2));
+				addIfValid(questions, seen, matcher.group(2));
 			}
 		}
 		if (questions.isEmpty()) {
 			for (String line : response.split("\\R")) {
-				addIfNotBlank(questions, line);
+				addIfValid(questions, seen, line);
 			}
 		}
 		return questions.size() > QUESTION_COUNT
@@ -84,22 +104,44 @@ public class InterviewPrepPromptBuilder {
 				: List.copyOf(questions);
 	}
 
-	private void addIfNotBlank(List<Generated> target, String candidate) {
-		String trimmed = candidate.trim();
+	private void addIfValid(List<Generated> target, Set<String> seen, String candidate) {
+		String trimmed = candidate == null ? "" : candidate.trim();
 		if (trimmed.isEmpty()) {
 			return;
 		}
+		String question = trimmed;
+		String intent = null;
 		int separator = trimmed.indexOf('|');
-		if (separator < 0) {
-			target.add(new Generated(trimmed, null));
+		if (separator >= 0) {
+			question = trimmed.substring(0, separator).trim();
+			String tail = trimmed.substring(separator + 1).trim();
+			intent = tail.isEmpty() ? null : truncate(tail, MAX_INTENT_LENGTH);
+		}
+		if (!isQuestion(question) || !seen.add(question)) {
 			return;
 		}
-		String question = trimmed.substring(0, separator).trim();
-		String intent = trimmed.substring(separator + 1).trim();
-		if (question.isEmpty()) {
-			return;
+		target.add(new Generated(question, intent));
+	}
+
+	/**
+	 * 질문으로 볼 수 있는 줄인지 판단한다.
+	 *
+	 * <p>모델이 형식을 어겼을 때 머리말·맺음말·코드펜스가 질문으로 저장되는 것을 막는다.
+	 * 조건은 셋이다 — 물음표나 한국어 의문 종결로 끝날 것, 길이가 상식 범위일 것,
+	 * 마크다운 장식으로 시작하지 않을 것.
+	 */
+	static boolean isQuestion(String value) {
+		if (value.length() < MIN_QUESTION_LENGTH || value.length() > MAX_QUESTION_LENGTH) {
+			return false;
 		}
-		target.add(new Generated(question, intent.isEmpty() ? null : intent));
+		if (MARKDOWN_NOISE.matcher(value).find()) {
+			return false;
+		}
+		return QUESTION_ENDING.matcher(value).find();
+	}
+
+	private static String truncate(String value, int max) {
+		return value.length() > max ? value.substring(0, max) : value;
 	}
 
 	private String buildSystemPrompt(Scholarship scholarship, List<ScholarshipCondition> conditions) {
