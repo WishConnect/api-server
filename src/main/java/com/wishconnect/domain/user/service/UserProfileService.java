@@ -3,6 +3,7 @@ package com.wishconnect.domain.user.service;
 import com.wishconnect.domain.common.entity.Major;
 import com.wishconnect.domain.common.entity.MajorCategory;
 import com.wishconnect.domain.common.entity.Region;
+import com.wishconnect.domain.common.dto.RegionResponse;
 import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.domain.common.repository.MajorRepository;
 import com.wishconnect.domain.common.service.RegionResolver;
@@ -162,7 +163,7 @@ public class UserProfileService {
 				user.getPhone(),
 				profile == null || profile.getGender() == null ? null : profile.getGender().name(),
 				profile == null || profile.getNationality() == null ? null : profile.getNationality().name(),
-				profile == null || profile.getRegion() == null ? null : profile.getRegion().getName(),
+				profile == null || profile.getRegion() == null ? null : RegionResponse.from(profile.getRegion()),
 				calculateCompletionRate(user, profile, familyTypes, personalStatuses, interests),
 				user.isOnboardingCompleted(),
 				toAcademic(profile),

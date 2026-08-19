@@ -1,5 +1,7 @@
 package com.wishconnect.domain.scholarship.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * 큐레이팅 화면의 세 가지 상태. 프론트가 어떤 화면을 그릴지 이 값으로 정한다.
  *
@@ -8,6 +10,7 @@ package com.wishconnect.domain.scholarship.dto;
  * 데이터가 없는 게 아니라 <b>잠긴</b> 것이고, 화면에서는 흐리게 깔고 그 위에
  * "프로필 업데이트하고 확인하기" 를 얹는다.
  */
+@Schema(description = "큐레이팅 화면 상태: GUEST(비로그인), ONBOARDING_REQUIRED(로그인·온보딩 미완료), PERSONALIZED(온보딩 완료)")
 public enum CuratedViewMode {
 
 	/**

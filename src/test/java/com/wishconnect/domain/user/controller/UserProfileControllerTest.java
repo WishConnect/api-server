@@ -1,11 +1,14 @@
 package com.wishconnect.domain.user.controller;
 
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.wishconnect.domain.common.dto.RegionResponse;
 import com.wishconnect.domain.user.dto.response.OnboardingCompleteResponse;
+import com.wishconnect.domain.user.dto.response.ProfileResponse;
 import com.wishconnect.domain.user.service.UserProfileService;
 import com.wishconnect.global.config.SecurityConfig;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
@@ -36,6 +39,37 @@ class UserProfileControllerTest {
 	/** SecurityConfig 가 JwtAuthenticationFilter 에 넘기는 협력자. 슬라이스에는 Redis 가 없다. */
 	@MockBean
 	private WithdrawnTokenStore withdrawnTokenStore;
+
+	@Test
+	@DisplayName("프로필 조회 시 시군구와 상위 시도 정보를 함께 반환한다")
+	void getProfileIncludesParentRegion() throws Exception {
+		UUID userId = UUID.randomUUID();
+		ProfileResponse response = new ProfileResponse(
+				userId,
+				"김위시",
+				"wish@example.com",
+				null,
+				null,
+				null,
+				null,
+				new RegionResponse(2L, "중구", 1L, "서울"),
+				50,
+				false,
+				null,
+				null,
+				java.util.List.of());
+		given(jwtProvider.validateToken("valid-token")).willReturn(true);
+		given(jwtProvider.getUserId("valid-token")).willReturn(userId);
+		given(userProfileService.getProfile(userId)).willReturn(response);
+
+		mockMvc.perform(get("/api/v1/users/me/profile")
+						.header("Authorization", "Bearer valid-token"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.region.regionId").value(2))
+				.andExpect(jsonPath("$.data.region.name").value("중구"))
+				.andExpect(jsonPath("$.data.region.parentId").value(1))
+				.andExpect(jsonPath("$.data.region.parentName").value("서울"));
+	}
 
 	@Test
 	@DisplayName("온보딩 완료 시 추천 job id 없이 완료 여부만 반환한다")
