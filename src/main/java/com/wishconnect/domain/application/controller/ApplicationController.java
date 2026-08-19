@@ -11,6 +11,8 @@ import com.wishconnect.domain.application.dto.response.InterviewAdvanceResponse;
 import com.wishconnect.domain.application.entity.EssayStatus;
 import com.wishconnect.domain.application.service.AnswerService;
 import com.wishconnect.domain.application.service.EssayApplicationService;
+import com.wishconnect.domain.application.dto.response.EssayQuestionGenerationResponse;
+import com.wishconnect.domain.application.service.EssayQuestionGenerationService;
 import com.wishconnect.domain.application.service.InterviewService;
 import com.wishconnect.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,6 +46,7 @@ public class ApplicationController {
 
 	private final EssayApplicationService essayApplicationService;
 	private final InterviewService interviewService;
+	private final EssayQuestionGenerationService essayQuestionGenerationService;
 	private final AnswerService answerService;
 
 	/**
@@ -80,6 +83,39 @@ public class ApplicationController {
 	/**
 	 * ③ 지원서 통합 상세 조회. 지원서 화면 진입 시 필요한 모든 데이터를 1회 호출로 반환한다.
 	 */
+	@Operation(summary = "②-1 장학금 맞춤 문항 생성",
+			description = """
+					지원서의 문항을 **그 장학금에 맞는 카테고리·질문으로 교체**한다.
+					지원서 생성(②)은 기본 문항으로 즉시 끝나고, 맞춤 문항은 이 API 로 따로 만든다.
+					지원서 생성에 LLM 을 넣으면 몇 초가 걸리고 LLM 실패가 지원서 생성 실패로 번진다.
+
+					**근거가 부족하면 기본 문항을 지킨다.** 공고에 없는 것을 물으면 학생이 없는 경험을
+					지어내게 되므로, 문항마다 공고에서 인용한 근거를 받아 실제 공고에 있는지 대조한다.
+					살아남은 문항이 2개 미만이면 교체하지 않는다.
+
+					**응답의 source 로 화면을 나눌 것**
+					- `GENERATED` : 맞춤 문항으로 교체됨. `questions` 를 다시 그린다
+					- `DEFAULT` : 기본 문항 유지. `reason` 에 이유가 담긴다
+
+					어느 쪽이든 **200 으로 현재 문항 전체를 돌려주므로** 응답만 보고 다시 그리면 된다.
+					`questionId` 가 바뀌므로 화면에 들고 있던 ID 는 버리고 새로 받은 것을 써야 한다.
+
+					**호출 시점**: 지원서 생성 직후, STEP1 인터뷰를 시작하기 전.
+					작성을 시작한 뒤에는 바꿀 수 없다.
+
+					**에러**
+					- 404 : 지원서 없음 (타인 소유 포함)
+					- 409 : 이미 작성을 시작함 — 답변·사전 인터뷰가 있으면 문항을 바꾸지 않는다
+					- 429 : 생성 한도 초과 (24시간 20건)
+					""")
+	@PostMapping("/{applicationId}/questions/generate")
+	public ApiResponse<EssayQuestionGenerationResponse> generateQuestions(
+			@AuthenticationPrincipal String userId,
+			@PathVariable Long applicationId) {
+		return ApiResponse.ok(
+				essayQuestionGenerationService.generate(UUID.fromString(userId), applicationId));
+	}
+
 	@Operation(summary = "③ 지원서 통합 상세 조회",
 			description = "지원서 화면 진입 시 필요한 모든 데이터(문항·인터뷰 이력·답변 현황)를 1회 호출로 반환.")
 	@GetMapping("/{applicationId}")
