@@ -165,6 +165,7 @@ public class UserProfileService {
 				profile == null || profile.getRegion() == null ? null : toRegionName(profile.getRegion()),
 				calculateCompletionRate(user, profile, familyTypes, personalStatuses, interests),
 				user.isOnboardingCompleted(),
+				profile == null ? "STEP_1" : profile.getOnboardingStep(),
 				toAcademic(profile),
 				toHousehold(profile, familyTypes, personalStatuses),
 				interests

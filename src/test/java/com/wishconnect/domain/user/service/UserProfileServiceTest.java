@@ -17,12 +17,15 @@ import com.wishconnect.domain.common.repository.RegionRepository;
 import com.wishconnect.domain.common.service.RegionResolver;
 import com.wishconnect.domain.common.repository.SchoolRepository;
 import com.wishconnect.domain.user.dto.request.ProfileAcademicRequest;
+import com.wishconnect.domain.user.dto.request.ProfileBasicRequest;
 import com.wishconnect.domain.user.dto.request.ProfileHouseholdRequest;
 import com.wishconnect.domain.user.dto.response.OnboardingCompleteResponse;
+import com.wishconnect.domain.user.dto.response.OnboardingStepResponse;
 import com.wishconnect.domain.user.entity.FamilyCategory;
 import com.wishconnect.domain.user.entity.FamilyType;
 import com.wishconnect.domain.user.entity.Gender;
 import com.wishconnect.domain.user.entity.Interest;
+import com.wishconnect.domain.user.entity.LoginType;
 import com.wishconnect.domain.user.entity.Nationality;
 import com.wishconnect.domain.user.entity.SecondMajorType;
 import com.wishconnect.domain.user.entity.User;
@@ -100,6 +103,39 @@ class UserProfileServiceTest {
 
 		given(userRepository.findById(userId)).willReturn(Optional.of(user));
 		given(userProfileRepository.findByUserId(userId)).willReturn(Optional.of(profile));
+	}
+
+	@Test
+	@DisplayName("소셜 로그인 사용자는 기본정보 저장 시 빈 프로필을 생성하고 STEP1을 완료한다")
+	void saveBasic_createsProfileForSocialUser() {
+		User socialUser = User.createSocial(LoginType.GOOGLE, "google-123", "social@example.com", "소셜유저");
+		ReflectionTestUtils.setField(socialUser, "id", userId);
+		Region region = Region.builder().name("서울").build();
+		UserProfile socialProfile = UserProfile.createFor(socialUser);
+
+		given(userRepository.findById(userId)).willReturn(Optional.of(socialUser));
+		given(userProfileRepository.findByUserId(userId)).willReturn(Optional.empty());
+		given(userProfileRepository.save(any(UserProfile.class))).willReturn(socialProfile);
+		given(regionResolver.byName("서울")).willReturn(region);
+
+		OnboardingStepResponse response = userProfileService.saveBasic(userId, new ProfileBasicRequest(
+				"김소셜",
+				LocalDate.of(2004, 1, 1),
+				"010-0000-0000",
+				"FEMALE",
+				"DOMESTIC",
+				"서울"
+		));
+
+		assertThat(response.step()).isEqualTo(1);
+		assertThat(response.completed()).isTrue();
+		assertThat(socialUser.getName()).isEqualTo("김소셜");
+		assertThat(socialUser.getPhone()).isEqualTo("010-0000-0000");
+		assertThat(socialProfile.getBirthDate()).isEqualTo(LocalDate.of(2004, 1, 1));
+		assertThat(socialProfile.getGender()).isEqualTo(Gender.FEMALE);
+		assertThat(socialProfile.getNationality()).isEqualTo(Nationality.DOMESTIC);
+		assertThat(socialProfile.getRegion()).isEqualTo(region);
+		assertThat(socialProfile.getOnboardingStep()).isEqualTo("STEP_1");
 	}
 
 	@Test
