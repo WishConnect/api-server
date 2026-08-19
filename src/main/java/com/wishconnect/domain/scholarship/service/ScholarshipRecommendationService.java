@@ -9,6 +9,8 @@ import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.Pagination;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
 import com.wishconnect.domain.scholarship.dto.CuratedSort;
+import com.wishconnect.domain.scholarship.dto.CuratedFilters;
+import com.wishconnect.domain.scholarship.dto.DeadlineFilter;
 import com.wishconnect.domain.scholarship.dto.CuratedViewMode;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
@@ -31,6 +33,8 @@ import com.wishconnect.domain.user.repository.UserFamilyTypeRepository;
 import com.wishconnect.domain.user.repository.UserInterestRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -60,7 +64,7 @@ PERSONALIZED 의 규칙:
   탈락시키지 않고 순위만 낮춘다. 이 구분이 없으면 조건을 성실히 채울수록 추천이 비어간다 —
   공고문에는 자격요건만큼 우대사항이 많다.
 - 점수 = 충족 비율(최대 70) + 판정 가능 조건 존재 가점(10) + 마감 임박 가점(20).
-- featured = 지원 가능 공고 중 마감 임박순 상위 5건(캐러셀). campus = 소속 학교의 교내(INTERNAL).
+- featured = 지원 가능 공고 전체(점수순, 동점은 마감순). campus = 소속 학교 키워드를 포함한 교내(INTERNAL).
 
 조건 데이터가 아예 없는 공고는 여전히 전부 동점이다. 랭킹 방식 자체는 별도로 검토 중이다.
  */
@@ -79,9 +83,8 @@ public class ScholarshipRecommendationService {
 			java.util.EnumSet.of(RecruitmentStatus.OPEN, RecruitmentStatus.ALWAYS_OPEN);
 
 	private static final int DEADLINE_SOON_DAYS = 7;
-	/** 히어로 배너(dot 캐러셀) 노출 개수. 피그마 기준 5개. */
+	/** featured 전체 중 other 에서 제외할 첫 노출 개수. 프론트의 초기 카드 개수와 맞춘다. */
 	private static final int FEATURED_LIMIT = 5;
-	private static final int FEATURED_WINDOW_DAYS = 14;
 	private static final String SECTION_FEATURED = "featured";
 	private static final String SECTION_CAMPUS = "campus";
 	private static final String SECTION_OTHER = "other";
@@ -113,6 +116,16 @@ public class ScholarshipRecommendationService {
 	@Transactional(readOnly = true)
 	public CuratedScholarshipResponse getCuratedScholarships(
 			UUID userId, CuratedSort sort, int page, int size) {
+		return getCuratedScholarships(userId, sort, page, size, CuratedFilters.none());
+	}
+
+	@Transactional(readOnly = true)
+	public CuratedScholarshipResponse getCuratedScholarships(
+			UUID userId, CuratedSort sort, int page, int size, CuratedFilters filters) {
+		if (filters.minAmount() != null && filters.maxAmount() != null
+				&& filters.minAmount() > filters.maxAmount()) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
 
 		if (userId == null) {
 			return guestCurated(sort, page, size);
@@ -121,7 +134,7 @@ public class ScholarshipRecommendationService {
 		if (profile == null || !profile.isOnboardingCompleted()) {
 			return onboardingRequiredCurated(userId);
 		}
-		return personalizedCurated(userId, profile, page, size);
+		return personalizedCurated(userId, profile, page, size, filters);
 	}
 
 	/**
@@ -146,7 +159,7 @@ public class ScholarshipRecommendationService {
 				.toList();
 
 		return new CuratedScholarshipResponse(CuratedViewMode.GUEST, ScholarshipRanker.RANKER_VERSION,
-				List.of(), 0, List.of(), cards, List.of(), paged.pagination());
+				List.of(), 0, List.of(), List.of(), cards, paged.pagination());
 	}
 
 	/**
@@ -185,7 +198,7 @@ public class ScholarshipRecommendationService {
 	}
 
 	private CuratedScholarshipResponse personalizedCurated(
-			UUID userId, UserProfile profile, int page, int size) {
+			UUID userId, UserProfile profile, int page, int size, CuratedFilters filters) {
 		List<ScoredScholarship> scored = scoreOpenScholarships(matchProfileOf(userId, profile));
 
 		// 화면에 노출되는 카드(featured/교내/그외)의 스크랩 여부를 한 번에 조회한다.
@@ -197,26 +210,11 @@ public class ScholarshipRecommendationService {
 
 		List<ScoredScholarship> eligibleList = scored.stream().filter(ScoredScholarship::eligible).toList();
 
-		// featured: 마감 임박순 상위 N. 피그마가 dot 캐러셀이라 단건이 아니라 목록이다.
-		// 근로장학은 추천 성격이 아니라 그 외 목록에서 빠지므로, 히어로 배너에도 올리지 않는다.
-		List<ScoredScholarship> featuredCandidates = eligibleList.stream()
-				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
-				.filter(s -> s.dDay() != null && s.dDay() >= 0)
-				.toList();
-		List<ScoredScholarship> featured = featuredCandidates.stream()
-				.filter(s -> s.dDay() <= FEATURED_WINDOW_DAYS)
-				.sorted(featuredComparator())
-				.limit(FEATURED_LIMIT)
-				.toList();
-		if (featured.size() < FEATURED_LIMIT) {
-			Set<Long> selectedIds = featured.stream()
-					.map(s -> s.scholarship().getId()).collect(Collectors.toSet());
-			featured = Stream.concat(featured.stream(), featuredCandidates.stream()
-					.filter(s -> !selectedIds.contains(s.scholarship().getId()))
-					.sorted(featuredComparator()))
-					.limit(FEATURED_LIMIT).toList();
-		}
-		Set<Long> featuredIds = featured.stream()
+		// 프론트가 처음 5건과 더보기를 나누므로, 지원 가능한 전체를 정렬해 내려준다.
+		// 교내·교외·근로를 모두 포함하고 점수 동점일 때만 마감일을 본다.
+		List<ScoredScholarship> featured = eligibleList.stream()
+				.sorted(recommendationComparator()).toList();
+		Set<Long> featuredTopIds = featured.stream().limit(FEATURED_LIMIT)
 				.map(s -> s.scholarship().getId())
 				.collect(Collectors.toSet());
 
@@ -224,33 +222,26 @@ public class ScholarshipRecommendationService {
 		List<ScholarshipCard> campus = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
 				.filter(s -> isSameSchool(s.scholarship(), profile))
-				.sorted(Comparator.comparing(ScoredScholarship::dDay,
-						Comparator.nullsLast(Comparator.naturalOrder())))
+				.sorted(recommendationComparator())
 				.map(s -> s.toCard(SECTION_CAMPUS, scrappedIds, posters))
 				.toList();
 
-		// 그 외 추천: 지원 가능한 교외(EXTERNAL) 공고를 점수순으로. featured 중복은 제외한다.
+		// 그 외 추천: featured 첫 5건을 제외한 나머지 지원 가능 장학금.
 		List<ScoredScholarship> otherRanked = eligibleList.stream()
-				.filter(s -> !featuredIds.contains(s.scholarship().getId()))
-				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.EXTERNAL)
-				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
-						.thenComparing(s -> s.scholarship().getApplicationEndAt(),
-								Comparator.nullsLast(Comparator.naturalOrder())))
+				.filter(s -> !featuredTopIds.contains(s.scholarship().getId()))
+				.filter(s -> matchesFilters(s, filters, scrappedIds))
+				.sorted(recommendationComparator())
 				.toList();
-		// 점수순으로만 두면 한 기관이 화면을 통째로 덮는다. 인천대는 학과마다 근로장학을 따로
-		// 올려서 상위 열 칸이 전부 같은 학교가 되는 일이 실제로 있다. 순서만 흩고 점수는 그대로 둔다.
-		List<ScholarshipCard> others = ScholarshipRanker
-				.diversify(otherRanked, s -> s.scholarship().getProvider()).stream()
+		List<ScholarshipCard> others = otherRanked.stream()
 				.map(s -> s.toCard(SECTION_OTHER, scrappedIds, posters))
 				.toList();
 
-		// 조건 미충족은 피그마상 별도 섹션이라 분리한다. 근로장학(WORK_STUDY)은 성격이 달라 제외.
+		// 조건 미충족은 모집 중인 전체 장학금을 대상으로 하며 근로도 제외하지 않는다.
 		List<ScoredScholarship> ineligibleRanked = scored.stream()
 				.filter(s -> !s.eligible())
-				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
-				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()).toList();
-		List<ScholarshipCard> ineligible = ScholarshipRanker
-				.diversify(ineligibleRanked, s -> s.scholarship().getProvider()).stream()
+				.filter(s -> matchesFilters(s, filters, scrappedIds))
+				.sorted(recommendationComparator()).toList();
+		List<ScholarshipCard> ineligible = ineligibleRanked.stream()
 				.map(s -> s.toCard(SECTION_INELIGIBLE, scrappedIds, posters))
 				.toList();
 
@@ -262,15 +253,48 @@ public class ScholarshipRecommendationService {
 				featured.stream().map(s -> s.toCard(SECTION_FEATURED, scrappedIds, posters)).toList(),
 				calculateProfileCompletionRate(profile),
 				campus,
-				paged.items(),
 				ineligible,
+				paged.items(),
 				paged.pagination()
 		);
 	}
 
-	private Comparator<ScoredScholarship> featuredComparator() {
+	private Comparator<ScoredScholarship> recommendationComparator() {
 		return Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
-				.thenComparing(ScoredScholarship::dDay);
+				.thenComparing(ScoredScholarship::dDay,
+						Comparator.nullsLast(Comparator.naturalOrder()))
+				.thenComparing(s -> s.scholarship().getId());
+	}
+
+	private boolean matchesFilters(ScoredScholarship scored, CuratedFilters filters,
+			Set<Long> scrappedIds) {
+		Scholarship scholarship = scored.scholarship();
+		if (filters.scholarshipType() != null
+				&& scholarship.getScholarshipType() != filters.scholarshipType()) {
+			return false;
+		}
+		if (filters.deadline() == DeadlineFilter.HAS_DEADLINE
+				&& scholarship.getApplicationEndAt() == null) {
+			return false;
+		}
+		if (filters.deadline() == DeadlineFilter.ALWAYS_OPEN
+				&& scholarship.getRecruitmentStatus() != RecruitmentStatus.ALWAYS_OPEN) {
+			return false;
+		}
+		if (filters.deadlineWithinDays() != null
+				&& (scored.dDay() == null || scored.dDay() < 0
+				|| scored.dDay() > filters.deadlineWithinDays())) {
+			return false;
+		}
+		if (filters.minAmount() != null
+				&& (scholarship.getAmount() == null || scholarship.getAmount() < filters.minAmount())) {
+			return false;
+		}
+		if (filters.maxAmount() != null
+				&& (scholarship.getAmount() == null || scholarship.getAmount() > filters.maxAmount())) {
+			return false;
+		}
+		return !filters.scrappedOnly() || scrappedIds.contains(scholarship.getId());
 	}
 
 	/** 정렬 드롭다운을 비교자로 바꾼다. 마감일이 없는 공고는 어느 기준에서든 뒤로 민다. */
@@ -334,7 +358,9 @@ public class ScholarshipRecommendationService {
 		if (schoolName == null || provider == null) {
 			return false;
 		}
-		return normalizeSchoolName(provider).equals(normalizeSchoolName(schoolName));
+		String normalizedProvider = normalizeSchoolName(provider);
+		String normalizedSchool = normalizeSchoolName(schoolName);
+		return normalizedProvider.contains(normalizedSchool) || normalizedSchool.contains(normalizedProvider);
 	}
 
 	/** 표기 차이(공백, "대학교"/"대") 를 흡수한다. */

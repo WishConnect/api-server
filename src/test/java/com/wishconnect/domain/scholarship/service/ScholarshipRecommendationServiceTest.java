@@ -19,6 +19,8 @@ import com.wishconnect.domain.insight.repository.InsightRepository;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse.ScholarshipCard;
 import com.wishconnect.domain.scholarship.dto.CuratedSort;
+import com.wishconnect.domain.scholarship.dto.CuratedFilters;
+import com.wishconnect.domain.scholarship.dto.DeadlineFilter;
 import com.wishconnect.domain.scholarship.dto.CuratedViewMode;
 import com.wishconnect.domain.scholarship.dto.HomeSummaryResponse;
 import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
@@ -265,8 +267,8 @@ class ScholarshipRecommendationServiceTest {
 	}
 
 	@Test
-	@DisplayName("featured 는 마감 임박순 최대 5건까지 배열로 내려간다")
-	void featuredIsCarouselOfUpToFive() {
+	@DisplayName("featured 는 지원 가능한 전체를 점수순으로 내려 프론트가 더보기를 그릴 수 있다")
+	void featuredReturnsAllEligibleScholarships() {
 		List<Scholarship> scholarships = new java.util.ArrayList<>();
 		for (int i = 1; i <= 7; i++) {
 			scholarships.add(scholarship(i, "장학금" + i, ScholarshipType.EXTERNAL,
@@ -276,13 +278,28 @@ class ScholarshipRecommendationServiceTest {
 
 		CuratedScholarshipResponse response = curate();
 
-		assertThat(response.featured()).hasSize(5);
-		assertThat(idsOf(response.featured())).containsExactly(1L, 2L, 3L, 4L, 5L);
+		assertThat(response.featured()).hasSize(7);
+		assertThat(idsOf(response.featured())).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L);
 		assertThat(response.rankerVersion())
 				.isEqualTo(com.wishconnect.domain.scholarship.util.ScholarshipRanker.RANKER_VERSION);
 		assertThat(response.featured()).allMatch(card -> card.section().equals("featured"));
 		// featured 로 올라간 건은 그 외 목록에서 중복 노출되지 않는다
 		assertThat(idsOf(response.otherScholarships())).containsExactlyInAnyOrder(6L, 7L);
+	}
+
+	@Test
+	@DisplayName("featured 는 교내·교외·근로를 모두 포함하고 점수 동점일 때 마감임박순이다")
+	void featuredIncludesEveryTypeAndUsesDeadlineAsTieBreaker() {
+		Scholarship internal = scholarship(1L, "교내", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(20), LocalDateTime.now(), "연세대학교");
+		Scholarship work = scholarship(2L, "근로", ScholarshipType.WORK_STUDY,
+				LocalDateTime.now().plusDays(2), LocalDateTime.now());
+		Scholarship external = scholarship(3L, "교외", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(10), LocalDateTime.now());
+		stubScholarships(UserProfile.builder().school(school("연세대학교")).build(),
+				List.of(internal, work, external), List.of());
+
+		assertThat(idsOf(curate().featured())).containsExactly(2L, 3L, 1L);
 	}
 
 	@Test
@@ -320,6 +337,16 @@ class ScholarshipRecommendationServiceTest {
 		Scholarship mine = scholarship(1L, "교내", ScholarshipType.INTERNAL,
 				LocalDateTime.now().plusDays(30), LocalDateTime.now().minusDays(30), "연세대학교");
 		stubScholarships(UserProfile.builder().school(school("연세대")).build(), List.of(mine), List.of());
+
+		assertThat(idsOf(curate().campusScholarships())).containsExactly(1L);
+	}
+
+	@Test
+	@DisplayName("운영기관에 학교명 키워드가 포함되면 교내 장학금으로 본다")
+	void campusMatchAllowsProviderContainingSchoolKeyword() {
+		Scholarship mine = scholarship(1L, "교내", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(30), LocalDateTime.now(), "연세대학교 학생복지처");
+		stubScholarships(UserProfile.builder().school(school("연세대학교")).build(), List.of(mine), List.of());
 
 		assertThat(idsOf(curate().campusScholarships())).containsExactly(1L);
 	}
@@ -469,21 +496,48 @@ class ScholarshipRecommendationServiceTest {
 	@Test
 	@DisplayName("그 외 목록은 page/size로 페이지네이션된다")
 	void paginatesOtherScholarships() {
-		Scholarship s1 = scholarship(1L, "장1", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
-		Scholarship s2 = scholarship(2L, "장2", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
-		Scholarship s3 = scholarship(3L, "장3", ScholarshipType.EXTERNAL, null, LocalDateTime.now().minusDays(30));
-		stubScholarships(UserProfile.builder().incomeLevel(3).build(), List.of(s1, s2, s3),
-				List.of(incomeCondition(s1, 8), incomeCondition(s2, 8), incomeCondition(s3, 8)));
+		List<Scholarship> scholarships = new java.util.ArrayList<>();
+		List<ScholarshipCondition> conditions = new java.util.ArrayList<>();
+		for (int i = 1; i <= 8; i++) {
+			Scholarship scholarship = scholarship(i, "장" + i, ScholarshipType.EXTERNAL,
+					null, LocalDateTime.now().minusDays(30));
+			scholarships.add(scholarship);
+			conditions.add(incomeCondition(scholarship, 8));
+		}
+		stubScholarships(UserProfile.builder().incomeLevel(3).build(), scholarships, conditions);
 
 		CuratedScholarshipResponse response =
 				scholarshipRecommendationService.getCuratedScholarships(
 						USER_ID, CuratedSort.DEADLINE, 2, 1);
 
-		// 마감일이 없으면 featured 대상이 아니다 -> others 3건 중 2페이지
-		assertThat(response.featured()).isEmpty();
+		assertThat(response.featured()).hasSize(8);
 		assertThat(response.otherScholarships()).hasSize(1);
 		assertThat(response.pagination().totalCount()).isEqualTo(3);
 		assertThat(response.pagination().totalPages()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("대체 필터는 ineligible과 other 목록에 공통 적용된다")
+	void filtersLastSectionsByTypeDeadlineAmountAndScrap() {
+		List<Scholarship> scholarships = new java.util.ArrayList<>();
+		List<ScholarshipCondition> conditions = new java.util.ArrayList<>();
+		for (int i = 1; i <= 7; i++) {
+			ScholarshipType type = i == 7 ? ScholarshipType.INTERNAL : ScholarshipType.EXTERNAL;
+			Scholarship scholarship = scholarship(i, "장" + i, type,
+					LocalDateTime.now().plusDays(i), LocalDateTime.now());
+			scholarships.add(scholarship);
+			conditions.add(incomeCondition(scholarship, 8));
+		}
+		stubScholarships(UserProfile.builder().incomeLevel(3).build(), scholarships, conditions);
+		given(scrapRepository.findScrappedScholarshipIds(eq(USER_ID), anyList())).willReturn(List.of(7L));
+
+		CuratedScholarshipResponse response = scholarshipRecommendationService.getCuratedScholarships(
+				USER_ID, CuratedSort.DEADLINE, 1, 10,
+				new CuratedFilters(ScholarshipType.INTERNAL, DeadlineFilter.HAS_DEADLINE,
+						7, 1_000_000L, 3_000_000L, true));
+
+		assertThat(idsOf(response.otherScholarships())).containsExactly(7L);
+		assertThat(response.ineligibleScholarships()).isEmpty();
 	}
 
 	@Test
@@ -596,9 +650,8 @@ class ScholarshipRecommendationServiceTest {
 			assertThat(idsOf(response.campusScholarships())).containsExactly(1L);
 			// 조건을 모두 만족하므로 미충족 섹션은 비어 있다
 			assertThat(response.ineligibleScholarships()).isEmpty();
-			// 근로장학은 추천 목록에 넣지 않는다
-			assertThat(idsOf(response.otherScholarships())).doesNotContain(5L);
-			assertThat(idsOf(response.featured())).doesNotContain(5L);
+			// 근로장학도 지원 가능하면 featured 전체 목록에 포함된다.
+			assertThat(idsOf(response.featured())).contains(5L);
 		}
 
 		@Test
