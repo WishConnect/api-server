@@ -11,12 +11,17 @@ public record AdminAuditLogResponse(
 		String targetType,
 		Long targetId,
 		String detail,
+		String beforeJson,
+		String afterJson,
+		LocalDateTime restoredAt,
+		UUID restoredBy,
 		LocalDateTime createdAt
 ) {
 
 	public static AdminAuditLogResponse from(AdminAuditLog log) {
 		return new AdminAuditLogResponse(
 				log.getId(), log.getActorId(), log.getAction(),
-				log.getTargetType(), log.getTargetId(), log.getDetail(), log.getCreatedAt());
+				log.getTargetType(), log.getTargetId(), log.getDetail(), log.getBeforeJson(),
+				log.getAfterJson(), log.getRestoredAt(), log.getRestoredBy(), log.getCreatedAt());
 	}
 }

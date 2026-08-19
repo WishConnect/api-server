@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -177,6 +178,10 @@ public class Scholarship extends BaseEntity {
 
 	@Column(name = "last_synced_at")
 	private LocalDateTime lastSyncedAt;
+
+	/** 관리자가 상시모집 원문을 마지막으로 확인한 시각. */
+	@Column(name = "always_open_reviewed_at")
+	private LocalDateTime alwaysOpenReviewedAt;
 
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
@@ -392,6 +397,37 @@ public class Scholarship extends BaseEntity {
 		this.verified = true;
 	}
 
+	/** 통합 수기 등록에서 자동 수집과 같은 수준의 제출·심사·공고 메타데이터를 채운다. */
+	public void applyManualDetails(
+		String detailUrl,
+		RecruitmentStatus recruitmentStatus,
+		NoticeKind noticeKind,
+		boolean combined,
+		String submissionMethod,
+		SubmissionChannel submissionChannel,
+		String submissionEvidence,
+		String contact,
+		RequirementLevel essayRequirement,
+		String essayEvidence,
+		RequirementLevel interviewRequirement,
+		String interviewEvidence
+	) {
+		this.detailUrl = detailUrl;
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+		this.contact = contact;
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		if (recruitmentStatus != null) {
+			updateRecruitmentStatusByAdmin(recruitmentStatus);
+		}
+	}
+
 	/**
 	 * 대학 장학공지를 LLM 으로 재파싱한 결과를 덮어쓴다.
 	 *
@@ -463,6 +499,31 @@ public class Scholarship extends BaseEntity {
 	public void updateRecruitmentStatusByAdmin(RecruitmentStatus recruitmentStatus) {
 		this.recruitmentStatus = recruitmentStatus;
 		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
+	}
+
+	public void confirmAlwaysOpen() {
+		if (this.recruitmentStatus != RecruitmentStatus.ALWAYS_OPEN || this.deletedAt != null) {
+			throw new IllegalStateException("상시모집 중인 장학금만 확인 처리할 수 있습니다.");
+		}
+		this.alwaysOpenReviewedAt = LocalDateTime.now();
+	}
+
+	/** 감사로그의 수기 변경 스냅샷으로 복구한다. 자동 파싱 전용 필드는 건드리지 않는다. */
+	public void restoreAdminSnapshot(ScholarshipAdminSnapshot snapshot) {
+		this.title = snapshot.title();
+		this.provider = snapshot.provider();
+		this.summary = snapshot.summary();
+		this.description = snapshot.description();
+		this.scholarshipType = snapshot.scholarshipType();
+		this.applicationStartAt = snapshot.applicationStartAt();
+		this.applicationEndAt = snapshot.applicationEndAt();
+		this.recruitmentStatus = snapshot.recruitmentStatus();
+		this.selectionCount = snapshot.selectionCount();
+		this.amount = snapshot.amount();
+		this.homepageUrl = snapshot.homepageUrl();
+		this.active = snapshot.active();
+		this.verified = snapshot.verified();
+		this.deletedAt = snapshot.deletedAt();
 	}
 
 	public boolean isDeleted() {

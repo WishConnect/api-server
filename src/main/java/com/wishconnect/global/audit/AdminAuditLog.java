@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -53,12 +54,32 @@ public class AdminAuditLog extends BaseCreatedEntity {
 	@Column(length = 1000)
 	private String detail;
 
+	@Column(name = "before_json", columnDefinition = "TEXT")
+	private String beforeJson;
+
+	@Column(name = "after_json", columnDefinition = "TEXT")
+	private String afterJson;
+
+	@Column(name = "restored_at")
+	private LocalDateTime restoredAt;
+
+	@Column(name = "restored_by")
+	private UUID restoredBy;
+
 	@Builder
-	private AdminAuditLog(UUID actorId, AdminAction action, String targetType, Long targetId, String detail) {
+	private AdminAuditLog(UUID actorId, AdminAction action, String targetType, Long targetId, String detail,
+			String beforeJson, String afterJson) {
 		this.actorId = actorId;
 		this.action = action;
 		this.targetType = targetType;
 		this.targetId = targetId;
 		this.detail = detail;
+		this.beforeJson = beforeJson;
+		this.afterJson = afterJson;
+	}
+
+	public void markRestored(UUID actorId) {
+		this.restoredAt = LocalDateTime.now();
+		this.restoredBy = actorId;
 	}
 }

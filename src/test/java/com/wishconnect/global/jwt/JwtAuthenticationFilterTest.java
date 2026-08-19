@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,5 +84,36 @@ class JwtAuthenticationFilterTest {
 
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
 		verifyNoInteractions(withdrawnTokenStore);
+	}
+
+	@Test
+	@DisplayName("관리자 화면 GET은 HttpOnly 쿠키의 토큰으로 인증한다")
+	void authenticatesAdminViewCookie() throws Exception {
+		UUID userId = UUID.randomUUID();
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/index.html");
+		request.setCookies(new Cookie(AdminAuthCookie.NAME, "admin-token"));
+		given(jwtProvider.validateToken("admin-token")).willReturn(true);
+		given(jwtProvider.getUserId("admin-token")).willReturn(userId);
+		given(jwtProvider.getRole("admin-token")).willReturn("ADMIN");
+		given(withdrawnTokenStore.isWithdrawn(userId)).willReturn(false);
+
+		new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore)
+				.doFilter(request, new MockHttpServletResponse(), filterChain);
+
+		assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+				.extracting("authority").containsExactly("ROLE_ADMIN");
+	}
+
+	@Test
+	@DisplayName("관리자 변경 API POST는 쿠키만으로 인증하지 않는다")
+	void ignoresAdminCookieForMutation() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/scholarships/manual");
+		request.setCookies(new Cookie(AdminAuthCookie.NAME, "admin-token"));
+
+		new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore)
+				.doFilter(request, new MockHttpServletResponse(), filterChain);
+
+		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+		verifyNoInteractions(jwtProvider, withdrawnTokenStore);
 	}
 }

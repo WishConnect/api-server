@@ -9,6 +9,7 @@ public record AlwaysOpenScholarshipResponse(
 		@Schema(description = "장학금명") String title,
 		@Schema(description = "운영 기관") String provider,
 		@Schema(description = "데이터 생성 일시") LocalDateTime createdAt,
+		@Schema(description = "관리자 마지막 원문 확인 시각") LocalDateTime reviewedAt,
 		@Schema(description = "저장된 자격·우대 조건 수", example = "4") long conditionCount,
 		@Schema(description = "관리자 확인용 원문 URL. detailUrl을 우선하고 없으면 homepageUrl") String sourceUrl
 ) {
