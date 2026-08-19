@@ -9,6 +9,8 @@ import com.wishconnect.domain.application.client.dto.LlmModel;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
+import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
+import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipMergeCandidate;
@@ -28,6 +30,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -164,9 +168,61 @@ public class ScholarshipDedupService {
 	/** 승인 대기 목록 조회. */
 	@Transactional(readOnly = true)
 	public MergeCandidateResponse list(MergeCandidateStatus status, int page, int size) {
-		var result = mergeCandidateRepository.findByStatusOrderByIdAsc(
-				status, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
+		return list(status, null, null, page, size);
+	}
+
+	@Transactional(readOnly = true)
+	public MergeCandidateResponse list(MergeCandidateStatus status, MergeCandidateOrigin origin,
+			String keyword, int page, int size) {
+		Specification<ScholarshipMergeCandidate> spec = (root, query, cb) -> {
+			List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+			if (status != null) predicates.add(cb.equal(root.get("status"), status));
+			if (origin != null) predicates.add(cb.equal(root.get("origin"), origin));
+			if (keyword != null && !keyword.isBlank()) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				var primary = root.join("primary");
+				var duplicate = root.join("duplicate");
+				predicates.add(cb.or(cb.like(cb.lower(primary.get("title")), like),
+						cb.like(cb.lower(primary.get("provider")), like),
+						cb.like(cb.lower(duplicate.get("title")), like),
+						cb.like(cb.lower(duplicate.get("provider")), like)));
+			}
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		var result = mergeCandidateRepository.findAll(spec,
+				PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
+						Sort.by(Sort.Direction.ASC, "id")));
 		return MergeCandidateResponse.of(result.getContent(), (int) result.getTotalElements());
+	}
+
+	/** 관리자가 검색으로 고른 두 장학금을 안전한 기존 승인 큐에 올린다. */
+	@Transactional
+	public MergeCandidateResponse queueManual(ManualMergeCandidateRequest request) {
+		if (request.primaryScholarshipId().equals(request.duplicateScholarshipId())) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+		Scholarship primary = active(request.primaryScholarshipId());
+		Scholarship duplicate = active(request.duplicateScholarshipId());
+		if (mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(primary.getId(), duplicate.getId())
+				|| mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(duplicate.getId(), primary.getId())) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+		Set<Long> pending = new HashSet<>(mergeCandidateRepository
+				.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
+		if (pending.contains(primary.getId()) || pending.contains(duplicate.getId())) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+		ScholarshipMergeCandidate saved = mergeCandidateRepository.save(ScholarshipMergeCandidate.builder()
+				.primary(primary).duplicate(duplicate)
+				.reason(request.reason() == null || request.reason().isBlank()
+						? "관리자 수기 선택" : request.reason().trim())
+				.origin(MergeCandidateOrigin.MANUAL).build());
+		return MergeCandidateResponse.of(List.of(saved), 1);
+	}
+
+	private Scholarship active(Long id) {
+		return scholarshipRepository.findById(id).filter(value -> !value.isDeleted())
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
 	}
 
 	/**

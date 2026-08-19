@@ -65,6 +65,8 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260819_10__always_open_reviewed_at.sql` | 상시모집 장학금의 관리자 마지막 원문 확인 시각 추가 | ✅ 2026-08-19 |
 | `V20260819_11__create_admin_job_run.sql` | 관리자 배치 실행 이력·부분 실패 알림 테이블 추가 | ✅ 2026-08-19 |
 | `V20260819_12__admin_audit_snapshots.sql` | 수기 수정·내리기 변경 전후 스냅샷과 1회 복구 이력 추가 | ✅ 2026-08-19 |
+| `V20260819_13__merge_candidate_origin.sql` | 중복 후보 생성 경로(LLM/관리자 수기) 구분 | ⬜ 미적용 |
+| `V20260819_14__add_admin_console_actions.sql` | 통합 수정·이미지·수기 중복 후보 감사 액션 추가 | ⬜ 미적용 |
 
 > `V20260817_04` 는 **사후에 만든 마이그레이션**이다. 커밋 `f24ed62`("household 매핑을 user profile
 > 기준으로 저장")가 엔티티를 `@ManyToOne User`(uuid) → `@ManyToOne UserProfile`(bigint) 로 바꾸면서

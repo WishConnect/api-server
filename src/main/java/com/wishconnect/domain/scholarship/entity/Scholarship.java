@@ -428,6 +428,44 @@ public class Scholarship extends BaseEntity {
 		}
 	}
 
+	/** 관리자 통합 편집 화면의 최종 값을 그대로 반영한다. primarySource와 dedupKey는 보존한다. */
+	public void replaceByAdmin(
+		String title, String provider, String summary, String description,
+		ScholarshipType scholarshipType, LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt, RecruitmentStatus recruitmentStatus,
+		Integer selectionCount, Long amount, String homepageUrl, String detailUrl,
+		NoticeKind noticeKind, boolean combined, String submissionMethod,
+		SubmissionChannel submissionChannel, String submissionEvidence, String contact,
+		RequirementLevel essayRequirement, String essayEvidence,
+		RequirementLevel interviewRequirement, String interviewEvidence
+	) {
+		this.title = title;
+		this.provider = provider;
+		this.summary = summary;
+		this.description = description;
+		this.scholarshipType = scholarshipType;
+		this.applicationStartAt = applicationStartAt;
+		this.applicationEndAt = applicationEndAt;
+		this.selectionCount = selectionCount;
+		this.amount = amount;
+		this.homepageUrl = homepageUrl;
+		this.detailUrl = detailUrl;
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+		this.contact = contact;
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		this.recruitmentStatus = recruitmentStatus == null
+				? resolveStatus(applicationStartAt, applicationEndAt) : recruitmentStatus;
+		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+		this.verified = true;
+	}
+
 	/**
 	 * 대학 장학공지를 LLM 으로 재파싱한 결과를 덮어쓴다.
 	 *

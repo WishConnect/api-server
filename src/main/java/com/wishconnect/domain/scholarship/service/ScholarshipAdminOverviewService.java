@@ -1,14 +1,19 @@
 package com.wishconnect.domain.scholarship.service;
 
+import com.wishconnect.domain.common.entity.Image;
 import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
+import com.wishconnect.domain.scholarship.dto.AdminImageRowResponse;
+import com.wishconnect.domain.scholarship.dto.AdminIntakeRowResponse;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
@@ -20,15 +25,21 @@ import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,6 +58,7 @@ public class ScholarshipAdminOverviewService {
 
 	/** 관리자 목록 한 번에 보여줄 최대 건수. 눈으로 훑는 화면이라 크게 둘 이유가 없다. */
 	private static final int MAX_ROWS = 200;
+	private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
@@ -107,12 +119,39 @@ public class ScholarshipAdminOverviewService {
 	public Page<AdminScholarshipRow> search(
 			String keyword, String source, RecruitmentStatus status, boolean includeDeleted, Pageable pageable) {
 		Set<Long> posterIds = posterScholarshipIds();
-		return scholarshipRepository.searchForAdmin(
-				StringUtils.hasText(keyword) ? keyword.trim() : null,
-				StringUtils.hasText(source) ? source.trim() : null,
-				status,
-				includeDeleted,
-				pageable).map(scholarship -> toRow(scholarship, posterIds));
+		return scholarshipRepository.findAll(scholarshipSpec(keyword, source, status, includeDeleted), pageable)
+				.map(scholarship -> toRow(scholarship, posterIds));
+	}
+
+	public Page<AdminIntakeRowResponse> intake(LocalDate date, String keyword, String source,
+			ParseStatus status, Pageable pageable) {
+		LocalDate target = date == null ? LocalDate.now(KOREA_ZONE).minusDays(1) : date;
+		Specification<RawScholarship> spec = (root, query, cb) -> {
+			List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+			predicates.add(cb.greaterThanOrEqualTo(root.get("crawledAt"), target.atStartOfDay()));
+			predicates.add(cb.lessThan(root.get("crawledAt"), target.plusDays(1).atStartOfDay()));
+			if (StringUtils.hasText(source)) predicates.add(cb.equal(root.get("source"), source.trim()));
+			if (status != null) predicates.add(cb.equal(root.get("parseStatus"), status));
+			if (StringUtils.hasText(keyword)) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				var scholarship = root.join("scholarship", jakarta.persistence.criteria.JoinType.LEFT);
+				predicates.add(cb.or(
+						cb.like(cb.lower(root.get("sourceId")), like),
+						cb.like(cb.lower(scholarship.get("title")), like),
+						cb.like(cb.lower(scholarship.get("provider")), like)));
+			}
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		return rawScholarshipRepository.findAll(spec, pageable).map(this::toIntakeRow);
+	}
+
+	public AdminRawDetailResponse rawDetail(Long rawId) {
+		RawScholarship raw = rawScholarshipRepository.findById(rawId)
+				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		Long scholarshipId = raw.getScholarship() == null ? null : raw.getScholarship().getId();
+		return new AdminRawDetailResponse(raw.getId(), scholarshipId, raw.getSource(), raw.getSourceId(),
+				raw.getSourceUrl(), raw.getRawJson(), raw.getRawHtml(), raw.getParseStatus().name(),
+				raw.getParseError(), raw.getCrawledAt(), scholarshipId == null ? null : detail(scholarshipId));
 	}
 
 	public AdminScholarshipDetailResponse detail(Long scholarshipId) {
@@ -151,21 +190,136 @@ public class ScholarshipAdminOverviewService {
 		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images);
 	}
 
-	public Page<AdminRawFailureResponse> failures(Pageable pageable) {
-		return rawScholarshipRepository.findByParseStatusInOrderByUpdatedAtDesc(
-				List.of(ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY), pageable)
+	public Page<AdminRawFailureResponse> failures(String keyword, String source, ParseStatus status,
+			boolean retryableOnly, Pageable pageable) {
+		Specification<RawScholarship> spec = (root, query, cb) -> {
+			List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+			if (status == null) {
+				predicates.add(root.get("parseStatus").in(
+						ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY));
+			} else {
+				predicates.add(cb.equal(root.get("parseStatus"), status));
+			}
+			// 마감 공고는 정상 제외 대상이며 재처리해도 결과가 같으므로 실패 큐에서 숨긴다.
+			predicates.add(cb.or(cb.isNull(root.get("parseError")),
+					cb.notLike(root.get("parseError"), "%모집%지난 장학금%")));
+			if (StringUtils.hasText(source)) predicates.add(cb.equal(root.get("source"), source.trim()));
+			if (retryableOnly) predicates.add(cb.like(root.get("source"), "UNIV\\_%", '\\'));
+			if (StringUtils.hasText(keyword)) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				predicates.add(cb.or(cb.like(cb.lower(root.get("sourceId")), like),
+						cb.like(cb.lower(root.get("parseError")), like)));
+			}
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		return rawScholarshipRepository.findAll(spec, pageable)
 				.map(raw -> new AdminRawFailureResponse(
 						raw.getId(), raw.getScholarship() == null ? null : raw.getScholarship().getId(),
 						raw.getSource(), raw.getSourceId(), raw.getSourceUrl(), raw.getParseStatus().name(),
 						raw.getParseError(), raw.getCrawledAt(), raw.getUpdatedAt()));
 	}
 
-	public Page<AdminScholarshipAnomalyResponse> anomalies(Pageable pageable) {
-		return scholarshipRepository.findAdminAnomalies(pageable)
+	public Page<AdminRawFailureResponse> failures(Pageable pageable) {
+		return failures(null, null, null, false, pageable);
+	}
+
+	public Page<AdminScholarshipAnomalyResponse> anomalies(String keyword, String source,
+			RecruitmentStatus status, String anomalyType, Pageable pageable) {
+		Specification<Scholarship> base = scholarshipSpec(keyword, source, status, false)
+				.and((root, query, cb) -> anomalyPredicate(anomalyType, root, query, cb));
+		return scholarshipRepository.findAll(base, pageable)
 				.map(value -> new AdminScholarshipAnomalyResponse(
 						value.getId(), value.getTitle(), value.getProvider(), name(value.getRecruitmentStatus()),
 						value.getApplicationStartAt(), value.getApplicationEndAt(), value.getPrimarySource(),
 						anomalyTypes(value)));
+	}
+
+	public Page<AdminScholarshipAnomalyResponse> anomalies(Pageable pageable) {
+		return anomalies(null, null, null, null, pageable);
+	}
+
+	public Page<AdminImageRowResponse> images(String keyword, String source, Boolean hasImage,
+			Pageable pageable) {
+		Set<Long> imageIds = posterScholarshipIds();
+		Specification<Scholarship> spec = scholarshipSpec(keyword, source, null, false)
+				.and((root, query, cb) -> {
+					if (hasImage == null) return cb.conjunction();
+					if (imageIds.isEmpty()) return hasImage ? cb.disjunction() : cb.conjunction();
+					return hasImage ? root.get("id").in(imageIds) : cb.not(root.get("id").in(imageIds));
+				});
+		Page<Scholarship> scholarships = scholarshipRepository.findAll(spec, pageable);
+		List<Long> ids = scholarships.stream().map(Scholarship::getId).toList();
+		Map<Long, Image> latest = ids.isEmpty() ? Map.of() : imageRepository
+				.findAllByEntityTypeAndEntityIdIn(ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, ids)
+				.stream().collect(Collectors.toMap(Image::getEntityId, Function.identity(),
+						(left, right) -> left.getId() > right.getId() ? left : right));
+		List<AdminImageRowResponse> content = scholarships.stream().map(s -> {
+			Image image = latest.get(s.getId());
+			return new AdminImageRowResponse(s.getId(), s.getTitle(), s.getProvider(), s.getPrimarySource(),
+					image == null ? null : image.getId(), image == null ? null : image.getImageType(),
+					image == null ? null : image.getOriginalName(), image == null ? null : image.getSourceUrl(),
+					image == null ? null : imageStorageService.publicUrl(image.getS3Key()),
+					image == null ? null : image.getCreatedAt());
+		}).toList();
+		return new PageImpl<>(content, pageable, scholarships.getTotalElements());
+	}
+
+	private Specification<Scholarship> scholarshipSpec(String keyword, String source,
+			RecruitmentStatus status, boolean includeDeleted) {
+		return (root, query, cb) -> {
+			List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+			if (!includeDeleted) predicates.add(cb.isNull(root.get("deletedAt")));
+			if (StringUtils.hasText(keyword)) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				predicates.add(cb.or(cb.like(cb.lower(root.get("title")), like),
+						cb.like(cb.lower(root.get("provider")), like)));
+			}
+			if (StringUtils.hasText(source)) predicates.add(cb.equal(root.get("primarySource"), source.trim()));
+			if (status != null) predicates.add(cb.equal(root.get("recruitmentStatus"), status));
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+	}
+
+	private jakarta.persistence.criteria.Predicate anomalyPredicate(String type,
+			jakarta.persistence.criteria.Root<Scholarship> root,
+			jakarta.persistence.criteria.CriteriaQuery<?> query,
+			jakarta.persistence.criteria.CriteriaBuilder cb) {
+		var emptyTitle = cb.or(cb.isNull(root.get("title")), cb.equal(cb.trim(root.get("title")), ""));
+		var missingProvider = cb.or(cb.isNull(root.get("provider")), cb.equal(cb.trim(root.get("provider")), ""));
+		var dateReversed = cb.and(cb.isNotNull(root.get("applicationStartAt")),
+				cb.isNotNull(root.get("applicationEndAt")),
+				cb.greaterThan(root.get("applicationStartAt"), root.get("applicationEndAt")));
+		var openEnded = cb.and(cb.equal(root.get("recruitmentStatus"), RecruitmentStatus.OPEN),
+				cb.lessThan(root.get("applicationEndAt"), LocalDateTime.now()));
+		var activeStatus = root.get("recruitmentStatus").in(
+				RecruitmentStatus.OPEN, RecruitmentStatus.ALWAYS_OPEN);
+		var missingLink = cb.and(activeStatus,
+				cb.or(cb.isNull(root.get("homepageUrl")), cb.equal(cb.trim(root.get("homepageUrl")), "")),
+				cb.or(cb.isNull(root.get("detailUrl")), cb.equal(cb.trim(root.get("detailUrl")), "")));
+		var subquery = query.subquery(Long.class);
+		var condition = subquery.from(com.wishconnect.domain.scholarship.entity.ScholarshipCondition.class);
+		subquery.select(cb.literal(1L)).where(cb.equal(condition.get("scholarship"), root));
+		var missingCondition = cb.and(activeStatus, cb.not(cb.exists(subquery)));
+		if (StringUtils.hasText(type)) {
+			return switch (type) {
+				case "EMPTY_TITLE" -> emptyTitle;
+				case "MISSING_PROVIDER" -> missingProvider;
+				case "DATE_REVERSED" -> dateReversed;
+				case "OPEN_BUT_ENDED" -> openEnded;
+				case "MISSING_LINK" -> missingLink;
+				case "MISSING_CONDITION" -> missingCondition;
+				default -> throw new CustomException(ErrorCode.INVALID_INPUT);
+			};
+		}
+		return cb.or(emptyTitle, missingProvider, dateReversed, openEnded, missingLink, missingCondition);
+	}
+
+	private AdminIntakeRowResponse toIntakeRow(RawScholarship raw) {
+		Scholarship scholarship = raw.getScholarship();
+		return new AdminIntakeRowResponse(raw.getId(), scholarship == null ? null : scholarship.getId(),
+				scholarship == null ? raw.getSourceId() : scholarship.getTitle(), raw.getSource(),
+				raw.getSourceId(), raw.getSourceUrl(), raw.getParseStatus().name(), raw.getParseError(),
+				raw.getCrawledAt());
 	}
 
 	private List<String> anomalyTypes(Scholarship value) {
