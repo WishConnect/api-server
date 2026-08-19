@@ -18,7 +18,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                 WHERE s.deleted_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
-                    OR e.id IS NOT NULL
+                    OR e.status IN ('IN_PROGRESS', 'COMPLETED')
                 )
                 AND (CAST(:keyword AS varchar) IS NULL OR s.title LIKE CONCAT('%', CAST(:keyword AS varchar), '%'))
                 AND (
@@ -35,7 +35,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                 WHERE s.deleted_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
-                    OR e.id IS NOT NULL
+                    OR e.status IN ('IN_PROGRESS', 'COMPLETED')
                 )
                 AND (CAST(:keyword AS varchar) IS NULL OR s.title LIKE CONCAT('%', CAST(:keyword AS varchar), '%'))
                 AND (
@@ -65,7 +65,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                 WHERE s.deleted_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
-                    OR e.id IS NOT NULL
+                    OR e.status IN ('IN_PROGRESS', 'COMPLETED')
                 )
                 AND (CAST(:keyword AS varchar) IS NULL OR s.title LIKE CONCAT('%', CAST(:keyword AS varchar), '%'))
                 """,
