@@ -61,6 +61,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_14__active_user_email_unique.sql` | `users.email` 전역 UNIQUE를 활성 계정의 `(email, login_type)` 부분 UNIQUE로 교체 | ✅ 2026-08-18 |
 | `V20260819_08__create_content_inquiry.sql` | `content_inquiry` 테이블 추가 (콘텐츠 이용 문의) + 상태 조회 인덱스 | ✅ 2026-08-19 |
 | `V20260819_09__create_interview_prep_question.sql` | `interview_prep_question` 테이블 추가 (면접 예상 질문 캐시) + `(scholarship_id, display_order)` UNIQUE | ⬜ 미적용 |
+| `V20260819_20__essay_question_source.sql` | `essay.question_source` 추가 (맞춤 문항 생성 여부 — 재호출 멱등성) + CHECK 제약 | ⬜ 미적용 |
 | `V20260819_10__always_open_reviewed_at.sql` | 상시모집 장학금의 관리자 마지막 원문 확인 시각 추가 | ✅ 2026-08-19 |
 | `V20260819_11__create_admin_job_run.sql` | 관리자 배치 실행 이력·부분 실패 알림 테이블 추가 | ✅ 2026-08-19 |
 | `V20260819_12__admin_audit_snapshots.sql` | 수기 수정·내리기 변경 전후 스냅샷과 1회 복구 이력 추가 | ✅ 2026-08-19 |
