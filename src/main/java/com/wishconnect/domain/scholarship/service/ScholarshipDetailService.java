@@ -72,7 +72,7 @@ public class ScholarshipDetailService {
 				scholarship.getRecruitmentStatus() == null ? null : scholarship.getRecruitmentStatus().name(),
 				scholarship.getApplicationEndAt(),
 				CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt()),
-				scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),
+				userId != null && scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),
 				List.of(),
 				imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
 								ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId)
@@ -85,7 +85,9 @@ public class ScholarshipDetailService {
 				buildSummary(scholarship, conditions),
 				schedule,
 				documents,
-				scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions),
+				userId == null
+						? List.of()
+						: scholarshipRecommendationService.getMatchReasons(userId, scholarship, conditions),
 				buildConditionChecks(userId, conditions),
 				scholarship.isCombined(),
 				new ScholarshipDetailResponse.Selection(
