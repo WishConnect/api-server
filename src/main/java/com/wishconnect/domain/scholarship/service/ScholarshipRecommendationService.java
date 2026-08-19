@@ -212,7 +212,12 @@ public class ScholarshipRecommendationService {
 
 		// 프론트가 처음 5건과 더보기를 나누므로, 지원 가능한 전체를 정렬해 내려준다.
 		// 교내·교외·근로를 모두 포함하고 점수 동점일 때만 마감일을 본다.
+		// 교내 공고는 소속 학교 것만 배너에 올린다. 필터가 없어서 인천대 학생이 아닌 사람에게
+		// 인천대 교내장학금이 최상단에 떴다. 조건이 "인천대학교 재학생" 이라도 자격 게이트가
+		// 그것만으로 걸러 주지는 못한다 — 학교를 못 적은 공고가 있기 때문이다.
 		List<ScoredScholarship> featured = eligibleList.stream()
+				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.INTERNAL
+						|| isSameSchool(s.scholarship(), profile))
 				.sorted(recommendationComparator()).toList();
 		Set<Long> featuredTopIds = featured.stream().limit(FEATURED_LIMIT)
 				.map(s -> s.scholarship().getId())
