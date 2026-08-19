@@ -85,6 +85,7 @@ class ImageStorageServiceTest {
 		ArgumentCaptor<Image> imageCaptor = ArgumentCaptor.forClass(Image.class);
 		then(imageRepository).should().save(imageCaptor.capture());
 		assertThat(imageCaptor.getValue().getEntityType()).isEqualTo(ImageStorageService.ENTITY_TYPE_SCHOLARSHIP);
+		assertThat(imageCaptor.getValue().getSourceUrl()).isEqualTo(imageUrl);
 		assertThat(imageCaptor.getValue().getEntityId()).isEqualTo(1L);
 		assertThat(imageCaptor.getValue().getS3Key()).isEqualTo("scholarship/konkuk/1.jpg");
 		assertThat(imageCaptor.getValue().getOriginalName()).isEqualTo("poster.jpg");

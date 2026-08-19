@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
+import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
@@ -18,6 +19,8 @@ import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
@@ -29,6 +32,8 @@ import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewServic
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
+import com.wishconnect.domain.scholarship.service.ScholarshipManualAggregateService;
+import com.wishconnect.domain.scholarship.service.ScholarshipManualExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import com.wishconnect.global.audit.AdminAction;
@@ -88,6 +93,8 @@ public class ScholarshipAdminController {
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
+	private final ScholarshipManualAggregateService scholarshipManualAggregateService;
+	private final ScholarshipManualExcelService scholarshipManualExcelService;
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
 	private final ScholarshipExcelService scholarshipExcelService;
@@ -374,6 +381,61 @@ public class ScholarshipAdminController {
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
 				"SCHOLARSHIP", result.scholarshipId(), result.title());
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
+	}
+
+	@Operation(summary = "장학금 통합 수기 등록",
+			description = """
+					장학금 기본정보와 함께 원문(raw_scholarship), 자격·우대조건 및 마스터 참조,
+					제출서류, 제출방식·연락처·자기소개서·면접 정보를 한 번에 저장합니다.
+
+					조건의 refLabels는 화면에서 선택한 지역·전공 등의 이름이며, 서버가 실제 마스터 ID·코드로
+					변환합니다. imageSourceUrl이 있으면 DB 트랜잭션 종료 후 이미지를 S3에 저장하고 image 테이블에
+					연결합니다. 이미지 저장 실패는 장학금 등록을 취소하지 않고 imageSaved=false로 알립니다.
+					(ADMIN 전용)
+					""")
+	@PostMapping("/manual/full")
+	public ResponseEntity<ApiResponse<ScholarshipManualFullResponse>> createManualFull(
+			@AuthenticationPrincipal String actorId,
+			@Valid @RequestBody ScholarshipManualFullRequest request) {
+		ScholarshipManualFullResponse result = scholarshipManualAggregateService.create(request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(),
+				"통합 수기 등록: 원문 1, 조건 %d, 참조 %d, 서류 %d, 이미지 %s".formatted(
+						result.conditionCount(), result.conditionRefCount(), result.documentCount(),
+						result.imageSaved()));
+		return ResponseEntity.status(201).body(ApiResponse.ok(result));
+	}
+
+	@Operation(summary = "통합 수기 등록 엑셀 양식",
+			description = "장학금·조건·제출서류·이미지 4개 시트를 임시키로 연결하는 신규 등록용 xlsx 양식을 내려받습니다. (ADMIN 전용)")
+	@GetMapping("/admin/manual-excel/template")
+	public ResponseEntity<byte[]> manualExcelTemplate() {
+		return ResponseEntity.ok()
+				.header(HttpHeaders.CONTENT_DISPOSITION,
+						ContentDisposition.attachment().filename("scholarship-manual-template.xlsx").toString())
+				.contentType(MediaType.parseMediaType(
+						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+				.body(scholarshipManualExcelService.template());
+	}
+
+	@Operation(summary = "통합 수기 등록 엑셀 업로드",
+			description = """
+					4개 시트의 임시키가 같은 행을 한 장학금으로 묶어 신규 등록합니다.
+					dryRun=true는 형식과 값을 검사만 하며 DB와 S3를 변경하지 않습니다.
+					dryRun=false일 때 각 장학금을 통합 수기 등록 API와 같은 방식으로 저장합니다. (ADMIN 전용)
+					""")
+	@PostMapping("/admin/manual-excel")
+	public ApiResponse<ManualExcelImportResult> importManualExcel(
+			@AuthenticationPrincipal String actorId,
+			@RequestPart("file") MultipartFile file,
+			@RequestParam(defaultValue = "true") boolean dryRun) {
+		ManualExcelImportResult result = scholarshipManualExcelService.importFile(file, dryRun);
+		if (!dryRun) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.EXCEL_IMPORT, null, null,
+					"통합 신규등록 %d건, 오류 %d건, 파일=%s".formatted(
+							result.createdRows(), result.errorCount(), file.getOriginalFilename()));
+		}
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "장학금 직접 수정",

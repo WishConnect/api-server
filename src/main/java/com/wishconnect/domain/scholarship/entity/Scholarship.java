@@ -392,6 +392,37 @@ public class Scholarship extends BaseEntity {
 		this.verified = true;
 	}
 
+	/** 통합 수기 등록에서 자동 수집과 같은 수준의 제출·심사·공고 메타데이터를 채운다. */
+	public void applyManualDetails(
+		String detailUrl,
+		RecruitmentStatus recruitmentStatus,
+		NoticeKind noticeKind,
+		boolean combined,
+		String submissionMethod,
+		SubmissionChannel submissionChannel,
+		String submissionEvidence,
+		String contact,
+		RequirementLevel essayRequirement,
+		String essayEvidence,
+		RequirementLevel interviewRequirement,
+		String interviewEvidence
+	) {
+		this.detailUrl = detailUrl;
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+		this.contact = contact;
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		if (recruitmentStatus != null) {
+			updateRecruitmentStatusByAdmin(recruitmentStatus);
+		}
+	}
+
 	/**
 	 * 대학 장학공지를 LLM 으로 재파싱한 결과를 덮어쓴다.
 	 *

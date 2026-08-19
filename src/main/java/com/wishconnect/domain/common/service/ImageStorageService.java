@@ -81,6 +81,7 @@ public class ImageStorageService {
 					.contentType(contentType)
 					.fileSize((long) body.length)
 					.imageType("POSTER")
+					.sourceUrl(imageUrl)
 					.build());
 			log.info("[ImageStorage] 업로드 완료 key={} size={}B", key, body.length);
 			return publicUrl(key);
