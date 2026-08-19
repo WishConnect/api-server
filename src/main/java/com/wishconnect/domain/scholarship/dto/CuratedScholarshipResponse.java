@@ -22,7 +22,7 @@ import java.util.List;
  *
  * <table border="1">
  *   <tr><th></th><th>GUEST</th><th>ONBOARDING_REQUIRED</th><th>PERSONALIZED</th></tr>
- *   <tr><td>featured</td><td>-</td><td>마감임박 5</td><td>마감임박 5</td></tr>
+	 *   <tr><td>featured</td><td>-</td><td>마감임박 5</td><td>지원 가능 전체</td></tr>
  *   <tr><td>campus</td><td>-</td><td>잠김</td><td>소속 학교</td></tr>
  *   <tr><td>other</td><td>정렬순 전체</td><td>잠김</td><td>점수순</td></tr>
  *   <tr><td>ineligible</td><td>-</td><td>잠김</td><td>조건 미충족</td></tr>
@@ -33,21 +33,13 @@ import java.util.List;
  */
 @Schema(description = "인증·온보딩 상태에 따라 다른 섹션을 채우는 장학금 큐레이팅 응답")
 public record CuratedScholarshipResponse(
-		CuratedViewMode viewMode,
-		String rankerVersion,
-		List<ScholarshipCard> featured,
-		int profileCompletionRate,
-		List<ScholarshipCard> campusScholarships,
-		List<ScholarshipCard> ineligibleScholarships,
-		List<ScholarshipCard> otherScholarships,
-		Pagination pagination
 		@Schema(description = "프론트가 그려야 할 큐레이팅 화면 상태", example = "PERSONALIZED") CuratedViewMode viewMode,
 		@Schema(description = "현재 추천 점수식 버전. 이벤트 요청에 그대로 전달", example = "v2") String rankerVersion,
-		@Schema(description = "히어로 캐러셀. GUEST는 빈 배열, 나머지는 최대 5건") List<ScholarshipCard> featured,
+		@Schema(description = "지원 가능한 추천 목록. GUEST는 빈 배열이며 프론트가 최초 5건과 더보기를 나눠 표시") List<ScholarshipCard> featured,
 		@Schema(description = "프로필 완성도(0~100)", example = "80") int profileCompletionRate,
 		@Schema(description = "PERSONALIZED에서만 채워지는 사용자 소속 학교의 교내 장학금") List<ScholarshipCard> campusScholarships,
-		@Schema(description = "GUEST의 일반 목록 또는 PERSONALIZED의 지원 가능한 교외 추천 목록") List<ScholarshipCard> otherScholarships,
 		@Schema(description = "PERSONALIZED에서 필수 조건을 충족하지 못한 장학금") List<ScholarshipCard> ineligibleScholarships,
+		@Schema(description = "GUEST의 일반 목록 또는 PERSONALIZED의 지원 가능한 추천 목록") List<ScholarshipCard> otherScholarships,
 		@Schema(description = "otherScholarships에 대한 1 기반 페이징 정보") Pagination pagination
 ) {
 
