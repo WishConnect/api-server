@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.controller;
 import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
@@ -11,6 +12,7 @@ import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
+import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
@@ -115,6 +117,19 @@ public class ScholarshipAdminController {
 		return ApiResponse.ok(scholarshipAdminOverviewService.alwaysOpen(pageable));
 	}
 
+	@PatchMapping("/admin/always-open/{scholarshipId}/confirm")
+	@Operation(summary = "상시모집 계속 진행 확인",
+			description = "관리자가 원문에서 모집이 계속됨을 확인한 시각을 기록합니다. "
+					+ "마감 처리는 장학금 직접 수정 API로 CLOSED를 전달합니다.")
+	public ApiResponse<Void> confirmAlwaysOpen(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId) {
+		scholarshipAdminOverviewService.confirmAlwaysOpen(scholarshipId);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
+				"SCHOLARSHIP", scholarshipId, "상시모집 계속 진행 확인");
+		return ApiResponse.ok();
+	}
+
 	@Operation(summary = "최근 수집 장학금 목록",
 			description = "최근에 들어온 순서로 파싱 결과를 훑어본다. source 로 출처를 좁힐 수 있다. (ADMIN 전용)")
 	@GetMapping("/admin/recent")
@@ -122,6 +137,29 @@ public class ScholarshipAdminController {
 			@RequestParam(required = false) String source,
 			@RequestParam(required = false) Integer size) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.recent(source, size));
+	}
+
+	@Operation(summary = "관리자 장학금 전체 검색",
+			description = "제목·기관 검색과 출처·모집 상태·삭제 포함 여부로 파싱 결과를 조회합니다. "
+					+ "각 행은 누락 필드 여부를 함께 반환하며 ADMIN만 호출할 수 있습니다.")
+	@GetMapping("/admin/scholarships")
+	public ApiResponse<Page<AdminScholarshipRow>> adminScholarships(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) RecruitmentStatus status,
+			@RequestParam(defaultValue = "false") boolean includeDeleted,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.search(
+				keyword, source, status, includeDeleted, pageable));
+	}
+
+	@Operation(summary = "관리자 장학금 통합 상세",
+			description = "장학금 본문과 연결된 raw_scholarship, 조건·조건 참조, 제출서류, "
+					+ "이미지 및 미리보기 URL을 한 번에 반환합니다. ADMIN 전용입니다.")
+	@GetMapping("/admin/scholarships/{scholarshipId}")
+	public ApiResponse<AdminScholarshipDetailResponse> adminScholarshipDetail(
+			@PathVariable Long scholarshipId) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.detail(scholarshipId));
 	}
 
 	@Operation(summary = "장학금 엑셀 내보내기",

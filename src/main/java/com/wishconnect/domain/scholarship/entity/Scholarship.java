@@ -178,6 +178,10 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "last_synced_at")
 	private LocalDateTime lastSyncedAt;
 
+	/** 관리자가 상시모집 원문을 마지막으로 확인한 시각. */
+	@Column(name = "always_open_reviewed_at")
+	private LocalDateTime alwaysOpenReviewedAt;
+
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
@@ -494,6 +498,13 @@ public class Scholarship extends BaseEntity {
 	public void updateRecruitmentStatusByAdmin(RecruitmentStatus recruitmentStatus) {
 		this.recruitmentStatus = recruitmentStatus;
 		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
+	}
+
+	public void confirmAlwaysOpen() {
+		if (this.recruitmentStatus != RecruitmentStatus.ALWAYS_OPEN || this.deletedAt != null) {
+			throw new IllegalStateException("상시모집 중인 장학금만 확인 처리할 수 있습니다.");
+		}
+		this.alwaysOpenReviewedAt = LocalDateTime.now();
 	}
 
 	public boolean isDeleted() {

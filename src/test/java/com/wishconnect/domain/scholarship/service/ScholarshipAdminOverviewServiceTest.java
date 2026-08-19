@@ -16,10 +16,13 @@ import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipSourceAggregate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +45,12 @@ class ScholarshipAdminOverviewServiceTest {
 	private RawScholarshipRepository rawScholarshipRepository;
 	@Mock
 	private ImageRepository imageRepository;
+	@Mock
+	private ScholarshipConditionRepository scholarshipConditionRepository;
+	@Mock
+	private ScholarshipDocumentRepository scholarshipDocumentRepository;
+	@Mock
+	private ImageStorageService imageStorageService;
 
 	@InjectMocks
 	private ScholarshipAdminOverviewService service;
@@ -200,5 +210,40 @@ class ScholarshipAdminOverviewServiceTest {
 
 		assertThat(raw.total()).isEqualTo(4035L);
 		assertThat(raw.parsed()).isEqualTo(363L);
+	}
+
+	@Test
+	@DisplayName("관리자 전체 검색은 검색어와 출처 공백을 제거하고 결과를 요약 행으로 변환한다")
+	void searchNormalizesFiltersAndMapsRows() {
+		Scholarship target = scholarship(31L, "UNIV_KONKUK", "요약", 500_000L,
+				"https://example.com/31");
+		given(imageRepository.findEntityIdsByEntityType(anyString())).willReturn(List.of(31L));
+		given(scholarshipRepository.searchForAdmin(
+				org.mockito.ArgumentMatchers.eq("건국"),
+				org.mockito.ArgumentMatchers.eq("UNIV_KONKUK"),
+				org.mockito.ArgumentMatchers.eq(RecruitmentStatus.OPEN),
+				org.mockito.ArgumentMatchers.eq(false), any(Pageable.class)))
+				.willReturn(new PageImpl<>(List.of(target)));
+
+		var result = service.search("  건국  ", " UNIV_KONKUK ",
+				RecruitmentStatus.OPEN, false, Pageable.ofSize(20));
+
+		assertThat(result.getContent()).hasSize(1);
+		assertThat(result.getContent().get(0).hasPoster()).isTrue();
+	}
+
+	@Test
+	@DisplayName("상시모집 계속 진행 확인은 마지막 검수 시각을 기록한다")
+	void confirmAlwaysOpenRecordsReviewTime() {
+		Scholarship target = Scholarship.builder()
+				.title("상시 장학금")
+				.recruitmentStatus(RecruitmentStatus.ALWAYS_OPEN)
+				.build();
+		ReflectionTestUtils.setField(target, "id", 77L);
+		given(scholarshipRepository.findById(77L)).willReturn(Optional.of(target));
+
+		service.confirmAlwaysOpen(77L);
+
+		assertThat(target.getAlwaysOpenReviewedAt()).isNotNull();
 	}
 }

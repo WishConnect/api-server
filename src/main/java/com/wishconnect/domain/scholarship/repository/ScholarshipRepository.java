@@ -348,6 +348,23 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			""")
 	List<Scholarship> findRecentForAdmin(@Param("source") String source, Pageable pageable);
 
+	/** 관리자 전체 목록. 서비스 노출 여부와 무관하게 원본·파싱 결과를 찾아 검수한다. */
+	@Query("""
+			select s from Scholarship s
+			where (:keyword is null
+			       or lower(s.title) like lower(concat('%', :keyword, '%'))
+			       or lower(coalesce(s.provider, '')) like lower(concat('%', :keyword, '%')))
+			  and (:source is null or s.primarySource = :source)
+			  and (:status is null or s.recruitmentStatus = :status)
+			  and (:includeDeleted = true or s.deletedAt is null)
+			""")
+	org.springframework.data.domain.Page<Scholarship> searchForAdmin(
+			@Param("keyword") String keyword,
+			@Param("source") String source,
+			@Param("status") RecruitmentStatus status,
+			@Param("includeDeleted") boolean includeDeleted,
+			Pageable pageable);
+
 
 
 	/**
