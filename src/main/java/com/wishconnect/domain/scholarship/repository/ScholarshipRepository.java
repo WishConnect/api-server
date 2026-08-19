@@ -39,15 +39,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
 			"AND s.deletedAt IS NULL " +
-			"AND (" +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
 			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-			") " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchByKeyword(
 			@Param("keywordNoSpace") String keywordNoSpace,
@@ -61,15 +60,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query(value = "SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
 			"AND s.deletedAt IS NULL " +
-			"AND (" +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
 			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-			") " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category) " +
 			"ORDER BY CASE " +
 			"WHEN LOWER(COALESCE(s.title, '')) IN :keywords THEN 100 " +
@@ -77,21 +75,18 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			"WHEN LOWER(COALESCE(s.provider, '')) IN :keywords THEN 70 " +
 			"WHEN REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 60 " +
 			"WHEN REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 40 " +
-			"WHEN (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType) THEN 30 " +
-			"WHEN REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 20 " +
 			"ELSE 0 END DESC, s.createdAt DESC",
 			countQuery = "SELECT COUNT(s) FROM Scholarship s " +
 					"WHERE s.active = true " +
 					"AND s.deletedAt IS NULL " +
-					"AND (" +
+					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+					"AND (:keywordNoSpace IS NULL OR (" +
 					"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 					"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 					"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 					"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-					") " +
+					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+					")) " +
 					"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchByKeywordOrderByRelevance(
 			@Param("keywordNoSpace") String keywordNoSpace,
@@ -116,15 +111,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
 			"AND s.active = true AND s.deletedAt IS NULL " +
-			"AND (" +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
 			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-			") " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchScrappedByUserAndKeyword(
 			@Param("userId") UUID userId,
@@ -138,15 +132,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query(value = "SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
 			"AND s.active = true AND s.deletedAt IS NULL " +
-			"AND (" +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
 			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-			"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-			") " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category) " +
 			"ORDER BY CASE " +
 			"WHEN LOWER(COALESCE(s.title, '')) IN :keywords THEN 100 " +
@@ -154,21 +147,18 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 			"WHEN LOWER(COALESCE(s.provider, '')) IN :keywords THEN 70 " +
 			"WHEN REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 60 " +
 			"WHEN REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 40 " +
-			"WHEN (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType) THEN 30 " +
-			"WHEN REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 20 " +
 			"ELSE 0 END DESC, s.createdAt DESC",
 			countQuery = "SELECT COUNT(s) FROM Scrap sc JOIN sc.scholarship s " +
 					"WHERE sc.user.id = :userId " +
 					"AND s.active = true AND s.deletedAt IS NULL " +
-					"AND (" +
+					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+					"AND (:keywordNoSpace IS NULL OR (" +
 					"     LOWER(COALESCE(s.title, '')) IN :keywords " +
 					"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
 					"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
 					"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR REPLACE(LOWER(COALESCE(s.description, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
-					"     OR (:keywordType IS NOT NULL AND s.scholarshipType = :keywordType)" +
-					") " +
+					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+					")) " +
 					"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchScrappedByUserAndKeywordOrderByRelevance(
 			@Param("userId") UUID userId,

@@ -83,25 +83,74 @@ class ScholarshipServiceTest {
 	}
 
 	@Test
-	@DisplayName("근로 같은 유형 키워드는 장학금 타입 조건으로 함께 검색한다")
-	void search_resolvesKeywordType() {
+	@DisplayName("유형 키워드와 나머지 검색어를 분리해 타입 조건 AND 텍스트 조건으로 검색한다")
+	void search_splitsKeywordTypeFromTextKeyword() {
 		given(scholarshipRepository.searchByKeyword(any(), any(), eq(ScholarshipType.WORK_STUDY), isNull(), any()))
 				.willReturn(new PageImpl<>(List.of(scholarship("국가근로장학금"))));
 
-		scholarshipService.search(null, "국가 근로", null, "deadline", false, 1, 10);
+		scholarshipService.search(null, "근로 컴퓨터", null, "deadline", false, 1, 10);
 
 		verify(scholarshipRepository).searchByKeyword(
-				eq("국가근로"), any(), eq(ScholarshipType.WORK_STUDY), isNull(), any(Pageable.class));
+				eq("컴퓨터"), eq(List.of("컴퓨터")), eq(ScholarshipType.WORK_STUDY), isNull(), any(Pageable.class));
 	}
 
 	@Test
-	@DisplayName("page와 size는 1 이상이어야 한다")
+	@DisplayName("교내 성적 검색은 교내 타입 안에서 성적 키워드로 좁힌다")
+	void search_internalKeywordDoesNotReturnAllInternalScholarships() {
+		given(scholarshipRepository.searchByKeyword(any(), any(), eq(ScholarshipType.INTERNAL), isNull(), any()))
+				.willReturn(new PageImpl<>(List.of(scholarship("성적우수장학금"))));
+
+		scholarshipService.search(null, "교내 성적", null, "deadline", false, 1, 10);
+
+		verify(scholarshipRepository).searchByKeyword(
+				eq("성적"), eq(List.of("성적")), eq(ScholarshipType.INTERNAL), isNull(), any(Pageable.class));
+	}
+
+	@Test
+	@DisplayName("유형 키워드만 검색하면 해당 유형 전체를 조회한다")
+	void search_typeKeywordOnlySearchesByType() {
+		given(scholarshipRepository.searchByKeyword(isNull(), any(), eq(ScholarshipType.WORK_STUDY), isNull(), any()))
+				.willReturn(new PageImpl<>(List.of(scholarship("국가근로장학금"))));
+
+		scholarshipService.search(null, "근로", null, "deadline", false, 1, 10);
+
+		verify(scholarshipRepository).searchByKeyword(
+				isNull(), eq(List.of("__wishconnect_no_text_keyword__")), eq(ScholarshipType.WORK_STUDY),
+				isNull(), any(Pageable.class));
+	}
+
+	@Test
+	@DisplayName("page는 1 이상, size는 1 이상 100 이하여야 한다")
 	void search_rejectsInvalidPagination() {
 		assertThatThrownBy(() -> scholarshipService.search(null, "장학금", null, "deadline", false, 0, 10))
 				.isInstanceOf(CustomException.class)
 				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
 
 		assertThatThrownBy(() -> scholarshipService.search(null, "장학금", null, "deadline", false, 1, 0))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+
+		assertThatThrownBy(() -> scholarshipService.search(null, "장학금", null, "deadline", false, 1, 101))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+	}
+
+	@Test
+	@DisplayName("검색어 길이와 LIKE 와일드카드 문자는 제한한다")
+	void search_rejectsExpensiveOrWildcardKeyword() {
+		assertThatThrownBy(() -> scholarshipService.search(null, "가".repeat(101), null, "deadline", false, 1, 10))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+
+		assertThatThrownBy(() -> scholarshipService.search(null, "%", null, "deadline", false, 1, 10))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+
+		assertThatThrownBy(() -> scholarshipService.search(null, "_", null, "deadline", false, 1, 10))
+				.isInstanceOf(CustomException.class)
+				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
+
+		assertThatThrownBy(() -> scholarshipService.search(null, "\\", null, "deadline", false, 1, 10))
 				.isInstanceOf(CustomException.class)
 				.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_INPUT);
 	}

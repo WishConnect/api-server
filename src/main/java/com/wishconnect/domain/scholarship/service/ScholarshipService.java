@@ -37,6 +37,10 @@ public class ScholarshipService {
     private final ScholarshipRepository scholarshipRepository;
     private final ScrapRepository scrapRepository;
 
+    private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_KEYWORD_LENGTH = 100;
+    private static final String NO_TEXT_KEYWORD = "__wishconnect_no_text_keyword__";
+
     private static final Map<String, List<String>> KEYWORD_ALIASES = Map.ofEntries(
             Map.entry("건대", List.of("건국대학교")),
             Map.entry("건국대", List.of("건국대학교")),
@@ -72,13 +76,12 @@ public class ScholarshipService {
             throw new CustomException(ErrorCode.LOGIN_REQUIRED);
         }
 
-        if (page < 1 || size < 1) {
-            throw new CustomException(ErrorCode.INVALID_INPUT);
-        }
-
         String normalizedKeyword = normalizeKeyword(keyword);
-        List<String> searchKeywords = expandKeywords(normalizedKeyword);
+        validateSearchRequest(normalizedKeyword, page, size);
         ScholarshipType keywordType = resolveKeywordType(normalizedKeyword);
+        String textKeyword = removeTypeKeyword(normalizedKeyword, keywordType);
+        List<String> searchKeywords = expandKeywords(textKeyword);
+        String keywordNoSpace = keywordSearchTerm(textKeyword);
 
         // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
         // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
@@ -94,12 +97,12 @@ public class ScholarshipService {
             // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
             scholarshipPage = (normalizedKeyword == null)
                     ? scholarshipRepository.findScrappedByUser(userId, categoryType, pageable)
-                    : searchScrappedBySort(userId, normalizedKeyword, searchKeywords, keywordType, categoryType, sort, pageable);
+                    : searchScrappedBySort(userId, keywordNoSpace, searchKeywords, keywordType, categoryType, sort, pageable);
 
         } else if (normalizedKeyword == null) {
             scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, pageable);
         } else {
-            scholarshipPage = searchBySort(normalizedKeyword, searchKeywords, keywordType, categoryType, sort, pageable);
+            scholarshipPage = searchBySort(keywordNoSpace, searchKeywords, keywordType, categoryType, sort, pageable);
         }
 
         // 4.유저의 스크랩 여부 확인
@@ -129,7 +132,7 @@ public class ScholarshipService {
     }
 
     private Page<Scholarship> searchBySort(
-            String keyword,
+            String keywordNoSpace,
             List<String> searchKeywords,
             ScholarshipType keywordType,
             ScholarshipType category,
@@ -138,15 +141,15 @@ public class ScholarshipService {
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchByKeywordOrderByRelevance(
-                    keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
+                    keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
         }
         return scholarshipRepository.searchByKeyword(
-                keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
+                keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
     }
 
     private Page<Scholarship> searchScrappedBySort(
             UUID userId,
-            String keyword,
+            String keywordNoSpace,
             List<String> searchKeywords,
             ScholarshipType keywordType,
             ScholarshipType category,
@@ -155,10 +158,22 @@ public class ScholarshipService {
     ) {
         if ("relevance".equals(sort)) {
             return scholarshipRepository.searchScrappedByUserAndKeywordOrderByRelevance(
-                    userId, keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
+                    userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
         }
         return scholarshipRepository.searchScrappedByUserAndKeyword(
-                userId, keywordSearchTerm(keyword), searchKeywords, keywordType, category, pageable);
+                userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, pageable);
+    }
+
+    private void validateSearchRequest(String keyword, int page, int size) {
+        if (page < 1 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (keyword != null && keyword.length() > MAX_KEYWORD_LENGTH) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (keyword != null && (keyword.contains("%") || keyword.contains("_") || keyword.contains("\\"))) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private String normalizeKeyword(String keyword) {
@@ -187,8 +202,15 @@ public class ScholarshipService {
     }
 
     private String keywordSearchTerm(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
         List<String> aliases = KEYWORD_ALIASES.get(keyword);
         return withoutSpaces(aliases == null || aliases.isEmpty() ? keyword : aliases.get(0));
+    }
+
+    private List<String> safeKeywords(List<String> keywords) {
+        return keywords.isEmpty() ? List.of(NO_TEXT_KEYWORD) : keywords;
     }
 
     private ScholarshipType resolveKeywordType(String keyword) {
@@ -206,6 +228,26 @@ public class ScholarshipService {
             return ScholarshipType.EXTERNAL;
         }
         return null;
+    }
+
+    private String removeTypeKeyword(String keyword, ScholarshipType keywordType) {
+        if (keyword == null || keywordType == null) {
+            return keyword;
+        }
+
+        String result = keyword;
+        for (String typeToken : typeTokens(keywordType)) {
+            result = result.replace(typeToken, " ");
+        }
+        return normalizeKeyword(result);
+    }
+
+    private List<String> typeTokens(ScholarshipType keywordType) {
+        return switch (keywordType) {
+            case INTERNAL -> List.of("교내");
+            case EXTERNAL -> List.of("교외");
+            case WORK_STUDY -> List.of("근로");
+        };
     }
 
     private Set<Long> getScrapped(UUID userId, List<Scholarship> scholarships) {
