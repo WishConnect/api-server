@@ -28,6 +28,8 @@ public record ProfileResponse(
 		int profileCompletionRate,
 		@Schema(description = "온보딩 완료 여부", example = "true")
 		boolean onboardingCompleted,
+		@Schema(description = "현재 온보딩 단계. 소셜 로그인 신규 사용자는 기본정보 입력 전 STEP_1", example = "STEP_1")
+		String onboardingStep,
 		Academic academic,
 		Household household,
 		@Schema(description = "관심 장학금 분야", example = "[\"생활비 지원\", \"등록금 지원\"]")
