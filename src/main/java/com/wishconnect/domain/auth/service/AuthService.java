@@ -56,7 +56,7 @@ public class AuthService {
 	 */
 	private static final String PLACEHOLDER_EMAIL_DOMAIN = "@wishconnect.kr";
 	private static final Set<AgreementType> REQUIRED_AGREEMENTS = EnumSet.of(
-			AgreementType.TERMS, AgreementType.PRIVACY, AgreementType.THIRD_PARTY, AgreementType.AGE_14);
+			AgreementType.TERMS, AgreementType.PRIVACY, AgreementType.AGE_14);
 
 	private final UserRepository userRepository;
 	private final UserProfileRepository userProfileRepository;

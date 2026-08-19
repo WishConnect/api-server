@@ -2,6 +2,7 @@ package com.wishconnect.domain.user.dto.response;
 
 import java.time.LocalDate;
 import com.wishconnect.domain.common.entity.MajorCategory;
+import com.wishconnect.domain.common.dto.RegionResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
@@ -22,8 +23,8 @@ public record ProfileResponse(
 		String gender,
 		@Schema(description = "국적", example = "DOMESTIC")
 		String nationality,
-		@Schema(description = "거주 지역", example = "서울")
-		String region,
+		@Schema(description = "거주 지역. 시군구라면 상위 시도 정보도 포함")
+		RegionResponse region,
 		@Schema(description = "프로필 완성도", example = "85")
 		int profileCompletionRate,
 		@Schema(description = "온보딩 완료 여부", example = "true")

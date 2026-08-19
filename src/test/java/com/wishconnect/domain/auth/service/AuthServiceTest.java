@@ -3,6 +3,7 @@ package com.wishconnect.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -33,6 +34,7 @@ import com.wishconnect.domain.user.entity.Gender;
 import com.wishconnect.domain.user.entity.LoginType;
 import com.wishconnect.domain.user.entity.Nationality;
 import com.wishconnect.domain.user.entity.User;
+import com.wishconnect.domain.user.entity.UserAgreement;
 import com.wishconnect.domain.user.repository.UserAgreementRepository;
 import com.wishconnect.domain.user.repository.UserProfileRepository;
 import com.wishconnect.domain.user.repository.UserRepository;
@@ -82,10 +84,9 @@ class AuthServiceTest {
 	@InjectMocks
 	private AuthService authService;
 
-	private static final List<AgreementItem> ALL_AGREED = List.of(
+	private static final List<AgreementItem> REQUIRED_AGREED = List.of(
 			new AgreementItem(AgreementType.TERMS, true),
 			new AgreementItem(AgreementType.PRIVACY, true),
-			new AgreementItem(AgreementType.THIRD_PARTY, true),
 			new AgreementItem(AgreementType.AGE_14, true));
 
 	private static User userWithId(User user) {
@@ -110,7 +111,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("성공 시 사용자·프로필·약관을 저장하고 JWT 를 발급한다")
 		void success() {
-			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			SignupRequest request = request("Abcd1234!", REQUIRED_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(false);
 			given(passwordEncoder.encode(request.password())).willReturn("encoded");
@@ -132,7 +133,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 미인증 시 EMAIL_NOT_VERIFIED")
 		void emailNotVerified() {
-			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			SignupRequest request = request("Abcd1234!", REQUIRED_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(false);
 
 			assertThatThrownBy(() -> authService.signup(request))
@@ -144,7 +145,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("비밀번호 정책 위반 시 INVALID_PASSWORD_FORMAT")
 		void invalidPassword() {
-			SignupRequest request = request("abcdefgh", ALL_AGREED);
+			SignupRequest request = request("abcdefgh", REQUIRED_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 
 			assertThatThrownBy(() -> authService.signup(request))
@@ -156,7 +157,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("이메일 중복 시 DUPLICATE_EMAIL")
 		void duplicateEmail() {
-			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			SignupRequest request = request("Abcd1234!", REQUIRED_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL)).willReturn(true);
 
@@ -173,7 +174,7 @@ class AuthServiceTest {
 		@Test
 		@DisplayName("탈퇴 회원의 이메일·아이디는 중복으로 보지 않아 재가입할 수 있다")
 		void allowsRejoinAfterWithdrawal() {
-			SignupRequest request = request("Abcd1234!", ALL_AGREED);
+			SignupRequest request = request("Abcd1234!", REQUIRED_AGREED);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
 			// 탈퇴 행을 제외한 조회라 둘 다 "없음" 이 된다
 			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL))
@@ -191,12 +192,36 @@ class AuthServiceTest {
 		}
 
 		@Test
+		@DisplayName("제3자 제공 동의를 보내지 않아도 필수 동의를 모두 하면 가입할 수 있다")
+		void thirdPartyAgreementIsNotRequired() {
+			SignupRequest request = request("Abcd1234!", REQUIRED_AGREED);
+			given(emailVerificationService.isVerified(request.email())).willReturn(true);
+			given(userRepository.existsByEmailAndLoginTypeAndDeletedAtIsNull(request.email(), LoginType.LOCAL))
+					.willReturn(false);
+			given(passwordEncoder.encode(request.password())).willReturn("encoded");
+			given(userRepository.save(any(User.class)))
+					.willAnswer(invocation -> userWithId(invocation.getArgument(0)));
+			stubTokenIssue();
+
+			SignupResponse response = authService.signup(request);
+
+			assertThat(response.userId()).isNotNull();
+			verify(userAgreementRepository).saveAll(argThat(agreements -> {
+				for (Object agreement : agreements) {
+					if (((UserAgreement) agreement).getAgreementType() == AgreementType.THIRD_PARTY) {
+						return false;
+					}
+				}
+				return true;
+			}));
+		}
+
+		@Test
 		@DisplayName("필수 약관 미동의 시 AGREEMENT_REQUIRED")
 		void agreementRequired() {
 			List<AgreementItem> missing = List.of(
 					new AgreementItem(AgreementType.TERMS, true),
 					new AgreementItem(AgreementType.PRIVACY, true),
-					new AgreementItem(AgreementType.THIRD_PARTY, true),
 					new AgreementItem(AgreementType.AGE_14, false));
 			SignupRequest request = request("Abcd1234!", missing);
 			given(emailVerificationService.isVerified(request.email())).willReturn(true);
