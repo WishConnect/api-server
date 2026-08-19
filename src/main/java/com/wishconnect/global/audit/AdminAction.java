@@ -16,6 +16,7 @@ public enum AdminAction {
 	SCHOLARSHIP_DELETE,
 
 	REPORT_RESOLVE,
+	CONTENT_INQUIRY_RESOLVE,
 
 	/** 외부 API 호출·크롤링·LLM 과금을 유발하는 수동 트리거. */
 	SYNC_TRIGGER,
