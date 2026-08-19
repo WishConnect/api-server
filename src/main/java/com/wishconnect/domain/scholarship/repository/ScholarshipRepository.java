@@ -29,9 +29,11 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
 			"AND s.deletedAt IS NULL " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findAllWithoutKeyword(
 			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
 			Pageable pageable
 	);
 
@@ -39,12 +41,65 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
 			"AND s.deletedAt IS NULL " +
-			"AND (s.title LIKE CONCAT('%', :keyword, '%') " +
-			"     OR s.provider LIKE CONCAT('%', :keyword, '%')) " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
+			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchByKeyword(
-			@Param("keyword") String keyword,
+			@Param("keywordNoSpace") String keywordNoSpace,
+			@Param("keywords") List<String> keywords,
+			@Param("keywordType") ScholarshipType keywordType,
 			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
+			Pageable pageable
+	);
+
+	// relevance 정렬: 제목 정확 일치와 제목 포함을 가장 우선으로 둔다.
+	@Query(value = "SELECT s FROM Scholarship s " +
+			"WHERE s.active = true " +
+			"AND s.deletedAt IS NULL " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
+			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
+			"AND (:category IS NULL OR s.scholarshipType = :category) " +
+			"ORDER BY CASE " +
+			"WHEN LOWER(COALESCE(s.title, '')) IN :keywords THEN 100 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 80 " +
+			"WHEN LOWER(COALESCE(s.provider, '')) IN :keywords THEN 70 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 60 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 40 " +
+			"ELSE 0 END DESC, s.createdAt DESC",
+			countQuery = "SELECT COUNT(s) FROM Scholarship s " +
+					"WHERE s.active = true " +
+					"AND s.deletedAt IS NULL " +
+					"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+					"AND (:keywordNoSpace IS NULL OR (" +
+					"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+					"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+					"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+					"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+					")) " +
+					"AND (:category IS NULL OR s.scholarshipType = :category)")
+	Page<Scholarship> searchByKeywordOrderByRelevance(
+			@Param("keywordNoSpace") String keywordNoSpace,
+			@Param("keywords") List<String> keywords,
+			@Param("keywordType") ScholarshipType keywordType,
+			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
 			Pageable pageable
 	);
 
@@ -52,10 +107,12 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
 			"AND s.active = true AND s.deletedAt IS NULL " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findScrappedByUser(
 			@Param("userId") UUID userId,
 			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
 			Pageable pageable
 	);
 
@@ -63,13 +120,66 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
 			"AND s.active = true AND s.deletedAt IS NULL " +
-			"AND (s.title LIKE CONCAT('%', :keyword, '%') " +
-			"     OR s.provider LIKE CONCAT('%', :keyword, '%')) " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
+			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> searchScrappedByUserAndKeyword(
 			@Param("userId") UUID userId,
-			@Param("keyword") String keyword,
+			@Param("keywordNoSpace") String keywordNoSpace,
+			@Param("keywords") List<String> keywords,
+			@Param("keywordType") ScholarshipType keywordType,
 			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
+			Pageable pageable
+	);
+
+	@Query(value = "SELECT s FROM Scrap sc JOIN sc.scholarship s " +
+			"WHERE sc.user.id = :userId " +
+			"AND s.active = true AND s.deletedAt IS NULL " +
+			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+			"AND (:keywordNoSpace IS NULL OR (" +
+			"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+			"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+			"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+			"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+			")) " +
+			"AND (:category IS NULL OR s.scholarshipType = :category) " +
+			"ORDER BY CASE " +
+			"WHEN LOWER(COALESCE(s.title, '')) IN :keywords THEN 100 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 80 " +
+			"WHEN LOWER(COALESCE(s.provider, '')) IN :keywords THEN 70 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 60 " +
+			"WHEN REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') THEN 40 " +
+			"ELSE 0 END DESC, s.createdAt DESC",
+			countQuery = "SELECT COUNT(s) FROM Scrap sc JOIN sc.scholarship s " +
+					"WHERE sc.user.id = :userId " +
+					"AND s.active = true AND s.deletedAt IS NULL " +
+					"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
+					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
+					"AND (:keywordNoSpace IS NULL OR (" +
+					"     LOWER(COALESCE(s.title, '')) IN :keywords " +
+					"     OR LOWER(COALESCE(s.provider, '')) IN :keywords " +
+					"     OR REPLACE(LOWER(COALESCE(s.title, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+					"     OR REPLACE(LOWER(COALESCE(s.provider, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%') " +
+					"     OR REPLACE(LOWER(COALESCE(s.summary, '')), ' ', '') LIKE CONCAT('%', :keywordNoSpace, '%')" +
+					")) " +
+					"AND (:category IS NULL OR s.scholarshipType = :category)")
+	Page<Scholarship> searchScrappedByUserAndKeywordOrderByRelevance(
+			@Param("userId") UUID userId,
+			@Param("keywordNoSpace") String keywordNoSpace,
+			@Param("keywords") List<String> keywords,
+			@Param("keywordType") ScholarshipType keywordType,
+			@Param("category") ScholarshipType category,
+			@Param("now") LocalDateTime now,
 			Pageable pageable
 	);
 

@@ -15,8 +15,11 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -142,12 +145,15 @@ public class ScholarshipController {
 	@Operation(summary = "장학금 검색", description = "키워드·카테고리·정렬·스크랩 여부로 장학금을 검색합니다. 비로그인도 호출할 수 있으며 이때 isScrapped는 false입니다.")
 	public ApiResponse<ScholarshipSearchResponse> searchScholarships(
 			@AuthenticationPrincipal String userIdStr,
-			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false)
+			@Size(max = 100)
+			@Pattern(regexp = "^[^%_\\\\]*$")
+			String keyword,
 			@RequestParam(required = false) String category,
 			@RequestParam(defaultValue = "deadline") String sort,
 			@RequestParam(defaultValue = "false") boolean scrappedOnly,
-			@RequestParam(defaultValue = "1") int page,
-			@RequestParam(defaultValue = "10") int size
+			@RequestParam(defaultValue = "1") @Positive int page,
+			@RequestParam(defaultValue = "10") @Positive @Max(100) int size
 	) {
 		UUID userId = resolveUserId(userIdStr);
 		return ApiResponse.ok(scholarshipService.search(userId, keyword, category, sort, scrappedOnly, page, size));
