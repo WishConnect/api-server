@@ -79,3 +79,13 @@ $RECYCLE.BIN/
 ### VS Code ###
 .vscode/
 HANDOFF.md
+
+### AI 개발 도구 설정
+# 저장소에 커밋하지 않는다. 각자 쓰는 도구가 다르고, 내용도 개인 작업 환경에 가깝다.
+# 로컬 파일은 그대로 두고 추적만 끊는다.
+CLAUDE.md
+AGENTS.md
+.claude/
+.cursor/
+.codex/
+.gemini/
