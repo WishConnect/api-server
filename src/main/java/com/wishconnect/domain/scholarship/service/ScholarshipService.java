@@ -21,12 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +36,31 @@ public class ScholarshipService {
 
     private final ScholarshipRepository scholarshipRepository;
     private final ScrapRepository scrapRepository;
+
+    private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_KEYWORD_LENGTH = 100;
+    private static final String NO_TEXT_KEYWORD = "__wishconnect_no_text_keyword__";
+
+    private static final Map<String, List<String>> KEYWORD_ALIASES = Map.ofEntries(
+            Map.entry("건대", List.of("건국대학교")),
+            Map.entry("건국대", List.of("건국대학교")),
+            Map.entry("한림대", List.of("한림대학교")),
+            Map.entry("연대", List.of("연세대학교")),
+            Map.entry("연세대", List.of("연세대학교")),
+            Map.entry("외대", List.of("한국외국어대학교")),
+            Map.entry("한국외대", List.of("한국외국어대학교")),
+            Map.entry("한국외국어대", List.of("한국외국어대학교")),
+            Map.entry("인천대", List.of("인천대학교")),
+            Map.entry("서울여대", List.of("서울여자대학교")),
+            Map.entry("세종대", List.of("세종대학교")),
+            Map.entry("시립대", List.of("서울시립대학교")),
+            Map.entry("서울시립대", List.of("서울시립대학교")),
+            Map.entry("동국대", List.of("동국대학교")),
+            Map.entry("국민대", List.of("국민대학교")),
+            Map.entry("홍대", List.of("홍익대학교")),
+            Map.entry("홍익대", List.of("홍익대학교")),
+            Map.entry("숭실대", List.of("숭실대학교"))
+    );
 
     public ScholarshipSearchResponse search(
             UUID userId, String keyword, String category,
@@ -50,9 +76,17 @@ public class ScholarshipService {
             throw new CustomException(ErrorCode.LOGIN_REQUIRED);
         }
 
+        String normalizedKeyword = normalizeKeyword(keyword);
+        validateSearchRequest(normalizedKeyword, page, size);
+        ScholarshipType keywordType = resolveKeywordType(normalizedKeyword);
+        String textKeyword = removeTypeKeyword(normalizedKeyword, keywordType);
+        List<String> searchKeywords = expandKeywords(textKeyword);
+        String keywordNoSpace = keywordSearchTerm(textKeyword);
+
         // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
         // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
         ScholarshipType categoryType = parseCategory(category);
+        LocalDateTime now = LocalDateTime.now();
 
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
@@ -62,14 +96,14 @@ public class ScholarshipService {
 
         if (scrappedOnly) {
             // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
-            scholarshipPage = (keyword == null || keyword.isBlank())
-                    ? scholarshipRepository.findScrappedByUser(userId, categoryType, pageable)
-                    : scholarshipRepository.searchScrappedByUserAndKeyword(userId, keyword, categoryType, pageable);
+            scholarshipPage = (normalizedKeyword == null)
+                    ? scholarshipRepository.findScrappedByUser(userId, categoryType, now, pageable)
+                    : searchScrappedBySort(userId, keywordNoSpace, searchKeywords, keywordType, categoryType, now, sort, pageable);
 
-        } else if (keyword == null || keyword.isBlank()) {
-            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, pageable);
+        } else if (normalizedKeyword == null) {
+            scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, now, pageable);
         } else {
-            scholarshipPage = scholarshipRepository.searchByKeyword(keyword, categoryType, pageable);
+            scholarshipPage = searchBySort(keywordNoSpace, searchKeywords, keywordType, categoryType, now, sort, pageable);
         }
 
         // 4.유저의 스크랩 여부 확인
@@ -90,12 +124,133 @@ public class ScholarshipService {
         );
 
         return new ScholarshipSearchResponse(
-                keyword,                                           // keyword
+                normalizedKeyword,                                 // keyword
                 (int) scholarshipPage.getTotalElements(),          // totalCount
                 results,                                           // results
                 pagination                                         // pagination
         );
 
+    }
+
+    private Page<Scholarship> searchBySort(
+            String keywordNoSpace,
+            List<String> searchKeywords,
+            ScholarshipType keywordType,
+            ScholarshipType category,
+            LocalDateTime now,
+            String sort,
+            Pageable pageable
+    ) {
+        if ("relevance".equals(sort)) {
+            return scholarshipRepository.searchByKeywordOrderByRelevance(
+                    keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
+        }
+        return scholarshipRepository.searchByKeyword(
+                keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
+    }
+
+    private Page<Scholarship> searchScrappedBySort(
+            UUID userId,
+            String keywordNoSpace,
+            List<String> searchKeywords,
+            ScholarshipType keywordType,
+            ScholarshipType category,
+            LocalDateTime now,
+            String sort,
+            Pageable pageable
+    ) {
+        if ("relevance".equals(sort)) {
+            return scholarshipRepository.searchScrappedByUserAndKeywordOrderByRelevance(
+                    userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
+        }
+        return scholarshipRepository.searchScrappedByUserAndKeyword(
+                userId, keywordNoSpace, safeKeywords(searchKeywords), keywordType, category, now, pageable);
+    }
+
+    private void validateSearchRequest(String keyword, int page, int size) {
+        if (page < 1 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (keyword != null && keyword.length() > MAX_KEYWORD_LENGTH) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (keyword != null && (keyword.contains("%") || keyword.contains("_") || keyword.contains("\\"))) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String trimmed = keyword.trim();
+        return trimmed.isEmpty() ? null : trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private String withoutSpaces(String value) {
+        return value.replaceAll("\\s+", "");
+    }
+
+    private List<String> expandKeywords(String keyword) {
+        if (keyword == null) {
+            return List.of();
+        }
+        List<String> keywords = new ArrayList<>();
+        keywords.add(keyword);
+        keywords.addAll(KEYWORD_ALIASES.getOrDefault(keyword, List.of()));
+        return keywords.stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+    }
+
+    private String keywordSearchTerm(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        List<String> aliases = KEYWORD_ALIASES.get(keyword);
+        return withoutSpaces(aliases == null || aliases.isEmpty() ? keyword : aliases.get(0));
+    }
+
+    private List<String> safeKeywords(List<String> keywords) {
+        return keywords.isEmpty() ? List.of(NO_TEXT_KEYWORD) : keywords;
+    }
+
+    private ScholarshipType resolveKeywordType(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        for (String token : keywordTokens(keyword)) {
+            ScholarshipType type = typeByToken(token);
+            if (type != null) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    private String removeTypeKeyword(String keyword, ScholarshipType keywordType) {
+        if (keyword == null || keywordType == null) {
+            return keyword;
+        }
+
+        String result = String.join(" ", keywordTokens(keyword).stream()
+                .filter(token -> typeByToken(token) != keywordType)
+                .toList());
+        return normalizeKeyword(result);
+    }
+
+    private List<String> keywordTokens(String keyword) {
+        return List.of(keyword.trim().split("\\s+"));
+    }
+
+    private ScholarshipType typeByToken(String token) {
+        return switch (token) {
+            case "교내" -> ScholarshipType.INTERNAL;
+            case "교외" -> ScholarshipType.EXTERNAL;
+            case "근로" -> ScholarshipType.WORK_STUDY;
+            default -> null;
+        };
     }
 
     private Set<Long> getScrapped(UUID userId, List<Scholarship> scholarships) {
