@@ -1,5 +1,9 @@
 package com.wishconnect.global.config;
 
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
@@ -9,6 +13,13 @@ public class AdminPageController {
 
 	@GetMapping("/admin")
 	public String admin() {
-		return "redirect:/admin/index.html";
+		return "redirect:/admin/console";
+	}
+
+	@GetMapping("/admin/console")
+	public ResponseEntity<Resource> console() {
+		return ResponseEntity.ok()
+				.contentType(MediaType.TEXT_HTML)
+				.body(new ClassPathResource("static/admin/layout-preview.html"));
 	}
 }

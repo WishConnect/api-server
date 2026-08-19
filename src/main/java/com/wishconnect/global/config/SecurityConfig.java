@@ -17,9 +17,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.security.web.util.matcher.OrRequestMatcher;
 
 @Configuration
 @EnableMethodSecurity
@@ -108,15 +105,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.GET, "/api/v1/scholarships/{scholarshipId}").permitAll()
 						.requestMatchers(PUBLIC_ENDPOINTS).permitAll()
 						.anyRequest().authenticated())
-				.exceptionHandling(handler -> handler
-						.defaultAuthenticationEntryPointFor(
-								new LoginUrlAuthenticationEntryPoint("/admin/login.html"),
-								new OrRequestMatcher(
-										new AntPathRequestMatcher("/admin/**"),
-										new AntPathRequestMatcher("/swagger-ui/**"),
-										new AntPathRequestMatcher("/swagger-ui.html"),
-										new AntPathRequestMatcher("/v3/api-docs/**")))
-						.authenticationEntryPoint(authenticationEntryPoint))
+				.exceptionHandling(handler -> handler.authenticationEntryPoint(authenticationEntryPoint))
 				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore),
 						UsernamePasswordAuthenticationFilter.class);
 		return http.build();

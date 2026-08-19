@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex, nofollow">
+	<title>WishConnect Admin · Layout Preview</title>
+	<style>
+		:root {
+			--navy:#17213c; --navy-2:#222d4c; --brand:#536dfe; --brand-soft:#eef0ff;
+			--bg:#f5f6f8; --card:#fff; --line:#e7e9ef; --text:#1d2433; --muted:#7b8498;
+			--green:#18a56b; --yellow:#e8a317; --red:#ef5b5b; --blue:#3f7be8;
+		}
+		*{box-sizing:border-box} body{margin:0;color:var(--text);background:var(--bg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
+		button,input,select{font:inherit} button{cursor:pointer}.app{min-height:100vh;display:grid;grid-template-columns:248px 1fr}
+		.sidebar{position:sticky;top:0;height:100vh;background:var(--navy);color:#fff;padding:22px 14px;overflow:auto}
+		.logo{display:flex;align-items:center;gap:10px;padding:0 10px 22px;font-size:17px;font-weight:800}.logo-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#7285ff,#9c6dfd)}
+		.admin{margin:0 6px 20px;padding:12px;border-radius:12px;background:var(--navy-2)}.admin b{display:block}.admin small{color:#aeb7d0}
+		.toast{display:none;position:fixed;z-index:20;right:24px;bottom:24px;max-width:420px;padding:12px 16px;border-radius:10px;background:#253252;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.2)}.toast.show{display:block}.toast.error{background:#9c3440}
+		.nav-label{padding:14px 12px 6px;color:#7986a8;font-size:11px;font-weight:700}.nav{display:grid;gap:3px}.nav button{border:0;color:#c7cee0;background:transparent;text-align:left;padding:10px 12px;border-radius:9px}.nav button:hover,.nav button.active{color:#fff;background:#334063}.nav .count{float:right;min-width:22px;text-align:center;padding:0 6px;border-radius:10px;background:#4b587b;font-size:11px}.nav button.active .count{background:var(--brand)}
+		.main{min-width:0}.topbar{height:68px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--line)}
+		.breadcrumb{color:var(--muted)}.breadcrumb strong{color:var(--text)}.top-actions{display:flex;gap:8px;align-items:center}.search{width:230px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:#fafbfc}.icon-btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 11px}
+		.content{padding:28px;max-width:1500px;margin:0 auto}.page{display:none}.page.active{display:block}.page-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:22px}.page-head h1{font-size:24px;margin:0 0 5px}.page-head p{margin:0;color:var(--muted)}
+		.btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:8px 12px;font-weight:600}.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}.btn.danger{color:var(--red)}
+		.stats{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:14px;margin-bottom:20px}.stat,.card{background:var(--card);border:1px solid var(--line);border-radius:13px}.stat{padding:16px}.stat .label{color:var(--muted);font-size:12px}.stat .value{font-size:26px;font-weight:800;margin:6px 0 2px}.trend{font-size:11px}.green{color:var(--green)}.red{color:var(--red)}.yellow{color:var(--yellow)}
+		.grid-2{display:grid;grid-template-columns:1.35fr 1fr;gap:18px}.card{padding:18px;margin-bottom:18px}.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.card h2{font-size:16px;margin:0}.muted{color:var(--muted)}
+		.queue{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.queue-item{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--line);border-radius:10px}.queue-item .dot{width:9px;height:9px;border-radius:50%}.queue-item b{margin-left:auto;font-size:18px}
+		table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}th{color:var(--muted);font-size:11px;font-weight:700}td.title{font-weight:650}.badge{display:inline-flex;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700}.badge.green{background:#e8f7f1}.badge.yellow{background:#fff5dc}.badge.red{background:#fff0f0}.badge.blue{background:#eaf2ff}.thumb{width:50px;height:58px;border-radius:7px;object-fit:cover;background:linear-gradient(145deg,#d8dcff,#f3e8ff)}
+		.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.toolbar input,.toolbar select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px}.toolbar input{min-width:240px}
+		.review{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}.review-panel{border:1px solid var(--line);border-radius:11px;min-width:0;overflow:hidden;background:#fff}.review-title{padding:11px 13px;background:#f8f9fb;border-bottom:1px solid var(--line);font-weight:750}.review-body{padding:14px;max-height:390px;overflow:auto}.field{margin-bottom:13px}.field label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}.field .box{padding:9px;border:1px solid var(--line);border-radius:7px;background:#fafbfc}.raw{font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;color:#47516a}
+		.compare{display:grid;grid-template-columns:1fr 130px 1fr;gap:14px;align-items:stretch}.candidate{border:1px solid var(--line);border-radius:12px;padding:16px;background:#fff}.candidate.selected{border:2px solid var(--brand)}.merge{display:grid;place-items:center;text-align:center;color:var(--muted)}.score{font-size:27px;font-weight:800;color:var(--red)}
+		.timeline{display:grid;gap:10px}.event{display:grid;grid-template-columns:12px 1fr auto;gap:10px}.event-dot{width:9px;height:9px;margin-top:5px;border-radius:50%;background:var(--brand)}
+		.notice{padding:12px 14px;border-radius:9px;background:var(--brand-soft);color:#4452a7;margin-bottom:16px}.placeholder{padding:54px;text-align:center;color:var(--muted);border:1px dashed #cdd2dd;border-radius:12px;background:#fff}
+		@media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr)}.grid-2,.review{grid-template-columns:1fr}.compare{grid-template-columns:1fr}.merge{padding:8px}.app{grid-template-columns:210px 1fr}}
+		@media(max-width:760px){.app{display:block}.sidebar{position:static;height:auto}.nav{grid-template-columns:repeat(2,1fr)}.topbar{padding:0 16px}.search{display:none}.content{padding:18px}.stats{grid-template-columns:repeat(2,1fr)}}
+	</style>
+</head>
+<body>
+<div class="app">
+	<aside class="sidebar">
+		<div class="logo"><span class="logo-mark">W</span>WishConnect Admin</div>
+		<div class="admin"><b id="adminName">관리자</b><small>ADMIN · 운영</small></div>
+		<div class="nav-label">OVERVIEW</div>
+		<nav class="nav">
+			<button class="active" data-page="dashboard">⌂　대시보드</button>
+		</nav>
+		<div class="nav-label">REVIEW QUEUE</div>
+		<nav class="nav">
+			<button data-page="intake">◫　신규 수집 <span class="count">18</span></button>
+			<button data-page="failures">↻　실패 재처리 <span class="count">7</span></button>
+			<button data-page="anomaly">△　데이터 이상 <span class="count">12</span></button>
+		</nav>
+		<div class="nav-label">SCHOLARSHIPS</div>
+		<nav class="nav">
+			<button data-page="all">▤　전체 장학금</button>
+			<button data-page="always">∞　상시모집 <span class="count">9</span></button>
+			<button data-page="duplicate">⧉　중복 판정 <span class="count">6</span></button>
+			<button data-page="images">▧　이미지 관리</button>
+			<button data-page="reports">⚑　신고 처리 <span class="count">3</span></button>
+			<button data-page="excel">⇅　수기·엑셀 등록</button>
+		</nav>
+		<div class="nav-label">OPERATIONS</div>
+		<nav class="nav">
+			<button data-page="system">◉　시스템 상태 <span class="count">2</span></button>
+			<button data-page="batches">◷　배치 실행 이력</button>
+			<button data-page="audit">⌁　감사·복구</button>
+			<button data-page="swagger">↗　Swagger</button>
+		</nav>
+	</aside>
+
+	<main class="main">
+		<header class="topbar"><div class="breadcrumb">운영 콘솔 / <strong id="pageName">대시보드</strong></div><div class="top-actions"><input class="search" placeholder="장학금·기관·ID 통합 검색"><button class="icon-btn">알림 2</button><button class="icon-btn" id="logout">로그아웃</button></div></header>
+		<div class="content">
+			<section class="page active" id="dashboard">
+				<div class="page-head"><div><h1>운영 대시보드</h1><p>오늘 처리해야 할 데이터와 파이프라인 상태를 한눈에 확인합니다.</p></div><button class="btn">새로고침</button></div>
+				<div class="stats">
+					<div class="stat"><div class="label">오늘 신규 수집</div><div class="value" data-stat="createdToday">-</div><div class="trend green">정상 수집 중</div></div>
+					<div class="stat"><div class="label">전체 장학금</div><div class="value" data-stat="total">-</div><div class="trend muted">정제 데이터</div></div>
+					<div class="stat"><div class="label">파싱 실패</div><div class="value" data-stat="failed">-</div><div class="trend red">재처리 필요</div></div>
+					<div class="stat"><div class="label">모집 중</div><div class="value" data-stat="open">-</div><div class="trend green">사용자 노출 대상</div></div>
+					<div class="stat"><div class="label">모집 예정</div><div class="value" data-stat="upcoming">-</div><div class="trend yellow">시작 전</div></div>
+					<div class="stat"><div class="label">비노출</div><div class="value" data-stat="softDeleted">-</div><div class="trend muted">soft delete</div></div>
+				</div>
+				<div class="grid-2">
+					<div class="card"><div class="card-head"><h2>작업 큐</h2><span class="muted">우선순위순</span></div><div class="queue">
+						<div class="queue-item"><span class="dot" style="background:var(--red)"></span><span>수집·파싱 실패</span><b>7</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--yellow)"></span><span>신규 수집 검수</span><b>18</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--blue)"></span><span>중복 후보 판정</span><b>6</b></div>
+						<div class="queue-item"><span class="dot" style="background:var(--green)"></span><span>사용자 신고</span><b>3</b></div>
+					</div></div>
+					<div class="card"><div class="card-head"><h2>최근 배치</h2><span class="badge green">정상</span></div><div class="timeline">
+						<div class="event"><span class="event-dot"></span><div><b>대학 공지 수집</b><div class="muted">42건 수집 · 2건 실패</div></div><small>09:10</small></div>
+						<div class="event"><span class="event-dot"></span><div><b>LLM 파싱</b><div class="muted">35건 성공 · 예상비용 ₩1,820</div></div><small>09:18</small></div>
+						<div class="event"><span class="event-dot"></span><div><b>모집 상태 갱신</b><div class="muted">14건 마감 처리</div></div><small>09:24</small></div>
+					</div></div>
+				</div>
+				<div class="card"><div class="card-head"><h2>최근 수집 장학금</h2><button class="btn" data-go="intake">검수함 열기</button></div><table><thead><tr><th>이미지</th><th>장학금</th><th>출처</th><th>파싱</th><th>조건</th><th>수집시각</th></tr></thead><tbody>
+					<tr><td colspan="6" class="muted">운영 데이터를 불러오는 중입니다.</td></tr>
+				</tbody></table></div>
+			</section>
+
+			<section class="page" id="intake">
+				<div class="page-head"><div><h1>신규 수집 검수</h1><p>원문, 파싱 결과, 조건을 나란히 비교하고 공개 여부를 결정합니다.</p></div><div><button class="btn">보류</button> <button class="btn primary">승인하고 다음</button></div></div>
+				<div class="notice">검수 대기 18건 중 1번째 · 원문 근거가 없는 값은 승인 전에 수정하세요.</div>
+				<div class="review">
+					<div class="review-panel"><div class="review-title">원문 · raw_scholarship</div><div class="review-body raw">[건국대학교 장학복지팀]\n2026학년도 2학기 건국희망 장학금 안내\n\n지원대상\n- 국가장학금 신청 완료자\n- 학자금 지원구간 9구간 이하\n- 직전학기 12학점 이상\n\n지원내용\n6구간 이하 등록금 전액, 7~9구간 차등 지원\n\n신청기간: 2026.08.19 ~ 2026.09.04</div></div>
+					<div class="review-panel"><div class="review-title">파싱 결과 · scholarship</div><div class="review-body"><div class="field"><label>장학금명</label><div class="box">2026학년도 2학기 건국희망 장학금</div></div><div class="field"><label>운영기관</label><div class="box">건국대학교</div></div><div class="field"><label>모집기간</label><div class="box">2026-08-19 ~ 2026-09-04</div></div><div class="field"><label>지원금액</label><div class="box">지원구간별 차등 지급</div></div><div class="field"><label>이미지</label><div class="thumb" style="width:100%;height:130px"></div></div></div></div>
+					<div class="review-panel"><div class="review-title">구조화 조건 · scholarship_condition</div><div class="review-body"><div class="field"><label>학자금 지원구간 · 필수</label><div class="box">9구간 이하<br><small class="muted">근거: “학자금 지원구간 9구간 이하”</small></div></div><div class="field"><label>이수학점 · 필수</label><div class="box">12학점 이상<br><small class="muted">근거: “직전학기 12학점 이상”</small></div></div><div class="field"><label>국가장학금 신청 · 필수</label><div class="box">신청 완료<br><small class="muted">근거: “국가장학금 신청 완료자”</small></div></div><button class="btn" style="width:100%">조건 추가·수정</button></div></div>
+				</div>
+			</section>
+
+			<section class="page" id="duplicate">
+				<div class="page-head"><div><h1>중복 판정</h1><p>LLM이 찾은 후보를 비교하고 남길 데이터와 병합 범위를 결정합니다.</p></div><span class="badge yellow">6쌍 대기</span></div>
+				<div class="compare"><article class="candidate selected"><span class="badge blue">A · 유지 후보</span><h2>2026학년도 2학기 성적우수장학금</h2><p class="muted">건국대학교 · 수집 2026-08-18</p><hr><p><b>기간</b> 8.19 ~ 9.04</p><p><b>금액</b> 수업료 40~100%</p><p><b>조건</b> 3개 · <b>서류</b> 2개</p><button class="btn primary">A를 남기기</button></article><div class="merge"><div><div class="score">94%</div><b>중복 가능성</b><p>제목·기관·기간 일치</p></div></div><article class="candidate"><span class="badge yellow">B</span><h2>[교내] 2학기 성적 장학 안내</h2><p class="muted">건국대학교 · 수집 2026-08-19</p><hr><p><b>기간</b> 8.19 ~ 9.04</p><p><b>금액</b> 수업료 차등</p><p><b>조건</b> 4개 · <b>서류</b> 0개</p><button class="btn">B를 남기기</button></article></div>
+				<div class="card" style="margin-top:18px"><div class="card-head"><h2>처리 결정</h2></div><div class="toolbar"><button class="btn primary">선택 항목으로 병합</button><button class="btn">중복 아님</button><button class="btn">판단 보류</button><button class="btn danger">둘 다 비노출</button></div><div class="notice">병합 전 조건·서류·이미지 이동 내역을 미리 보여주고, 기존 데이터는 soft delete합니다.</div></div>
+			</section>
+
+			<section class="page" id="always"><div class="page-head"><div><h1>상시모집 검토</h1><p>마감일이 없어 자동 종료되지 않는 장학금을 주기적으로 확인합니다.</p></div></div><div class="card"><div class="toolbar"><select><option>오래된 검토순</option></select><select><option>전체 기관</option></select></div><table><thead><tr><th>장학금</th><th>기관</th><th>마지막 확인</th><th>다음 검토</th><th>원문</th><th>처리</th></tr></thead><tbody><tr><td class="title">건국가족 장학</td><td>건국대학교</td><td class="red">31일 전</td><td>오늘</td><td><button class="btn">열기</button></td><td><button class="btn primary">계속 모집</button> <button class="btn">마감</button></td></tr><tr><td class="title">교내근로 장학</td><td>건국대학교</td><td class="yellow">14일 전</td><td>3일 후</td><td><button class="btn">열기</button></td><td><button class="btn primary">계속 모집</button> <button class="btn">마감</button></td></tr></tbody></table></div></section>
+
+			<section class="page" id="failures"><div class="page-head"><div><h1>실패 재처리함</h1><p>수집과 파싱 실패 원인을 확인하고 안전하게 다시 실행합니다.</p></div><button class="btn primary">선택 재처리</button></div><div class="card"><table><thead><tr><th></th><th>단계</th><th>대상</th><th>오류</th><th>시도</th><th>마지막 시각</th></tr></thead><tbody><tr><td>□</td><td><span class="badge red">PARSING</span></td><td class="title">홍익대학교 장학 공지 #4050</td><td>마감일 근거 불일치</td><td>2/3</td><td>18분 전</td></tr><tr><td>□</td><td><span class="badge red">COLLECT</span></td><td class="title">건국대학교 장학 게시판</td><td>HTTP 403</td><td>3/3</td><td>1시간 전</td></tr></tbody></table></div></section>
+
+			<section class="page" id="audit"><div class="page-head"><div><h1>감사로그와 복구</h1><p>관리자의 모든 변경을 전후 값과 함께 확인하고 필요한 경우 복구합니다.</p></div><button class="btn" id="refreshAudit">새로고침</button></div><div class="card"><table><thead><tr><th>시각</th><th>관리자</th><th>행위</th><th>대상</th><th>변경</th><th></th></tr></thead><tbody id="auditRows"><tr><td colspan="6" class="muted">운영 데이터를 불러오는 중입니다.</td></tr></tbody></table></div></section>
+
+			<section class="page" id="all"><div class="page-head"><div><h1>전체 장학금</h1><p>파싱된 장학금과 원문·조건·서류·이미지를 통합 조회합니다.</p></div><button class="btn primary">수기 등록</button></div><div class="card"><div class="toolbar"><input placeholder="장학금명, 기관, ID 검색"><select><option>모든 모집상태</option></select><select><option>모든 출처</option></select><select><option>검수상태 전체</option></select></div><div class="placeholder">전체 목록과 상세 패널이 들어갈 영역</div></div></section>
+			<section class="page" id="anomaly"><div class="page-head"><div><h1>데이터 이상 탐지</h1><p>날짜 역전, 제목·금액 이상치, 조건 누락 등을 확인합니다.</p></div></div><div class="placeholder">이상 유형별 필터와 수정 큐</div></section>
+			<section class="page" id="images"><div class="page-head"><div><h1>이미지 관리</h1><p>이미지 출처, 깨진 링크, 기본 이미지 사용 여부를 검수합니다.</p></div></div><div class="placeholder">이미지 카드 그리드와 교체·재수집 도구</div></section>
+			<section class="page" id="reports"><div class="page-head"><div><h1>장학금 신고 처리</h1><p>사용자가 신고한 잘못된 정보와 마감 공고를 처리합니다.</p></div></div><div class="placeholder">신고 내용과 장학금 원문 비교 화면</div></section>
+			<section class="page" id="excel"><div class="page-head"><div><h1>수기·엑셀 등록</h1><p>신규 등록과 기존 데이터 수정을 구분해 미리 검증합니다.</p></div><button class="btn primary">한 건 등록</button></div><div class="placeholder">엑셀 내보내기 · 업로드 · dry-run 결과</div></section>
+			<section class="page" id="system">
+				<div class="page-head"><div><h1>시스템 상태와 로그</h1><p>운영 인프라의 연결 상태와 애플리케이션 오류를 안전하게 확인합니다.</p></div><button class="btn">지금 확인</button></div>
+				<div class="stats">
+					<div class="stat"><div class="label">애플리케이션</div><div class="value green" style="font-size:20px">UP</div><div class="trend muted">응답 42ms</div></div>
+					<div class="stat"><div class="label">PostgreSQL</div><div class="value green" style="font-size:20px">UP</div><div class="trend muted">응답 18ms</div></div>
+					<div class="stat"><div class="label">Redis</div><div class="value green" style="font-size:20px">UP</div><div class="trend muted">응답 4ms</div></div>
+					<div class="stat"><div class="label">EC2 메모리</div><div class="value">61%</div><div class="trend yellow">1.16 / 1.90GB</div></div>
+					<div class="stat"><div class="label">디스크</div><div class="value">48%</div><div class="trend muted">12.0 / 25GB</div></div>
+					<div class="stat"><div class="label">JVM Heap</div><div class="value">54%</div><div class="trend muted">552 / 1024MB</div></div>
+				</div>
+				<div class="grid-2">
+					<div class="card"><div class="card-head"><h2>서비스 상태</h2><span class="badge green">전체 정상</span></div><table><thead><tr><th>대상</th><th>상태</th><th>마지막 확인</th><th>세부 정보</th></tr></thead><tbody><tr><td>Spring Boot</td><td><span class="badge green">UP</span></td><td>방금 전</td><td>가동 2일 14시간</td></tr><tr><td>RDS PostgreSQL</td><td><span class="badge green">UP</span></td><td>방금 전</td><td>Connection pool 4/20</td></tr><tr><td>Redis</td><td><span class="badge green">UP</span></td><td>방금 전</td><td>Memory 12MB</td></tr><tr><td>Nginx</td><td><span class="badge green">UP</span></td><td>방금 전</td><td>최근 5xx 2건</td></tr></tbody></table></div>
+					<div class="card"><div class="card-head"><h2>최근 경고</h2><button class="btn">알림 설정</button></div><div class="timeline"><div class="event"><span class="event-dot" style="background:var(--red)"></span><div><b>HTTP 500 발생</b><div class="muted">POST /api/v1/users/profile · trace 8fd12c</div></div><small>12분 전</small></div><div class="event"><span class="event-dot" style="background:var(--yellow)"></span><div><b>Naver Search 인증 실패</b><div class="muted">외부 API 401 · 3회 연속</div></div><small>48분 전</small></div></div></div>
+				</div>
+				<div class="card"><div class="card-head"><h2>애플리케이션 로그</h2><div><button class="btn">다운로드</button> <button class="btn">새로고침</button></div></div><div class="toolbar"><select><option>ERROR + WARN</option><option>ERROR</option><option>전체</option></select><select><option>최근 1시간</option><option>최근 24시간</option></select><input placeholder="경로, trace ID, 메시지 검색"></div><div class="raw" style="background:#141a2b;color:#dce2f2;border-radius:10px;padding:15px;max-height:280px;overflow:auto">2026-08-19 14:42:18 ERROR [http-nio-8080-exec-3] GlobalExceptionHandler<br>POST /api/v1/users/profile · status=500 · traceId=8fd12c<br>org.postgresql.util.PSQLException: duplicate key value violates unique constraint ...<br><br>2026-08-19 14:06:31 WARN [scheduler-1] NaverSearchClient<br>검색 API 인증 실패 · status=401 · credentials=[REDACTED]</div><p class="muted">비밀번호, 토큰, 인증코드, API 키와 개인정보는 서버에서 마스킹한 뒤 전달합니다.</p></div>
+			</section>
+			<section class="page" id="batches"><div class="page-head"><div><h1>배치 실행 이력</h1><p>수집·파싱·중복 탐지 작업의 결과와 비용을 추적합니다.</p></div><button class="btn primary">수동 실행</button></div><div class="placeholder">실행 단계, 성공·실패 건수, 소요시간, LLM 비용과 실패 알림</div></section>
+			<section class="page" id="swagger"><div class="page-head"><div><h1>Swagger</h1><p>관리자 인증을 통과한 경우에만 API 문서를 엽니다.</p></div><button class="btn primary">Swagger 열기</button></div><div class="placeholder">운영에서는 관리자 로그인 세션을 확인한 뒤 별도 창으로 이동</div></section>
+		</div>
+	</main>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+	const TOKEN_KEY = 'wc_admin_token';
+	const token = sessionStorage.getItem(TOKEN_KEY);
+	if (!token) location.replace('/admin/login.html');
+	const escapeHtml = value => value == null ? '' : String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+	const toast = (message, error = false) => { const el=document.getElementById('toast'); el.textContent=message; el.className='toast show'+(error?' error':''); setTimeout(()=>el.className='toast',3500); };
+	async function api(path, options={}) {
+		const response = await fetch(path,{...options,headers:{...(options.headers||{}),Authorization:'Bearer '+token}});
+		if(response.status===401||response.status===403){sessionStorage.removeItem(TOKEN_KEY);location.replace('/admin/login.html');throw new Error('관리자 인증이 만료됐습니다.');}
+		const body=await response.json().catch(()=>null);
+		if(!response.ok||!body||body.success===false) throw new Error((body&&body.message)||('요청 실패 HTTP '+response.status));
+		return body.data;
+	}
+	async function loadDashboard(){
+		const data=await api('/api/v1/scholarships/admin/overview');
+		const values={createdToday:data.scholarship.createdToday,total:data.scholarship.total,failed:data.raw.failed,open:data.scholarship.open,upcoming:data.scholarship.upcoming,softDeleted:data.scholarship.softDeleted};
+		Object.entries(values).forEach(([key,value])=>{const el=document.querySelector('[data-stat="'+key+'"]');if(el)el.textContent=value;});
+		const rows=await api('/api/v1/scholarships/admin/recent?size=10');
+		const body=document.querySelector('#dashboard table tbody');
+		body.innerHTML=rows.length?rows.map(row=>'<tr><td><div class="thumb"></div></td><td class="title">'+escapeHtml(row.title)+'</td><td>'+escapeHtml(row.provider||'-')+'</td><td><span class="badge '+(row.softDeleted?'red':'green')+'">'+(row.softDeleted?'비노출':'저장')+'</span></td><td>'+escapeHtml(row.source||'-')+'</td><td>'+escapeHtml((row.applicationEndAt||'').replace('T',' ').slice(0,16)||'-')+'</td></tr>').join(''):'<tr><td colspan="6" class="muted">최근 데이터가 없습니다.</td></tr>';
+	}
+	async function loadAudit(){
+		const rows=await api('/api/v1/admin/audit-log?size=50');
+		document.getElementById('auditRows').innerHTML=rows.length?rows.map(row=>'<tr><td>'+escapeHtml((row.createdAt||'').replace('T',' ').slice(0,16))+'</td><td>'+escapeHtml(String(row.actorId||'').slice(0,8))+'</td><td>'+escapeHtml(row.action)+'</td><td>'+escapeHtml(row.targetType?row.targetType+' #'+row.targetId:'-')+'</td><td>'+escapeHtml(row.detail||'-')+'</td><td><button class="btn" disabled>전후 비교</button></td></tr>').join(''):'<tr><td colspan="6" class="muted">기록이 없습니다.</td></tr>';
+	}
+	const pages = document.querySelectorAll('.page');
+	const navButtons = document.querySelectorAll('.nav button[data-page]');
+	const names = {dashboard:'대시보드',intake:'신규 수집',failures:'실패 재처리',anomaly:'데이터 이상',all:'전체 장학금',always:'상시모집',duplicate:'중복 판정',images:'이미지 관리',reports:'신고 처리',excel:'수기·엑셀 등록',system:'시스템 상태',batches:'배치 실행 이력',audit:'감사·복구',swagger:'Swagger'};
+	function showPage(id){pages.forEach(p=>p.classList.toggle('active',p.id===id));navButtons.forEach(b=>b.classList.toggle('active',b.dataset.page===id));document.getElementById('pageName').textContent=names[id]||id;window.scrollTo(0,0)}
+	navButtons.forEach(button=>button.addEventListener('click',()=>showPage(button.dataset.page)));
+	document.querySelectorAll('[data-go]').forEach(button=>button.addEventListener('click',()=>showPage(button.dataset.go)));
+	document.getElementById('adminName').textContent=sessionStorage.getItem('wc_admin_name')||'관리자';
+	document.getElementById('refreshAudit').addEventListener('click',()=>loadAudit().catch(e=>toast(e.message,true)));
+	document.getElementById('logout').addEventListener('click',async()=>{try{await fetch('/api/v1/admin/auth/logout',{method:'POST'});}finally{sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem('wc_admin_name');location.replace('/admin/login.html');}});
+	Promise.all([loadDashboard(),loadAudit()]).catch(error=>toast(error.message,true));
+</script>
+</body>
+</html>

@@ -47,7 +47,7 @@
 			}
 			sessionStorage.setItem('wc_admin_token', body.data.accessToken);
 			sessionStorage.setItem('wc_admin_name', body.data.name);
-			location.replace('/admin/index.html');
+			location.replace('/admin/console');
 		} catch (e) {
 			error.textContent = e.message;
 			error.className = 'error show';
