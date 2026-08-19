@@ -65,4 +65,46 @@ public class InterviewPrepQuestion extends BaseEntity {
 	 */
 	@Column(name = "intent", columnDefinition = "TEXT")
 	private String intent;
+
+	/**
+	 * 답변할 때 유의할 점. "구체적인 경험을 들어 설명하면 신뢰도를 높일 수 있어요" 같은 한 문장.
+	 *
+	 * <p>LLM 이 채우지 못하면 {@code null} 이다. 질문·의도만으로도 쓸모가 있어 버리지 않는다.
+	 */
+	@Column(name = "answer_tip", columnDefinition = "TEXT")
+	private String answerTip;
+
+	/**
+	 * 장학금 정보만으로 만든 일반 예시답변.
+	 *
+	 * <p>자기소개서를 받지 않는 장학금(essay NOT_REQUIRED + interview REQUIRED)에는 개인화할
+	 * 재료가 없다. 예시답변을 통째로 비우면 그 장학금 준비생은 답변 예시를 아예 못 보므로,
+	 * 공고 정보만으로 만든 일반 예시를 여기 둔다. 질문 생성과 같은 호출에서 만들어 비용이 없다.
+	 *
+	 * <p>자소서가 있으면 {@link InterviewPrepSampleAnswer}(지원서 단위)의 개인화 답변이 이 값을 덮는다.
+	 */
+	@Column(name = "sample_answer", columnDefinition = "TEXT")
+	private String sampleAnswer;
+
+	/**
+	 * 답변 구성 가이드. STEP1 → STEP2 → STEP3 흐름으로 보여준다.
+	 *
+	 * <p>{@code cascade}·{@code orphanRemoval} 을 두어 질문을 지우면 함께 사라지게 한다.
+	 * 관리자 재생성 시 가이드만 남아 다음 질문에 붙는 것을 막는다.
+	 */
+	@jakarta.persistence.OneToMany(mappedBy = "question",
+			cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+	@jakarta.persistence.OrderBy("stepOrder asc")
+	@Builder.Default
+	private java.util.List<InterviewPrepGuideStep> guideSteps = new java.util.ArrayList<>();
+
+	/** 생성 시점에 가이드 단계를 붙인다. 양방향 연관을 한곳에서 맞춘다. */
+	public void addGuideStep(String title, String description) {
+		this.guideSteps.add(InterviewPrepGuideStep.builder()
+				.question(this)
+				.stepOrder(this.guideSteps.size())
+				.title(title)
+				.description(description)
+				.build());
+	}
 }
