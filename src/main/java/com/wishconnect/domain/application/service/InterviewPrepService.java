@@ -6,6 +6,10 @@ import com.wishconnect.domain.application.service.prompt.InterviewPrepPromptBuil
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.time.Duration;
+import com.wishconnect.domain.application.service.prompt.InterviewSampleAnswerPromptBuilder;
+import java.util.Map;
+import com.wishconnect.global.lock.RedisLock;
+import java.util.Optional;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +52,8 @@ public class InterviewPrepService {
 
 	/** 장학금별 생성 잠금. LLM 호출 시간을 덮되, 실패해도 오래 잠기지 않게 짧게 둔다. */
 	private static final String LOCK_KEY = "interview-prep:lock:";
+	/** 예시답변은 지원서 단위라 잠금도 지원서 단위로 잡는다. */
+	private static final String SAMPLE_LOCK_KEY = "interview-prep:sample-lock:";
 	private static final Duration LOCK_TTL = Duration.ofSeconds(90);
 
 	/** 다른 요청이 생성 중일 때 기다리는 간격·횟수. 합쳐서 최대 5초. */
@@ -56,7 +62,9 @@ public class InterviewPrepService {
 
 	private final InterviewPrepStore store;
 	private final InterviewPrepPromptBuilder promptBuilder;
+	private final InterviewSampleAnswerPromptBuilder sampleAnswerPromptBuilder;
 	private final LlmClient llmClient;
+	private final RedisLock redisLock;
 	private final StringRedisTemplate redisTemplate;
 
 	/**
@@ -85,7 +93,8 @@ public class InterviewPrepService {
 		}
 
 		// 잠금을 못 잡았다면 다른 요청이 지금 만들고 있다. LLM 을 또 부르지 않고 기다렸다 읽는다.
-		if (!acquireLock(scholarshipId)) {
+		Optional<String> lockToken = redisLock.tryLock(LOCK_KEY + scholarshipId, LOCK_TTL);
+		if (lockToken.isEmpty()) {
 			return awaitExisting(scholarshipId);
 		}
 		try {
@@ -97,7 +106,7 @@ public class InterviewPrepService {
 			consumeQuota(userId);
 
 			// --- 트랜잭션 밖. 이 구간에서 DB 커넥션을 잡지 않는다 ---
-			List<InterviewPrepPromptBuilder.Generated> generated = promptBuilder.parse(
+			List<InterviewPrepPromptBuilder.GeneratedQuestion> generated = promptBuilder.parse(
 					llmClient.chat(promptBuilder.build(prepared.scholarship(), prepared.conditions())));
 
 			if (generated.isEmpty()) {
@@ -116,7 +125,67 @@ public class InterviewPrepService {
 				return store.find(scholarshipId);
 			}
 		} finally {
-			redisTemplate.delete(LOCK_KEY + scholarshipId);
+			// 내가 잡은 잠금만 해제한다. TTL 이 만료돼 다른 요청이 새로 잡았다면 건드리지 않는다.
+			redisLock.unlock(LOCK_KEY + scholarshipId, lockToken.get());
+		}
+	}
+
+
+	/**
+	 * 지원서 기준 면접 준비 자료 조회. 질문 + 예시답변을 함께 돌려준다. <b>LLM 을 부르지 않는다.</b>
+	 */
+	public InterviewPrepResponse getForEssay(UUID userId, Long applicationId) {
+		return store.findForEssay(userId, applicationId);
+	}
+
+	/**
+	 * 사용자가 쓴 자기소개서를 바탕으로 예시답변을 만든다.
+	 *
+	 * <p>질문은 장학금 단위로 이미 만들어져 있어야 한다. 없으면 만들 대상이 없으므로 그대로 돌려준다.
+	 *
+	 * <p><b>실패해도 예외를 던지지 않는다.</b> 예시답변은 있으면 좋은 보조 자료이고, 없다고
+	 * 질문·의도·Tip·구성가이드까지 못 보게 만들 이유가 없다. 자소서가 비어 있거나 LLM 이
+	 * 실패하면 질문만 돌려준다.
+	 */
+	public InterviewPrepResponse generateSampleAnswers(UUID userId, Long applicationId) {
+		InterviewPrepStore.SampleAnswerSource source = store.prepareSampleAnswers(userId, applicationId);
+
+		if (source.questions().isEmpty()) {
+			log.info("면접 질문이 아직 없어 예시답변을 만들지 않습니다. applicationId={}", applicationId);
+			return store.findForEssay(userId, applicationId);
+		}
+		if (source.essayText().length() < InterviewSampleAnswerPromptBuilder.MIN_ESSAY_CHARS) {
+			// 자소서가 비면 지어낼 수밖에 없다. 빈 답이 없는 경험이 적힌 답보다 낫다.
+			log.info("자기소개서 내용이 부족해 예시답변을 만들지 않습니다. applicationId={}", applicationId);
+			return store.findForEssay(userId, applicationId);
+		}
+
+		Optional<String> lockToken = redisLock.tryLock(SAMPLE_LOCK_KEY + applicationId, LOCK_TTL);
+		if (lockToken.isEmpty()) {
+			return store.findForEssay(userId, applicationId);
+		}
+		try {
+			consumeQuota(userId);
+
+			// --- 트랜잭션 밖. 이 구간에서 DB 커넥션을 잡지 않는다 ---
+			Map<Long, String> answers;
+			try {
+				answers = sampleAnswerPromptBuilder.parse(
+						llmClient.chat(sampleAnswerPromptBuilder.build(
+								source.questions(), source.essayText(), source.scholarshipTitle())),
+						source.questions());
+			} catch (Exception e) {
+				log.warn("예시답변 생성이 실패해 질문만 돌려줍니다. applicationId={} : {}",
+						applicationId, e.getMessage());
+				return store.findForEssay(userId, applicationId);
+			}
+			if (answers.isEmpty()) {
+				log.info("쓸 만한 예시답변이 없어 질문만 돌려줍니다. applicationId={}", applicationId);
+				return store.findForEssay(userId, applicationId);
+			}
+			return store.saveSampleAnswers(userId, applicationId, answers);
+		} finally {
+			redisLock.unlock(SAMPLE_LOCK_KEY + applicationId, lockToken.get());
 		}
 	}
 
@@ -127,10 +196,6 @@ public class InterviewPrepService {
 
 	// --- 동시성 ---
 
-	private boolean acquireLock(Long scholarshipId) {
-		return Boolean.TRUE.equals(redisTemplate.opsForValue()
-				.setIfAbsent(LOCK_KEY + scholarshipId, "1", LOCK_TTL));
-	}
 
 	/**
 	 * 다른 요청이 만드는 동안 잠깐 기다렸다 읽는다.

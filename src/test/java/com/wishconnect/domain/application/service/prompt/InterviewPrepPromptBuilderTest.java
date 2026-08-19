@@ -2,7 +2,7 @@ package com.wishconnect.domain.application.service.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.wishconnect.domain.application.client.dto.LlmChatRequest;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.scholarship.entity.RequirementLevel;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
@@ -12,116 +12,156 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 면접 예상 질문 프롬프트 조립·응답 검증.
+ * 면접 예상 질문 생성·검증.
  *
- * <p>여기서 막으려는 것은 <b>LLM 이 형식을 어겼을 때 질문이 아닌 문장이 저장되는 것</b>이다.
- * 번호 목록 파싱이 실패하면 모든 줄을 후보로 보기 때문에, 머리말·코드펜스·맺음말이 그대로
- * 질문이 되어 화면에 뜬다.
+ * <p>기획 확정본은 질문 하나에 질문의도·답변 Tip·구성 가이드를 함께 보여준다. 여기서 지키려는
+ * 것은 <b>모델이 형식을 어겼을 때 화면이 깨지지 않는 것</b>이다. 질문이 성립하지 않으면 버리고,
+ * 부가 정보만 빠지면 질문은 살린다. 반쪽짜리 구성 가이드는 통째로 비운다.
  */
 class InterviewPrepPromptBuilderTest {
 
-	private final InterviewPrepPromptBuilder builder = new InterviewPrepPromptBuilder();
+	private final InterviewPrepPromptBuilder builder =
+			new InterviewPrepPromptBuilder(new ObjectMapper());
+
+	private static final String FULL = """
+			[{"question":"본인의 가장 큰 장점은 무엇인가요?",
+			  "intent":"지원자의 핵심 역량과 강점을 파악하기 위한 질문입니다.",
+			  "answerTip":"구체적인 경험을 들어 설명하면 신뢰도를 높일 수 있어요.",
+			  "sampleAnswer":"저의 가장 큰 강점은 지속적으로 배우고 성장하려는 태도입니다. 새로운 환경에 빠르게 적응하고 모르는 것을 먼저 물어보며 배웁니다. 그 결과 맡은 일을 끝까지 마무리할 수 있었습니다.",
+			  "guide":[{"title":"강점제시","description":"핵심 강점을 한 문장으로 먼저 밝히세요."},
+			           {"title":"경험 설명","description":"상황·행동·결과 순서로 뒷받침하세요."},
+			           {"title":"성장 및 활용","description":"배운 점과 앞으로의 활용을 마무리하세요."}]}]
+			""";
 
 	@Test
-	@DisplayName("번호 목록에서 질문과 의도를 뽑는다")
-	void parsesNumberedList() {
-		List<InterviewPrepPromptBuilder.Generated> result = builder.parse("""
-				1. 이 장학금에 지원한 이유는 무엇인가요? | 취지 이해도를 봅니다.
-				2. 학업 중 어려웠던 순간을 말씀해주세요. | 문제 해결 태도를 봅니다.
-				""");
+	@DisplayName("질문·의도·Tip·구성가이드를 모두 읽는다")
+	void parsesAllSections() {
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse(FULL);
 
-		assertThat(result).hasSize(2);
-		assertThat(result.get(0).questionText()).isEqualTo("이 장학금에 지원한 이유는 무엇인가요?");
-		assertThat(result.get(0).intent()).isEqualTo("취지 이해도를 봅니다.");
+		assertThat(result).hasSize(1);
+		var q = result.get(0);
+		assertThat(q.questionText()).isEqualTo("본인의 가장 큰 장점은 무엇인가요?");
+		assertThat(q.intent()).contains("핵심 역량");
+		assertThat(q.answerTip()).contains("구체적인 경험");
+		assertThat(q.guideSteps()).hasSize(3);
+		assertThat(q.guideSteps().get(0).title()).isEqualTo("강점제시");
+		assertThat(q.guideSteps().get(2).title()).isEqualTo("성장 및 활용");
+		assertThat(q.sampleAnswer()).contains("지속적으로 배우고");
 	}
 
 	@Test
-	@DisplayName("의도가 없어도 질문만으로 남긴다 — 질문만으로도 쓸모가 있다")
-	void keepsQuestionWithoutIntent() {
-		List<InterviewPrepPromptBuilder.Generated> result =
-				builder.parse("1. 본인의 강점은 무엇인가요?");
+	@DisplayName("일반 예시답변도 함께 만든다 — 자소서를 받지 않는 장학금은 이것만 볼 수 있다")
+	void generatesGenericSampleAnswer() {
+		String prompt = builder.build(scholarship(), List.of()).systemPrompt();
+
+		assertThat(prompt).contains("sampleAnswer");
+		// 확인할 수 없는 사실을 넣으면 학생이 면접에서 답하지 못한다.
+		assertThat(prompt).contains("확인할 수 없는 사실은 넣지 마세요");
+	}
+
+	@Test
+	@DisplayName("예시답변이 너무 짧으면 버리되 질문은 살린다")
+	void dropsTooShortSampleAnswer() {
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse("""
+				[{"question":"지원하게 된 동기는 무엇인가요?","sampleAnswer":"열심히 하겠습니다."}]
+				""");
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).sampleAnswer()).isNull();
+	}
+
+	@Test
+	@DisplayName("의도·Tip 이 없어도 질문은 살린다 — 질문만으로도 쓸모가 있다")
+	void keepsQuestionWithoutOptionalFields() {
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse("""
+				[{"question":"지원하게 된 동기는 무엇인가요?"}]
+				""");
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).intent()).isNull();
+		assertThat(result.get(0).answerTip()).isNull();
+		assertThat(result.get(0).guideSteps()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("머리말·맺음말은 질문으로 저장하지 않는다")
-	void dropsPreambleAndClosing() {
-		List<InterviewPrepPromptBuilder.Generated> result = builder.parse("""
-				아래와 같이 면접 예상 질문을 만들었습니다.
-				1. 지원 동기는 무엇인가요?
-				이상입니다. 준비에 도움이 되길 바랍니다.
+	@DisplayName("구성 가이드가 3단계에 못 미치면 통째로 비운다 — 반쪽 흐름이 더 혼란스럽다")
+	void dropsIncompleteGuide() {
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse("""
+				[{"question":"지원하게 된 동기는 무엇인가요?",
+				  "guide":[{"title":"동기제시","description":"먼저 밝히세요."},
+				           {"title":"경험","description":"뒷받침하세요."}]}]
 				""");
 
 		assertThat(result).hasSize(1);
-		assertThat(result.get(0).questionText()).isEqualTo("지원 동기는 무엇인가요?");
+		assertThat(result.get(0).guideSteps()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("번호가 없는 응답에서도 질문 형태만 남긴다")
-	void filtersNonQuestionsInFallback() {
-		List<InterviewPrepPromptBuilder.Generated> result = builder.parse("""
-				```json
-				## 면접 예상 질문
-				이 장학금에 지원한 이유는 무엇인가요?
-				**참고**: 학교마다 다를 수 있습니다
-				수혜 후 계획을 말씀해주세요.
-				```
+	@DisplayName("단계 내용이 비면 가이드 전체를 비운다")
+	void dropsGuideWithEmptyStep() {
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse("""
+				[{"question":"지원하게 된 동기는 무엇인가요?",
+				  "guide":[{"title":"동기제시","description":"먼저 밝히세요."},
+				           {"title":"","description":"뒷받침하세요."},
+				           {"title":"마무리","description":"정리하세요."}]}]
 				""");
 
-		assertThat(result).hasSize(2);
-		assertThat(result).noneMatch(g -> g.questionText().contains("참고"));
-		assertThat(result).noneMatch(g -> g.questionText().startsWith("#"));
+		assertThat(result.get(0).guideSteps()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("너무 길거나 짧은 줄은 버린다")
-	void dropsOutOfRangeLength() {
-		String tooLong = "1. " + "가".repeat(80) + "인가요?";
-		List<InterviewPrepPromptBuilder.Generated> result = builder.parse(tooLong + "\n2. 네?");
-
-		assertThat(result).isEmpty();
+	@DisplayName("너무 길거나 짧은 질문은 버린다")
+	void dropsOutOfRangeQuestion() {
+		String tooLong = "\"question\":\"" + "가".repeat(80) + "인가요?\"";
+		assertThat(builder.parse("[{" + tooLong + "}]")).isEmpty();
+		assertThat(builder.parse("[{\"question\":\"네?\"}]")).isEmpty();
 	}
 
 	@Test
 	@DisplayName("같은 질문이 두 번 오면 하나만 남긴다")
 	void removesDuplicates() {
-		List<InterviewPrepPromptBuilder.Generated> result = builder.parse("""
-				1. 지원 동기는 무엇인가요?
-				2. 지원 동기는 무엇인가요?
-				3. 강점은 무엇인가요?
+		List<InterviewPrepPromptBuilder.GeneratedQuestion> result = builder.parse("""
+				[{"question":"지원하게 된 동기는 무엇인가요?"},
+				 {"question":"지원하게 된 동기는 무엇인가요?"},
+				 {"question":"본인의 강점은 무엇인가요?"}]
 				""");
 
 		assertThat(result).hasSize(2);
 	}
 
 	@Test
-	@DisplayName("요청 개수를 넘겨 생성하면 앞에서부터 자른다")
-	void trimsToRequestedCount() {
-		StringBuilder response = new StringBuilder();
-		for (int i = 1; i <= 10; i++) {
-			response.append(i).append(". 질문 ").append(i).append(" 무엇인가요?\n");
-		}
-
-		assertThat(builder.parse(response.toString()))
-				.hasSize(InterviewPrepPromptBuilder.QUESTION_COUNT);
+	@DisplayName("코드펜스로 감싸 와도 읽는다")
+	void parsesFencedJson() {
+		assertThat(builder.parse("```json\n" + FULL + "\n```")).hasSize(1);
 	}
 
 	@Test
-	@DisplayName("응답이 비었거나 질문이 하나도 없으면 빈 리스트")
-	void returnsEmptyWhenNothingUsable() {
+	@DisplayName("응답이 비었거나 JSON 이 아니면 빈 리스트")
+	void returnsEmptyOnMalformed() {
 		assertThat(builder.parse(null)).isEmpty();
 		assertThat(builder.parse("   ")).isEmpty();
-		assertThat(builder.parse("죄송합니다. 정보가 부족해 만들 수 없습니다.")).isEmpty();
+		assertThat(builder.parse("죄송합니다. 만들 수 없습니다.")).isEmpty();
+	}
+
+	@Test
+	@DisplayName("요청 개수를 넘기면 앞에서부터 자른다")
+	void trimsToRequestedCount() {
+		StringBuilder json = new StringBuilder("[");
+		for (int i = 0; i < 10; i++) {
+			json.append(i == 0 ? "" : ",")
+					.append("{\"question\":\"질문 ").append(i).append(" 무엇인가요?\"}");
+		}
+		json.append("]");
+
+		assertThat(builder.parse(json.toString()))
+				.hasSize(InterviewPrepPromptBuilder.QUESTION_COUNT);
 	}
 
 	@Test
 	@DisplayName("자격조건이 없으면 '확인되지 않음' 이라고 적어 보낸다 — 비우면 모델이 지어낸다")
 	void statesMissingConditionsExplicitly() {
-		LlmChatRequest request = builder.build(scholarship(), List.of());
-
-		assertThat(request.systemPrompt()).contains("(공고에서 확인되지 않음)");
+		assertThat(builder.build(scholarship(), List.of()).systemPrompt())
+				.contains("(공고에서 확인되지 않음)");
 	}
 
 	@Test
