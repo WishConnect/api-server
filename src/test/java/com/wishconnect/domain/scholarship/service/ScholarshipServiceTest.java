@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.scholarship.entity.Scholarship;
@@ -117,6 +118,24 @@ class ScholarshipServiceTest {
 		verify(scholarshipRepository).searchByKeyword(
 				isNull(), eq(List.of("__wishconnect_no_text_keyword__")), eq(ScholarshipType.WORK_STUDY),
 				isNull(), any(Pageable.class));
+	}
+
+	@Test
+	@DisplayName("유형 글자가 단어 일부이면 타입 조건으로 분리하지 않는다")
+	void search_doesNotSplitTypeKeywordInsideNormalWord() {
+		given(scholarshipRepository.searchByKeyword(any(), any(), isNull(), isNull(), any()))
+				.willReturn(new PageImpl<>(List.of(scholarship("검색 결과"))));
+
+		scholarshipService.search(null, "근로자 자녀 장학금", null, "deadline", false, 1, 10);
+		scholarshipService.search(null, "근로장려금 수급자", null, "deadline", false, 1, 10);
+		scholarshipService.search(null, "교외활동 우수자", null, "deadline", false, 1, 10);
+
+		ArgumentCaptor<String> keywordNoSpace = ArgumentCaptor.forClass(String.class);
+		verify(scholarshipRepository, times(3)).searchByKeyword(
+				keywordNoSpace.capture(), any(), isNull(), isNull(), any(Pageable.class));
+
+		assertThat(keywordNoSpace.getAllValues())
+				.containsExactly("근로자자녀장학금", "근로장려금수급자", "교외활동우수자");
 	}
 
 	@Test

@@ -217,15 +217,11 @@ public class ScholarshipService {
         if (keyword == null) {
             return null;
         }
-        String keywordNoSpace = withoutSpaces(keyword);
-        if (keywordNoSpace.contains("근로")) {
-            return ScholarshipType.WORK_STUDY;
-        }
-        if (keywordNoSpace.contains("교내")) {
-            return ScholarshipType.INTERNAL;
-        }
-        if (keywordNoSpace.contains("교외")) {
-            return ScholarshipType.EXTERNAL;
+        for (String token : keywordTokens(keyword)) {
+            ScholarshipType type = typeByToken(token);
+            if (type != null) {
+                return type;
+            }
         }
         return null;
     }
@@ -235,18 +231,22 @@ public class ScholarshipService {
             return keyword;
         }
 
-        String result = keyword;
-        for (String typeToken : typeTokens(keywordType)) {
-            result = result.replace(typeToken, " ");
-        }
+        String result = String.join(" ", keywordTokens(keyword).stream()
+                .filter(token -> typeByToken(token) != keywordType)
+                .toList());
         return normalizeKeyword(result);
     }
 
-    private List<String> typeTokens(ScholarshipType keywordType) {
-        return switch (keywordType) {
-            case INTERNAL -> List.of("교내");
-            case EXTERNAL -> List.of("교외");
-            case WORK_STUDY -> List.of("근로");
+    private List<String> keywordTokens(String keyword) {
+        return List.of(keyword.trim().split("\\s+"));
+    }
+
+    private ScholarshipType typeByToken(String token) {
+        return switch (token) {
+            case "교내" -> ScholarshipType.INTERNAL;
+            case "교외" -> ScholarshipType.EXTERNAL;
+            case "근로" -> ScholarshipType.WORK_STUDY;
+            default -> null;
         };
     }
 
