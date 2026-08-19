@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -12,14 +13,16 @@ import java.util.List;
  * <p>{@code markedDates} 는 날짜 그리드에 점을 찍기 위한 것이다. {@code events} 를 다시 훑지 않아도
  * 되도록 서버에서 만들어 준다.
  */
+@Schema(description = "장학금 모집 시작·마감 달력 응답")
 public record ScholarshipCalendarResponse(
-		int year,
-		int month,
-		CalendarScope scope,
-		List<LocalDate> markedDates,
-		List<CalendarEvent> events
+		@Schema(example = "2026") int year,
+		@Schema(example = "8") int month,
+		@Schema(description = "MATCHED, SCRAPPED, ALL 중 조회 범위", example = "MATCHED") CalendarScope scope,
+		@Schema(description = "달력 격자에 표시할 점의 날짜 목록") List<LocalDate> markedDates,
+		@Schema(description = "모집 시작·마감 이벤트") List<CalendarEvent> events
 ) {
 
+	@Schema(description = "달력 날짜에 표시할 장학금 일정")
 	public record CalendarEvent(
 			LocalDate date,
 			EventType type,

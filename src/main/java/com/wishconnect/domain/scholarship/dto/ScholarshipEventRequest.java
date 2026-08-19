@@ -14,8 +14,10 @@ public record ScholarshipEventRequest(
 		@NotEmpty
 		@Size(max = 100, message = "한 번에 100건까지 보낼 수 있습니다.")
 		@Valid
+		@Schema(description = "한 화면에서 발생한 추천 이벤트. 1~100건")
 		List<Event> events) {
 
+	@Schema(description = "추천 카드 노출·클릭 이벤트. curated 응답의 값을 재계산하지 말고 그대로 보낸다.")
 	public record Event(
 
 			@NotNull

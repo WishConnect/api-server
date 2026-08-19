@@ -1,5 +1,7 @@
 package com.wishconnect.domain.scholarship.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * 홈 화면(피그마 "홈_모든 정보 입력") 상단 영역을 한 번에 채우는 응답.
  *
@@ -8,18 +10,19 @@ package com.wishconnect.domain.scholarship.dto;
  * {@link #newMatchedCount} / {@link #urgentDeadlineCount} /
  * {@link #writingApplicationCount} / {@link #newInsightCount} 에 대응한다.
  */
+@Schema(description = "홈 상단 인사말·신규 배너·오늘의 소식 카드 응답")
 public record HomeSummaryResponse(
 		/** 인사말("안녕하세요, ○○님!")에 쓰는 이름. 홈만 그리려고 회원 조회를 또 하지 않도록 함께 준다. */
-		String userName,
+		@Schema(description = "인사말에 사용할 이름") String userName,
 		/** 최근 7일 이내 등록된 지원 가능 장학금 수. */
-		long newMatchedCount,
+		@Schema(description = "최근 7일 내 등록된 지원 가능 장학금 수") long newMatchedCount,
 		/** 지원 가능 장학금 중 D-7 이내 마감 수. */
-		long urgentDeadlineCount,
+		@Schema(description = "지원 가능 장학금 중 D-7 이내 마감 수") long urgentDeadlineCount,
 		/**
 		 * 작성 중인 지원서 수. NOT_STARTED(문항만 준비된 상태)와 IN_PROGRESS 를 합친다
 		 * — 사용자 눈에는 둘 다 "쓰다 만 것"이다.
 		 */
-		long writingApplicationCount,
+		@Schema(description = "NOT_STARTED와 IN_PROGRESS 상태의 지원서 수") long writingApplicationCount,
 		/**
 		 * 최근 7일 이내 수집된 인사이트 수.
 		 *
@@ -28,8 +31,8 @@ public record HomeSummaryResponse(
 		 * 같은 창을 쓴다. 원문 작성일({@code publishedAt})이 아니라 수집 시각 기준인데,
 		 * 몇 년 전 블로그 글이 오늘 수집되는 일이 흔해 원문 작성일로 세면 늘 0 이 되기 때문이다.
 		 */
-		long newInsightCount,
+		@Schema(description = "최근 7일 내 수집된 인사이트 수") long newInsightCount,
 		/** 상단 배너 노출 여부. */
-		boolean hasNewMatched
+		@Schema(description = "신규 맞춤 장학금 배너 노출 여부") boolean hasNewMatched
 ) {
 }

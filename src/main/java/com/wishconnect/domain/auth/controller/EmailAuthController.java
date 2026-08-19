@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 
 @Tag(name = "인증 - 이메일", description = "이메일 중복확인·인증코드 발송·인증 확인")
 @RestController
@@ -31,6 +32,7 @@ public class EmailAuthController {
 
 	/** 이메일 중복 확인 (LOCAL 기준). */
 	@GetMapping("/check")
+	@Operation(summary = "회원가입 이메일 중복 확인", description = "LOCAL 계정으로 가입 가능한 이메일인지 확인합니다.")
 	public ApiResponse<EmailCheckResponse> checkEmail(@RequestParam @NotBlank @Email String email) {
 		boolean available = emailVerificationService.isEmailAvailable(email);
 		return ApiResponse.ok(new EmailCheckResponse(available));
@@ -38,6 +40,7 @@ public class EmailAuthController {
 
 	/** 6자리 인증 코드 발송. */
 	@PostMapping("/verification-code")
+	@Operation(summary = "회원가입 인증코드 발송", description = "이메일로 6자리 인증코드를 발송하고 만료 시간을 초 단위로 반환합니다.")
 	public ApiResponse<VerificationCodeResponse> sendVerificationCode(
 			@Valid @RequestBody SendVerificationCodeRequest request) {
 		long expiresIn = emailVerificationService.sendCode(request.email());
@@ -46,6 +49,7 @@ public class EmailAuthController {
 
 	/** 인증 코드 확인. */
 	@PostMapping("/verify")
+	@Operation(summary = "회원가입 이메일 인증", description = "이메일과 인증코드를 확인해 회원가입 전제 조건을 완료합니다.")
 	public ApiResponse<EmailVerifyResponse> verify(@Valid @RequestBody EmailVerifyRequest request) {
 		emailVerificationService.verifyCode(request.email(), request.code());
 		return ApiResponse.ok(new EmailVerifyResponse(true));
