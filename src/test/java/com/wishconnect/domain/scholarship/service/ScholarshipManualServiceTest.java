@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
@@ -140,5 +141,23 @@ class ScholarshipManualServiceTest {
 
 		assertThat(scholarship.isDeleted()).isTrue();
 		assertThat(scholarship.isActive()).isFalse();
+	}
+
+	@Test
+	@DisplayName("감사 스냅샷 복구는 소프트 삭제와 수기 수정 값을 되돌린다")
+	void restore_appliesAuditSnapshot() {
+		Scholarship scholarship = Scholarship.createManual(
+				"원래 제목", "기관", null, null, ScholarshipType.EXTERNAL,
+				null, null, null, 100L, "https://old.example.com", "MANUAL:restore");
+		ScholarshipAdminSnapshot before = ScholarshipAdminSnapshot.from(scholarship);
+		scholarship.updateByAdmin("바뀐 제목", null, null, null, null, null, null, null, 999L, null);
+		scholarship.softDelete();
+		given(scholarshipRepository.findById(9L)).willReturn(Optional.of(scholarship));
+
+		scholarshipManualService.restore(9L, before);
+
+		assertThat(scholarship.getTitle()).isEqualTo("원래 제목");
+		assertThat(scholarship.getAmount()).isEqualTo(100L);
+		assertThat(scholarship.isDeleted()).isFalse();
 	}
 }

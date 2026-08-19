@@ -2,6 +2,8 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminChangeResult;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -54,7 +56,14 @@ public class ScholarshipManualService {
 	/** 관리자 직접 수정. 보낸 필드만 반영한다(수집분·수기분 모두 대상). */
 	@Transactional
 	public ScholarshipManualResponse update(Long scholarshipId, ScholarshipManualRequest request) {
+		return updateWithSnapshot(scholarshipId, request).response();
+	}
+
+	@Transactional
+	public ScholarshipAdminChangeResult updateWithSnapshot(
+			Long scholarshipId, ScholarshipManualRequest request) {
 		Scholarship scholarship = getScholarship(scholarshipId);
+		ScholarshipAdminSnapshot before = ScholarshipAdminSnapshot.from(scholarship);
 		validatePeriod(
 				request.applicationStartAt() == null
 						? scholarship.getApplicationStartAt() : request.applicationStartAt(),
@@ -77,15 +86,33 @@ public class ScholarshipManualService {
 			scholarship.updateRecruitmentStatusByAdmin(request.recruitmentStatus());
 		}
 		log.info("[Scholarship] 관리자 수정 (scholarshipId={})", scholarshipId);
-		return ScholarshipManualResponse.from(scholarship);
+		return new ScholarshipAdminChangeResult(
+				ScholarshipManualResponse.from(scholarship), before, ScholarshipAdminSnapshot.from(scholarship));
 	}
 
 	/** 오등록으로 확인된 장학금을 목록에서 내린다(soft delete). */
 	@Transactional
 	public void delete(Long scholarshipId) {
+		deleteWithSnapshot(scholarshipId);
+	}
+
+	@Transactional
+	public ScholarshipAdminChangeResult deleteWithSnapshot(Long scholarshipId) {
 		Scholarship scholarship = getScholarship(scholarshipId);
+		ScholarshipAdminSnapshot before = ScholarshipAdminSnapshot.from(scholarship);
 		scholarship.softDelete();
 		log.info("[Scholarship] 관리자 삭제 (scholarshipId={})", scholarshipId);
+		return new ScholarshipAdminChangeResult(
+				ScholarshipManualResponse.from(scholarship), before, ScholarshipAdminSnapshot.from(scholarship));
+	}
+
+	@Transactional
+	public void restore(Long scholarshipId, ScholarshipAdminSnapshot snapshot) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		validatePeriod(snapshot.applicationStartAt(), snapshot.applicationEndAt());
+		scholarship.restoreAdminSnapshot(snapshot);
+		log.info("[Scholarship] 관리자 변경 복구 (scholarshipId={})", scholarshipId);
 	}
 
 	private Scholarship getScholarship(Long scholarshipId) {

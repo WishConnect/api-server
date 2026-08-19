@@ -3,13 +3,18 @@ package com.wishconnect.domain.scholarship.controller;
 import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
+import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
+import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
@@ -18,6 +23,9 @@ import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminChangeResult;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
@@ -29,6 +37,8 @@ import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewServic
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
+import com.wishconnect.domain.scholarship.service.ScholarshipManualAggregateService;
+import com.wishconnect.domain.scholarship.service.ScholarshipManualExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import com.wishconnect.global.audit.AdminAction;
@@ -88,6 +98,8 @@ public class ScholarshipAdminController {
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
+	private final ScholarshipManualAggregateService scholarshipManualAggregateService;
+	private final ScholarshipManualExcelService scholarshipManualExcelService;
 	private final ScholarshipReportService scholarshipReportService;
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
 	private final ScholarshipExcelService scholarshipExcelService;
@@ -108,6 +120,19 @@ public class ScholarshipAdminController {
 		return ApiResponse.ok(scholarshipAdminOverviewService.alwaysOpen(pageable));
 	}
 
+	@PatchMapping("/admin/always-open/{scholarshipId}/confirm")
+	@Operation(summary = "상시모집 계속 진행 확인",
+			description = "관리자가 원문에서 모집이 계속됨을 확인한 시각을 기록합니다. "
+					+ "마감 처리는 장학금 직접 수정 API로 CLOSED를 전달합니다.")
+	public ApiResponse<Void> confirmAlwaysOpen(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId) {
+		scholarshipAdminOverviewService.confirmAlwaysOpen(scholarshipId);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
+				"SCHOLARSHIP", scholarshipId, "상시모집 계속 진행 확인");
+		return ApiResponse.ok();
+	}
+
 	@Operation(summary = "최근 수집 장학금 목록",
 			description = "최근에 들어온 순서로 파싱 결과를 훑어본다. source 로 출처를 좁힐 수 있다. (ADMIN 전용)")
 	@GetMapping("/admin/recent")
@@ -115,6 +140,44 @@ public class ScholarshipAdminController {
 			@RequestParam(required = false) String source,
 			@RequestParam(required = false) Integer size) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.recent(source, size));
+	}
+
+	@Operation(summary = "관리자 장학금 전체 검색",
+			description = "제목·기관 검색과 출처·모집 상태·삭제 포함 여부로 파싱 결과를 조회합니다. "
+					+ "각 행은 누락 필드 여부를 함께 반환하며 ADMIN만 호출할 수 있습니다.")
+	@GetMapping("/admin/scholarships")
+	public ApiResponse<Page<AdminScholarshipRow>> adminScholarships(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) RecruitmentStatus status,
+			@RequestParam(defaultValue = "false") boolean includeDeleted,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.search(
+				keyword, source, status, includeDeleted, pageable));
+	}
+
+	@Operation(summary = "관리자 장학금 통합 상세",
+			description = "장학금 본문과 연결된 raw_scholarship, 조건·조건 참조, 제출서류, "
+					+ "이미지 및 미리보기 URL을 한 번에 반환합니다. ADMIN 전용입니다.")
+	@GetMapping("/admin/scholarships/{scholarshipId}")
+	public ApiResponse<AdminScholarshipDetailResponse> adminScholarshipDetail(
+			@PathVariable Long scholarshipId) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.detail(scholarshipId));
+	}
+
+	@Operation(summary = "파싱 실패·건너뜀 원본 목록",
+			description = "FAILED, SKIPPED, IMAGE_ONLY 원본을 최근 실패 순으로 조회합니다. "
+					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다.")
+	@GetMapping("/admin/failures")
+	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.failures(pageable));
+	}
+
+	@Operation(summary = "장학금 데이터 이상 탐지",
+			description = "날짜 역전, 종료일이 지난 OPEN, 기관·링크·조건 누락을 DB 규칙으로 탐지합니다.")
+	@GetMapping("/admin/anomalies")
+	public ApiResponse<Page<AdminScholarshipAnomalyResponse>> adminAnomalies(Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.anomalies(pageable));
 	}
 
 	@Operation(summary = "장학금 엑셀 내보내기",
@@ -376,6 +439,61 @@ public class ScholarshipAdminController {
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
+	@Operation(summary = "장학금 통합 수기 등록",
+			description = """
+					장학금 기본정보와 함께 원문(raw_scholarship), 자격·우대조건 및 마스터 참조,
+					제출서류, 제출방식·연락처·자기소개서·면접 정보를 한 번에 저장합니다.
+
+					조건의 refLabels는 화면에서 선택한 지역·전공 등의 이름이며, 서버가 실제 마스터 ID·코드로
+					변환합니다. imageSourceUrl이 있으면 DB 트랜잭션 종료 후 이미지를 S3에 저장하고 image 테이블에
+					연결합니다. 이미지 저장 실패는 장학금 등록을 취소하지 않고 imageSaved=false로 알립니다.
+					(ADMIN 전용)
+					""")
+	@PostMapping("/manual/full")
+	public ResponseEntity<ApiResponse<ScholarshipManualFullResponse>> createManualFull(
+			@AuthenticationPrincipal String actorId,
+			@Valid @RequestBody ScholarshipManualFullRequest request) {
+		ScholarshipManualFullResponse result = scholarshipManualAggregateService.create(request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(),
+				"통합 수기 등록: 원문 1, 조건 %d, 참조 %d, 서류 %d, 이미지 %s".formatted(
+						result.conditionCount(), result.conditionRefCount(), result.documentCount(),
+						result.imageSaved()));
+		return ResponseEntity.status(201).body(ApiResponse.ok(result));
+	}
+
+	@Operation(summary = "통합 수기 등록 엑셀 양식",
+			description = "장학금·조건·제출서류·이미지 4개 시트를 임시키로 연결하는 신규 등록용 xlsx 양식을 내려받습니다. (ADMIN 전용)")
+	@GetMapping("/admin/manual-excel/template")
+	public ResponseEntity<byte[]> manualExcelTemplate() {
+		return ResponseEntity.ok()
+				.header(HttpHeaders.CONTENT_DISPOSITION,
+						ContentDisposition.attachment().filename("scholarship-manual-template.xlsx").toString())
+				.contentType(MediaType.parseMediaType(
+						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+				.body(scholarshipManualExcelService.template());
+	}
+
+	@Operation(summary = "통합 수기 등록 엑셀 업로드",
+			description = """
+					4개 시트의 임시키가 같은 행을 한 장학금으로 묶어 신규 등록합니다.
+					dryRun=true는 형식과 값을 검사만 하며 DB와 S3를 변경하지 않습니다.
+					dryRun=false일 때 각 장학금을 통합 수기 등록 API와 같은 방식으로 저장합니다. (ADMIN 전용)
+					""")
+	@PostMapping("/admin/manual-excel")
+	public ApiResponse<ManualExcelImportResult> importManualExcel(
+			@AuthenticationPrincipal String actorId,
+			@RequestPart("file") MultipartFile file,
+			@RequestParam(defaultValue = "true") boolean dryRun) {
+		ManualExcelImportResult result = scholarshipManualExcelService.importFile(file, dryRun);
+		if (!dryRun) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.EXCEL_IMPORT, null, null,
+					"통합 신규등록 %d건, 오류 %d건, 파일=%s".formatted(
+							result.createdRows(), result.errorCount(), file.getOriginalFilename()));
+		}
+		return ApiResponse.ok(result);
+	}
+
 	@Operation(summary = "장학금 직접 수정",
 			description = "보낸 필드만 반영한다(부분 수정). 수집분·수기분 모두 대상. (ADMIN 전용)")
 	@PatchMapping("/manual/{scholarshipId}")
@@ -383,10 +501,10 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId,
 			@Valid @RequestBody ScholarshipManualRequest request) {
-		ScholarshipManualResponse result = scholarshipManualService.update(scholarshipId, request);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
-				"SCHOLARSHIP", scholarshipId, result.title());
-		return ApiResponse.ok(result);
+		ScholarshipAdminChangeResult result = scholarshipManualService.updateWithSnapshot(scholarshipId, request);
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
+				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+		return ApiResponse.ok(result.response());
 	}
 
 	@Operation(summary = "장학금 내리기",
@@ -395,9 +513,9 @@ public class ScholarshipAdminController {
 	public ApiResponse<Void> deleteManual(
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId) {
-		scholarshipManualService.delete(scholarshipId);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
-				"SCHOLARSHIP", scholarshipId, null);
+		ScholarshipAdminChangeResult result = scholarshipManualService.deleteWithSnapshot(scholarshipId);
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
+				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
 		return ApiResponse.ok();
 	}
 

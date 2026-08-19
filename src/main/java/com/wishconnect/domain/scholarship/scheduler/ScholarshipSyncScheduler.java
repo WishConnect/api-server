@@ -14,6 +14,7 @@ import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
+import com.wishconnect.global.operation.AdminJobRunService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +47,7 @@ public class ScholarshipSyncScheduler {
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
+	private final AdminJobRunService adminJobRunService;
 
 	/**
 	 * 한 배치에서 보완할 최대 건수.
@@ -81,6 +83,7 @@ public class ScholarshipSyncScheduler {
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
+		Long runId = adminJobRunService.start("DAILY_SCHOLARSHIP_PIPELINE", "SCHEDULED", null);
 		log.info("[SyncBatch] 장학금 일일 동기화 시작");
 		try {
 			int closedCount = scholarshipSyncService.closeExpired();
@@ -100,6 +103,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.error("[SyncBatch] 동기화 실패", e);
+			adminJobRunService.fail(runId, e);
 			return;
 		}
 		try {
@@ -109,6 +113,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 대학 공지 수집 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "대학 공지 수집", e);
 		}
 		try {
 			// 게시판 구조가 공통 규칙으로 묶이지 않아 대학별 클래스로 처리하는 곳들.
@@ -119,6 +124,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 전용 수집기 실행 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "전용 대학 수집", e);
 		}
 		try {
 			// 수집 바로 다음에 온다. 수집기는 raw_html 만 저장하므로, 이 단계가 없으면
@@ -130,6 +136,7 @@ public class ScholarshipSyncScheduler {
 					parsing.failedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] LLM 파싱 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "대학 공지 LLM 파싱", e);
 		}
 		try {
 			// 원본과 끊긴 장학금은 아무도 못 찾는 행이 된다. 조용히 쌓이는 게 가장 나빴다 —
@@ -140,6 +147,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 고아 점검 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "고아 데이터 점검", e);
 		}
 		try {
 			// 공공데이터는 제목·기간이 이미 정확하므로 조건·서류만 채운다. 모집 중이면서
@@ -153,6 +161,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 공공데이터 조건 보강 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "공공데이터 조건 보강", e);
 		}
 		try {
 			// 파싱이 끝난 뒤라야 새로 들어온 공고까지 중복 검사 대상이 된다.
@@ -163,6 +172,7 @@ public class ScholarshipSyncScheduler {
 					merge.failedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 중복 후보 탐지 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "중복 후보 탐지", e);
 		}
 		try {
 			ConditionExtractionResponse extraction = conditionExtractionService.extract();
@@ -170,6 +180,7 @@ public class ScholarshipSyncScheduler {
 					extraction.targetCount(), extraction.extractedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 조건 추출 실패(동기화 결과에는 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "조건 추출", e);
 		}
 		try {
 			// 수집 직후에 돌려야 새로 들어온 공고가 그날 바로 상세 URL·첨부·포스터를 갖는다.
@@ -180,6 +191,8 @@ public class ScholarshipSyncScheduler {
 					enrichment.documentLinked(), enrichment.skippedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 자동 보완 실패(다른 스텝에 영향 없음): {}", e.getMessage());
+			adminJobRunService.warn(runId, "상세·첨부·이미지 보완", e);
 		}
+		adminJobRunService.succeed(runId, "장학금 일일 파이프라인 완료");
 	}
 }

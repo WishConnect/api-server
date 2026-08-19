@@ -26,10 +26,22 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 	@Override
 	public void commence(HttpServletRequest request, HttpServletResponse response,
 			AuthenticationException authException) throws IOException {
+		if (isAdminView(request.getRequestURI())) {
+			response.sendRedirect(request.getContextPath() + "/admin/login.html");
+			return;
+		}
 		ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
 		response.setStatus(errorCode.getStatus().value());
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 		response.setCharacterEncoding(StandardCharsets.UTF_8.name());
 		objectMapper.writeValue(response.getWriter(), ApiResponse.fail(errorCode.getMessage()));
+	}
+
+	private boolean isAdminView(String path) {
+		return path.startsWith("/admin/")
+				|| path.startsWith("/swagger-ui/")
+				|| "/swagger-ui.html".equals(path)
+				|| path.startsWith("/v3/api-docs/")
+				|| "/v3/api-docs".equals(path);
 	}
 }

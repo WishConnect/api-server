@@ -1,5 +1,7 @@
 package com.wishconnect.global.audit;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,7 @@ public class AdminAuditLogService {
 	private static final int DETAIL_MAX = 1000;
 
 	private final AdminAuditLogRepository adminAuditLogRepository;
+	private final ObjectMapper objectMapper;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void record(UUID actorId, AdminAction action, String targetType, Long targetId, String detail) {
@@ -42,6 +45,19 @@ public class AdminAuditLogService {
 		}
 	}
 
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void recordChange(UUID actorId, AdminAction action, String targetType, Long targetId,
+			String detail, Object before, Object after) {
+		try {
+			adminAuditLogRepository.save(AdminAuditLog.builder()
+					.actorId(actorId).action(action).targetType(targetType).targetId(targetId)
+					.detail(truncate(detail)).beforeJson(json(before)).afterJson(json(after)).build());
+		} catch (RuntimeException | JsonProcessingException e) {
+			log.error("[AdminAudit] 변경 스냅샷 기록 실패 actor={} action={} target={}/{}",
+					actorId, action, targetType, targetId, e);
+		}
+	}
+
 	@Transactional(readOnly = true)
 	public Page<AdminAuditLog> find(AdminAction action, Pageable pageable) {
 		return action == null
@@ -55,5 +71,9 @@ public class AdminAuditLogService {
 			return detail;
 		}
 		return detail.substring(0, DETAIL_MAX - 3) + "...";
+	}
+
+	private String json(Object value) throws JsonProcessingException {
+		return value == null ? null : objectMapper.writeValueAsString(value);
 	}
 }
