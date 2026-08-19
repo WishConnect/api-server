@@ -19,6 +19,7 @@ import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
 import com.wishconnect.domain.application.repository.EssayRepository;
 import com.wishconnect.domain.notification.service.NotificationService;
+import com.wishconnect.domain.scholarship.entity.RequirementLevel;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipEventType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -167,6 +168,7 @@ public class EssayApplicationService {
 
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		requireEssay(scholarship);
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
@@ -192,6 +194,23 @@ public class EssayApplicationService {
 		scholarshipEventService.record(userId, scholarshipId, ScholarshipEventType.ESSAY_START);
 
 		return new CreateApplicationResponse(essay.getId(), essay.getStatus(), questions.size());
+	}
+
+	/**
+	 * 자기소개서를 요구하지 않는 장학금에는 지원서를 만들지 않는다.
+	 *
+	 * <p>공고가 서류만으로 선발한다고 밝혔는데 지원서 작성 화면을 띄우면, 학생이 쓸 필요 없는 글을
+	 * 쓰고 AI 크레딧까지 쓴다. 이런 장학금은 신청 홈페이지로 바로 보내는 것이 맞다.
+	 *
+	 * <p><b>{@code null} 은 막지 않는다.</b> {@link RequirementLevel} 의 null 은 "공고에 언급이 없어
+	 * 모른다"는 뜻이고 {@link RequirementLevel#NOT_REQUIRED}("확인했고 없다")와 다르다. 모르는 것을
+	 * 없는 것으로 취급하면, 아직 파싱되지 않았거나 본문이 부실한 공고에서 지원서 작성이 통째로
+	 * 막힌다. 막는 쪽이 더 해로우므로 확실할 때만 막는다.
+	 */
+	private void requireEssay(Scholarship scholarship) {
+		if (scholarship.getEssayRequirement() == RequirementLevel.NOT_REQUIRED) {
+			throw new CustomException(ErrorCode.ESSAY_NOT_REQUIRED);
+		}
 	}
 
 	private void createWritingNotificationSafely(Essay essay) {
