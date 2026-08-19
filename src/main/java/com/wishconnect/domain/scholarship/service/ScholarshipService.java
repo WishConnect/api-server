@@ -21,12 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +36,12 @@ public class ScholarshipService {
 
     private final ScholarshipRepository scholarshipRepository;
     private final ScrapRepository scrapRepository;
+
+    private static final Map<String, List<String>> KEYWORD_ALIASES = Map.of(
+            "건대", List.of("건국대학교"),
+            "외대", List.of("한국외국어대학교"),
+            "시립대", List.of("서울시립대학교")
+    );
 
     public ScholarshipSearchResponse search(
             UUID userId, String keyword, String category,
@@ -50,6 +57,14 @@ public class ScholarshipService {
             throw new CustomException(ErrorCode.LOGIN_REQUIRED);
         }
 
+        if (page < 1 || size < 1) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+
+        String normalizedKeyword = normalizeKeyword(keyword);
+        List<String> searchKeywords = expandKeywords(normalizedKeyword);
+        ScholarshipType keywordType = resolveKeywordType(normalizedKeyword);
+
         // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
         // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
         ScholarshipType categoryType = parseCategory(category);
@@ -62,14 +77,14 @@ public class ScholarshipService {
 
         if (scrappedOnly) {
             // JOIN으로 한 번에 처리 (ID 목록 따로 안 뽑음)
-            scholarshipPage = (keyword == null || keyword.isBlank())
+            scholarshipPage = (normalizedKeyword == null)
                     ? scholarshipRepository.findScrappedByUser(userId, categoryType, pageable)
-                    : scholarshipRepository.searchScrappedByUserAndKeyword(userId, keyword, categoryType, pageable);
+                    : searchScrappedBySort(userId, normalizedKeyword, searchKeywords, keywordType, categoryType, sort, pageable);
 
-        } else if (keyword == null || keyword.isBlank()) {
+        } else if (normalizedKeyword == null) {
             scholarshipPage = scholarshipRepository.findAllWithoutKeyword(categoryType, pageable);
         } else {
-            scholarshipPage = scholarshipRepository.searchByKeyword(keyword, categoryType, pageable);
+            scholarshipPage = searchBySort(normalizedKeyword, searchKeywords, keywordType, categoryType, sort, pageable);
         }
 
         // 4.유저의 스크랩 여부 확인
@@ -90,12 +105,87 @@ public class ScholarshipService {
         );
 
         return new ScholarshipSearchResponse(
-                keyword,                                           // keyword
+                normalizedKeyword,                                 // keyword
                 (int) scholarshipPage.getTotalElements(),          // totalCount
                 results,                                           // results
                 pagination                                         // pagination
         );
 
+    }
+
+    private Page<Scholarship> searchBySort(
+            String keyword,
+            List<String> searchKeywords,
+            ScholarshipType keywordType,
+            ScholarshipType category,
+            String sort,
+            Pageable pageable
+    ) {
+        if ("relevance".equals(sort)) {
+            return scholarshipRepository.searchByKeywordOrderByRelevance(
+                    withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+        }
+        return scholarshipRepository.searchByKeyword(
+                withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+    }
+
+    private Page<Scholarship> searchScrappedBySort(
+            UUID userId,
+            String keyword,
+            List<String> searchKeywords,
+            ScholarshipType keywordType,
+            ScholarshipType category,
+            String sort,
+            Pageable pageable
+    ) {
+        if ("relevance".equals(sort)) {
+            return scholarshipRepository.searchScrappedByUserAndKeywordOrderByRelevance(
+                    userId, withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+        }
+        return scholarshipRepository.searchScrappedByUserAndKeyword(
+                userId, withoutSpaces(keyword), searchKeywords, keywordType, category, pageable);
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String trimmed = keyword.trim();
+        return trimmed.isEmpty() ? null : trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private String withoutSpaces(String value) {
+        return value.replaceAll("\\s+", "");
+    }
+
+    private List<String> expandKeywords(String keyword) {
+        if (keyword == null) {
+            return List.of();
+        }
+        List<String> keywords = new ArrayList<>();
+        keywords.add(keyword);
+        keywords.addAll(KEYWORD_ALIASES.getOrDefault(keyword, List.of()));
+        return keywords.stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+    }
+
+    private ScholarshipType resolveKeywordType(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String keywordNoSpace = withoutSpaces(keyword);
+        if (keywordNoSpace.contains("근로")) {
+            return ScholarshipType.WORK_STUDY;
+        }
+        if (keywordNoSpace.contains("교내")) {
+            return ScholarshipType.INTERNAL;
+        }
+        if (keywordNoSpace.contains("교외")) {
+            return ScholarshipType.EXTERNAL;
+        }
+        return null;
     }
 
     private Set<Long> getScrapped(UUID userId, List<Scholarship> scholarships) {

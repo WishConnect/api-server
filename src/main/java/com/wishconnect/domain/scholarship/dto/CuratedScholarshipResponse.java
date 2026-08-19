@@ -33,21 +33,13 @@ import java.util.List;
  */
 @Schema(description = "인증·온보딩 상태에 따라 다른 섹션을 채우는 장학금 큐레이팅 응답")
 public record CuratedScholarshipResponse(
-		CuratedViewMode viewMode,
-		String rankerVersion,
-		List<ScholarshipCard> featured,
-		int profileCompletionRate,
-		List<ScholarshipCard> campusScholarships,
-		List<ScholarshipCard> ineligibleScholarships,
-		List<ScholarshipCard> otherScholarships,
-		Pagination pagination
 		@Schema(description = "프론트가 그려야 할 큐레이팅 화면 상태", example = "PERSONALIZED") CuratedViewMode viewMode,
 		@Schema(description = "현재 추천 점수식 버전. 이벤트 요청에 그대로 전달", example = "v2") String rankerVersion,
 		@Schema(description = "히어로 캐러셀. GUEST는 빈 배열, 나머지는 최대 5건") List<ScholarshipCard> featured,
 		@Schema(description = "프로필 완성도(0~100)", example = "80") int profileCompletionRate,
 		@Schema(description = "PERSONALIZED에서만 채워지는 사용자 소속 학교의 교내 장학금") List<ScholarshipCard> campusScholarships,
-		@Schema(description = "GUEST의 일반 목록 또는 PERSONALIZED의 지원 가능한 교외 추천 목록") List<ScholarshipCard> otherScholarships,
 		@Schema(description = "PERSONALIZED에서 필수 조건을 충족하지 못한 장학금") List<ScholarshipCard> ineligibleScholarships,
+		@Schema(description = "GUEST의 일반 목록 또는 PERSONALIZED의 지원 가능한 교외 추천 목록") List<ScholarshipCard> otherScholarships,
 		@Schema(description = "otherScholarships에 대한 1 기반 페이징 정보") Pagination pagination
 ) {
 

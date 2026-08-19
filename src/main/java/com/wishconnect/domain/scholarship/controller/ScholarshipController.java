@@ -72,12 +72,6 @@ public class ScholarshipController {
 	 * <p>{@code sort} 는 비로그인 화면의 드롭다운(최신 등록순/마감 임박순)이다. 로그인 상태에는
 	 * 화면에 드롭다운이 없어 무시된다. category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
 	 */
-	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
-			GUEST, ONBOARDING_REQUIRED, PERSONALIZED가 모두 사용하는 API입니다.
-			PERSONALIZED의 featured는 지원 가능한 전체를 점수 내림차순·동점이면 마감 임박순으로 내려줍니다.
-			campusScholarships는 지원 가능하고 운영기관에 사용자 학교명이 포함된 교내 장학금입니다.
-			유형·마감·금액·스크랩 필터는 마지막 영역의 ineligibleScholarships와 otherScholarships에만 공통 적용됩니다.
-			""")
 	@GetMapping("/curated")
 	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
 			비로그인·온보딩 미완료·온보딩 완료 사용자가 모두 호출하는 동일 API입니다.
