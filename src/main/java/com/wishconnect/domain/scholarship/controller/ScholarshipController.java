@@ -77,15 +77,10 @@ public class ScholarshipController {
 			PERSONALIZED의 featured는 지원 가능한 전체를 점수 내림차순·동점이면 마감 임박순으로 내려줍니다.
 			campusScholarships는 지원 가능하고 운영기관에 사용자 학교명이 포함된 교내 장학금입니다.
 			유형·마감·금액·스크랩 필터는 마지막 영역의 ineligibleScholarships와 otherScholarships에만 공통 적용됩니다.
+			응답의 rankerVersion과 카드별 section은 POST /events에 그대로 전달해야 합니다.
+			category는 현재 수용만 하고 필터링하지 않으며, sort는 GUEST에서만 사용합니다.
 			""")
 	@GetMapping("/curated")
-	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
-			비로그인·온보딩 미완료·온보딩 완료 사용자가 모두 호출하는 동일 API입니다.
-			- GUEST: 개인화 없이 모집 중 장학금을 sort 기준으로 제공합니다.
-			- ONBOARDING_REQUIRED: 마감 임박 featured만 제공하고 개인화 영역은 잠금 처리합니다.
-			- PERSONALIZED: 프로필 기반 자격 판정·점수 계산 후 featured, campus, other, ineligible로 나눕니다.
-			응답의 rankerVersion과 카드별 section은 POST /events에 그대로 전달해야 합니다. category는 현재 수용만 하고 필터링하지 않으며, sort는 GUEST에서만 사용합니다.
-			""")
 	public ApiResponse<CuratedScholarshipResponse> getCurated(
 			@AuthenticationPrincipal String userIdStr,
 			@RequestParam(defaultValue = "DEADLINE") CuratedSort sort,
