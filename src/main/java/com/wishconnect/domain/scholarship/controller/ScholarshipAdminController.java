@@ -4,6 +4,7 @@ import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
+import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
@@ -99,6 +100,11 @@ public class ScholarshipAdminController {
 	@GetMapping("/admin/overview")
 	public ApiResponse<AdminOverviewResponse> adminOverview() {
 		return ApiResponse.ok(scholarshipAdminOverviewService.overview());
+	}
+
+	@GetMapping("/admin/always-open")
+	public ApiResponse<Page<AlwaysOpenScholarshipResponse>> alwaysOpen(Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.alwaysOpen(pageable));
 	}
 
 	@Operation(summary = "최근 수집 장학금 목록",

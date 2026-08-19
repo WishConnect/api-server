@@ -4,11 +4,13 @@ import com.wishconnect.domain.common.repository.ImageRepository;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
+import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipSourceAggregate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -39,6 +41,7 @@ public class ScholarshipAdminOverviewService {
 	private static final int MAX_ROWS = 200;
 
 	private final ScholarshipRepository scholarshipRepository;
+	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ImageRepository imageRepository;
 
@@ -69,6 +72,16 @@ public class ScholarshipAdminOverviewService {
 				.toList();
 	}
 
+	public org.springframework.data.domain.Page<AlwaysOpenScholarshipResponse> alwaysOpen(
+			org.springframework.data.domain.Pageable pageable) {
+		return scholarshipRepository
+				.findByRecruitmentStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+						RecruitmentStatus.ALWAYS_OPEN, pageable)
+				.map(s -> new AlwaysOpenScholarshipResponse(s.getId(), s.getTitle(), s.getProvider(),
+						s.getCreatedAt(), scholarshipConditionRepository.countByScholarshipId(s.getId()),
+						StringUtils.hasText(s.getDetailUrl()) ? s.getDetailUrl() : s.getHomepageUrl()));
+	}
+
 	private AdminOverviewResponse.RawSummary rawSummary() {
 		long pending = rawScholarshipRepository.countByParseStatus(ParseStatus.PENDING);
 		long parsed = rawScholarshipRepository.countByParseStatus(ParseStatus.PARSED);
@@ -86,6 +99,7 @@ public class ScholarshipAdminOverviewService {
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.OPEN),
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.UPCOMING),
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.CLOSED),
+				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.ALWAYS_OPEN),
 				scholarshipRepository.countByCreatedAtGreaterThanEqual(LocalDate.now().atStartOfDay()),
 				scholarshipRepository.findLastSyncedAt());
 	}

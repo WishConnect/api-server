@@ -89,7 +89,7 @@ class ScholarshipManualServiceTest {
 
 		ScholarshipManualResponse response = scholarshipManualService.update(1L,
 				new ScholarshipManualRequest(
-						"새 제목", null, null, null, null, null, null, null, 2_000_000L, null));
+						"새 제목", null, null, null, null, null, null, null, 2_000_000L, null, null));
 
 		assertThat(response.title()).isEqualTo("새 제목");
 		assertThat(response.amount()).isEqualTo(2_000_000L);
@@ -108,9 +108,24 @@ class ScholarshipManualServiceTest {
 		given(scholarshipRepository.findById(1L)).willReturn(Optional.of(deleted));
 
 		assertThatThrownBy(() -> scholarshipManualService.update(1L,
-				new ScholarshipManualRequest("새 제목", null, null, null, null, null, null, null, null, null)))
+				new ScholarshipManualRequest("새 제목", null, null, null, null, null, null, null, null, null, null)))
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.SCHOLARSHIP_NOT_FOUND);
+	}
+
+	@Test
+	@DisplayName("ALWAYS_OPEN 공고를 관리자가 CLOSED로 확정하면 노출에서 내린다")
+	void update_closesAlwaysOpen() {
+		Scholarship existing = Scholarship.builder().title("충원 시 마감")
+				.recruitmentStatus(RecruitmentStatus.ALWAYS_OPEN).build();
+		given(scholarshipRepository.findById(1L)).willReturn(Optional.of(existing));
+
+		ScholarshipManualResponse response = scholarshipManualService.update(1L,
+				new ScholarshipManualRequest(null, null, null, null, null, null, null, null, null, null,
+						RecruitmentStatus.CLOSED));
+
+		assertThat(response.recruitmentStatus()).isEqualTo(RecruitmentStatus.CLOSED);
+		assertThat(existing.isActive()).isFalse();
 	}
 
 	@Test

@@ -39,6 +39,8 @@ public class ScholarshipEventService {
 							.position(event.position())
 							.matchScore(event.matchScore())
 							.viewMode(event.viewMode())
+							.section(event.section())
+							.rankerVersion(event.rankerVersion())
 							.build())
 					.toList();
 			scholarshipEventRepository.saveAll(events);

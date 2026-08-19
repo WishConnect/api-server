@@ -47,6 +47,10 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	/**
 	 * 공공데이터 중 <b>지금 모집 중이고 조건이 비어 있는</b> 것.
 	 *
+	 * <p>장학금 하나당 원본 하나만 집는다. 공공데이터는 같은 장학금을 가리키는 원본이 둘씩
+	 * 있는 경우가 있어(29건 중 13건), 원본 기준으로 뽑으면 같은 장학금을 두 번 파싱한다.
+	 * 실제로 25건을 처리하면서 38번 호출해 13번어치 크레딧을 버렸다.
+	 *
 	 * <p>마감된 3,571건은 사용자에게 안 보이므로 크레딧을 쓰지 않는다. 조건이 이미 있어도
 	 * 대상이다 — 기존 값은 필드를 유형에 그대로 꽂아 만든 것이라 같은 조건이 두 번 들어가고
 	 * "기타" 가 조건 행이 돼 있었다. 소득·성적 요건도 33건 중 3건·7건뿐이었다.
@@ -56,6 +60,8 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 			 where r.source = 'KOSAF_SCHOLARSHIP'
 			   and r.scholarship is not null
 			   and r.scholarship.applicationEndAt >= current_timestamp
+			   and r.id = (select min(r2.id) from RawScholarship r2
+			                where r2.scholarship = r.scholarship)
 			 order by r.scholarship.applicationEndAt asc
 			""")
 	List<RawScholarship> findOpenPublicDataTargets(Pageable pageable);

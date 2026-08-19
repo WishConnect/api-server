@@ -73,6 +73,9 @@ public class ScholarshipManualService {
 				request.amount(),
 				request.homepageUrl()
 		);
+		if (request.recruitmentStatus() != null) {
+			scholarship.updateRecruitmentStatusByAdmin(request.recruitmentStatus());
+		}
 		log.info("[Scholarship] 관리자 수정 (scholarshipId={})", scholarshipId);
 		return ScholarshipManualResponse.from(scholarship);
 	}

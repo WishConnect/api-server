@@ -1,0 +1,2 @@
+ALTER TABLE scholarship
+    ADD COLUMN IF NOT EXISTS contact VARCHAR(500);
