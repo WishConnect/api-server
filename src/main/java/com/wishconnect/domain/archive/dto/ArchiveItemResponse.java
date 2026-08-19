@@ -13,6 +13,7 @@ public record ArchiveItemResponse(
         String urgency,
         String posterUrl,
         String applicationStatus,
+        boolean isScrapped,
         ProgressDto progress
 ) {
     public record ProgressDto(

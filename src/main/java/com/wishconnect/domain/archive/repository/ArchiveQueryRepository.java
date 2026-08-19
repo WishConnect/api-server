@@ -12,13 +12,17 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
 
     @Query(
             value = """
-                SELECT s.id AS scholarshipId, e.id AS essayId, e.status AS essayStatus
+                SELECT s.id AS scholarshipId, e.id AS essayId, e.status AS essayStatus,
+                    EXISTS (
+                        SELECT 1 FROM scrap sc
+                        WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid)
+                    ) AS isScrapped
                 FROM scholarship s
                 LEFT JOIN essay e ON e.scholarship_id = s.id AND e.user_id = CAST(:userId AS uuid)
                 WHERE s.deleted_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
-                    OR e.status IN ('IN_PROGRESS', 'COMPLETED')
+                    OR e.id IS NOT NULL
                 )
                 AND (CAST(:keyword AS varchar) IS NULL OR s.title LIKE CONCAT('%', CAST(:keyword AS varchar), '%'))
                 AND (
@@ -35,7 +39,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                 WHERE s.deleted_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
-                    OR e.status IN ('IN_PROGRESS', 'COMPLETED')
+                    OR e.id IS NOT NULL
                 )
                 AND (CAST(:keyword AS varchar) IS NULL OR s.title LIKE CONCAT('%', CAST(:keyword AS varchar), '%'))
                 AND (
