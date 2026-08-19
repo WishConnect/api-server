@@ -83,6 +83,21 @@ public enum ErrorCode {
 	/** LLM 이 사전 질문을 하나도 만들지 못한 경우. 재시도하면 대개 해소되므로 사용자에게 재시도를 안내한다. */
 	INTERVIEW_QUESTION_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE,
 			"사전 질문을 생성하지 못했습니다. 잠시 후 다시 시도해주세요."),
+	/**
+	 * 공고가 자기소개서를 요구하지 않는 장학금에 지원서를 만들려 한 경우.
+	 *
+	 * <p>사용자 잘못이 아니라 화면 분기 문제이므로, 프론트는 이 코드를 받으면 지원서 작성 대신
+	 * 신청 홈페이지로 안내해야 한다. {@code essayRequirement} 가 NOT_REQUIRED 일 때만 발생하며,
+	 * null(공고에 언급 없음)은 판단 불가라 막지 않는다.
+	 */
+	ESSAY_NOT_REQUIRED(HttpStatus.BAD_REQUEST,
+			"이 장학금은 자기소개서를 요구하지 않습니다. 신청 홈페이지에서 바로 지원하세요."),
+	/** 공고가 면접을 보지 않는다고 밝힌 장학금에 면접 예상 질문을 요청한 경우. */
+	INTERVIEW_NOT_REQUIRED(HttpStatus.BAD_REQUEST,
+			"이 장학금은 면접을 진행하지 않습니다."),
+	/** LLM 이 면접 예상 질문을 하나도 만들지 못한 경우. 재시도하면 대개 해소된다. */
+	INTERVIEW_PREP_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE,
+			"면접 예상 질문을 생성하지 못했습니다. 잠시 후 다시 시도해주세요."),
 	ANSWER_EXCEEDS_CHAR_LIMIT(HttpStatus.BAD_REQUEST, "답변이 글자수 제한을 초과했습니다."),
 	ANSWER_CONTENT_REQUIRED(HttpStatus.BAD_REQUEST, "답변 본문이 필요합니다."),
 
