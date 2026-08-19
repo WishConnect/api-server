@@ -3,6 +3,7 @@ package com.wishconnect.domain.common.repository;
 import com.wishconnect.domain.common.entity.Region;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RegionRepository extends JpaRepository<Region, Long> {
@@ -11,6 +12,7 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
 	List<Region> findByParentIsNullOrderByIdAsc();
 
 	/** 특정 시도의 시군구 목록. */
+	@EntityGraph(attributePaths = "parent")
 	List<Region> findByParent_IdOrderByIdAsc(Long parentId);
 
 	/**
