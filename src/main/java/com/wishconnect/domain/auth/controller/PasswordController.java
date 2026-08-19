@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 
 @Tag(name = "인증 - 비밀번호", description = "비밀번호 재설정 요청·확정")
 @RestController
@@ -26,6 +27,7 @@ public class PasswordController {
 
 	/** 비밀번호 재설정 코드 발송 (LOCAL 전용, 응답은 항상 동일). */
 	@PostMapping("/reset-request")
+	@Operation(summary = "비밀번호 재설정 코드 발송", description = "LOCAL 계정의 아이디·이메일이 일치하면 인증코드를 발송합니다. 계정 존재 여부는 응답으로 노출하지 않습니다.")
 	public ApiResponse<VerificationCodeResponse> resetRequest(
 			@Valid @RequestBody PasswordResetCodeRequest request) {
 		long expiresIn = passwordResetService.requestReset(request.loginId(), request.email());
@@ -34,6 +36,7 @@ public class PasswordController {
 
 	/** 아이디·이메일과 인증 코드를 검증하고 일회성 재설정 토큰을 발급한다. */
 	@PostMapping("/verify")
+	@Operation(summary = "비밀번호 재설정 코드 확인", description = "인증코드를 확인하고 일회성 비밀번호 재설정 토큰을 발급합니다.")
 	public ApiResponse<PasswordResetVerifyResponse> verify(
 			@Valid @RequestBody PasswordResetVerifyRequest request) {
 		return ApiResponse.ok(passwordResetService.verifyCode(
@@ -42,6 +45,7 @@ public class PasswordController {
 
 	/** 새 비밀번호로 변경. */
 	@PostMapping("/reset")
+	@Operation(summary = "비밀번호 재설정", description = "일회성 재설정 토큰을 검증하고 LOCAL 계정의 비밀번호를 변경합니다.")
 	public ApiResponse<PasswordResetResponse> reset(@Valid @RequestBody PasswordResetRequest request) {
 		passwordResetService.resetPassword(request.resetToken(), request.newPassword());
 		return ApiResponse.ok(new PasswordResetResponse(true));

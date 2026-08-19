@@ -103,6 +103,7 @@ public class ScholarshipAdminController {
 	}
 
 	@GetMapping("/admin/always-open")
+	@Operation(summary = "상시모집 장학금 관리 목록", description = "마감일이 없어 자동 마감할 수 없는 ALWAYS_OPEN 공고를 오래된 순으로 조회합니다. 원문 링크를 확인한 뒤 PATCH /manual/{scholarshipId}로 CLOSED 처리할 수 있습니다.")
 	public ApiResponse<Page<AlwaysOpenScholarshipResponse>> alwaysOpen(Pageable pageable) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.alwaysOpen(pageable));
 	}

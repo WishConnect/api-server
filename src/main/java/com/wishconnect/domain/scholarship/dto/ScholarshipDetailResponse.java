@@ -1,5 +1,6 @@
 package com.wishconnect.domain.scholarship.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -8,6 +9,7 @@ import java.util.List;
  * summary = 요약 정보 테이블(조건 원문 매핑), selectionSchedule = 선발 일정 타임라인,
  * requiredDocuments = 제출 서류 목록.
  */
+@Schema(description = "장학금 상세·제출·자격 판정·추천 근거 응답")
 public record ScholarshipDetailResponse(
 		Long scholarshipId,
 		String title,
@@ -22,15 +24,15 @@ public record ScholarshipDetailResponse(
 		Summary summary,
 		List<ScheduleStep> selectionSchedule,
 		List<RequiredDocument> requiredDocuments,
-		List<String> matchReasons,
-		List<ConditionCheck> conditionChecks,
+		@Schema(description = "프로필과 공고를 대조한 추천 이유") List<String> matchReasons,
+		@Schema(description = "조건별 MATCH·MISMATCH·UNKNOWN 자격 판정") List<ConditionCheck> conditionChecks,
 		/**
 		 * 한 공고에 여러 장학금이 실려 있으면 true. 이때 {@code conditionChecks} 의 판정은
 		 * 전부 {@code UNKNOWN} 이다 — 조건이 서로 다른 장학금 것이라 판정할 수 없다.
 		 * 화면은 "여러 장학금이 포함된 공고입니다. 원문에서 확인하세요" 로 안내하면 된다.
 		 */
-		boolean combined,
-		Selection selection
+		@Schema(description = "하나의 공고에 서로 다른 장학금이 여러 개 포함되었는지") boolean combined,
+		@Schema(description = "자기소개서·면접 필요 여부와 공고 근거") Selection selection
 ) {
 
 	/**
@@ -43,6 +45,7 @@ public record ScholarshipDetailResponse(
 	 * 근거 문장을 함께 보여주는 편이 신뢰를 산다. 특히 {@code CONDITIONAL} 은
 	 * "무슨 조건인지" 가 원문에 들어 있다 — "서류 합격자에 한해".
 	 */
+	@Schema(description = "자기소개서·면접 요구사항. null은 판단 불가, NOT_REQUIRED는 불필요를 확인했다는 뜻")
 	public record Selection(
 			String essayRequirement,
 			String essayEvidence,
@@ -50,6 +53,7 @@ public record ScholarshipDetailResponse(
 			String interviewEvidence) {
 	}
 
+	@Schema(description = "값이 없을 수 있는 상세 요약 필드. 프론트는 null·빈 값을 제외해 가변 목록으로 표시")
 	public record Summary(
 			String targetAudience,
 			String supportAmount,
@@ -83,6 +87,7 @@ public record ScholarshipDetailResponse(
 	 *
 	 * <p>{@code necessity} 가 {@code PREFERRED} 인 조건은 불충족이어도 지원할 수 있다(우대사항).
 	 */
+	@Schema(description = "자격·우대 조건 1건에 대한 현재 사용자 판정")
 	public record ConditionCheck(
 			String conditionType,
 			String necessity,

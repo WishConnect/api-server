@@ -32,6 +32,7 @@ public class UniversityController {
 
 	/** 학교명을 키워드로 검색한다(온보딩 학교 선택용). */
 	@GetMapping("/search")
+	@Operation(summary = "학교 검색", description = "온보딩·프로필에서 사용할 대학명을 키워드로 검색합니다.")
 	public ApiResponse<List<UniversityResponse>> search(@RequestParam String keyword) {
 		return ApiResponse.ok(universitySearchService.search(keyword));
 	}
@@ -52,7 +53,8 @@ public class UniversityController {
 	}
 
 	/** 마지막(또는 진행 중) 동기화 상태를 조회한다. */
-	@Operation(summary = "학교·전공 동기화 상태 조회(ADMIN)")
+	@Operation(summary = "학교·전공 동기화 상태 조회(ADMIN)",
+			description = "현재 진행 중이거나 가장 최근에 완료된 학교·전공 마스터 동기화 상태와 처리 건수를 반환합니다.")
 	@PreAuthorize("hasRole('ADMIN')")
 	@GetMapping("/sync/status")
 	public ApiResponse<AcademicInfoSyncStatusResponse> syncStatus() {
