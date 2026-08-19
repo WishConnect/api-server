@@ -2,18 +2,26 @@ package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.collector.DedicatedNoticeCollectors;
 import com.wishconnect.domain.scholarship.collector.UnivNoticeCollector;
+import com.wishconnect.domain.scholarship.dto.AdminImageRowResponse;
+import com.wishconnect.domain.scholarship.dto.AdminImageUrlRequest;
+import com.wishconnect.domain.scholarship.dto.AdminIntakeRowResponse;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
+import com.wishconnect.domain.scholarship.dto.AdminRawDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipEditSnapshot;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.CollectResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
+import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
+import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
+import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
@@ -29,8 +37,10 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipReportResponse;
 import com.wishconnect.domain.scholarship.entity.ReportStatus;
+import com.wishconnect.domain.scholarship.entity.ReportReason;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
+import com.wishconnect.domain.scholarship.service.AdminScholarshipImageService;
 import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
@@ -69,6 +79,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -104,6 +115,7 @@ public class ScholarshipAdminController {
 	private final ScholarshipAdminOverviewService scholarshipAdminOverviewService;
 	private final ScholarshipExcelService scholarshipExcelService;
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
+	private final AdminScholarshipImageService adminScholarshipImageService;
 	private final AdminAuditLogService adminAuditLogService;
 
 	@Operation(summary = "데이터 현황 요약",
@@ -142,6 +154,25 @@ public class ScholarshipAdminController {
 		return ApiResponse.ok(scholarshipAdminOverviewService.recent(source, size));
 	}
 
+	@Operation(summary = "전일 신규 수집 원본 목록",
+			description = "기본은 한국 시간 기준 전날 수집된 raw_scholarship입니다. 날짜·출처·파싱상태·검색어로 좁힐 수 있습니다.")
+	@GetMapping("/admin/intake")
+	public ApiResponse<Page<AdminIntakeRowResponse>> adminIntake(
+			@RequestParam(required = false) LocalDate date,
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) ParseStatus status,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.intake(date, keyword, source, status, pageable));
+	}
+
+	@Operation(summary = "관리자 원본 통합 상세",
+			description = "파싱되지 않은 원본도 조회하며, 연결된 장학금이 있으면 조건·서류·이미지 상세를 함께 반환합니다.")
+	@GetMapping("/admin/raw/{rawId}")
+	public ApiResponse<AdminRawDetailResponse> adminRawDetail(@PathVariable Long rawId) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.rawDetail(rawId));
+	}
+
 	@Operation(summary = "관리자 장학금 전체 검색",
 			description = "제목·기관 검색과 출처·모집 상태·삭제 포함 여부로 파싱 결과를 조회합니다. "
 					+ "각 행은 누락 필드 여부를 함께 반환하며 ADMIN만 호출할 수 있습니다.")
@@ -169,15 +200,60 @@ public class ScholarshipAdminController {
 			description = "FAILED, SKIPPED, IMAGE_ONLY 원본을 최근 실패 순으로 조회합니다. "
 					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다.")
 	@GetMapping("/admin/failures")
-	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(Pageable pageable) {
-		return ApiResponse.ok(scholarshipAdminOverviewService.failures(pageable));
+	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) ParseStatus status,
+			@RequestParam(defaultValue = "false") boolean retryableOnly,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.failures(
+				keyword, source, status, retryableOnly, pageable));
 	}
 
 	@Operation(summary = "장학금 데이터 이상 탐지",
 			description = "날짜 역전, 종료일이 지난 OPEN, 기관·링크·조건 누락을 DB 규칙으로 탐지합니다.")
 	@GetMapping("/admin/anomalies")
-	public ApiResponse<Page<AdminScholarshipAnomalyResponse>> adminAnomalies(Pageable pageable) {
-		return ApiResponse.ok(scholarshipAdminOverviewService.anomalies(pageable));
+	public ApiResponse<Page<AdminScholarshipAnomalyResponse>> adminAnomalies(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) RecruitmentStatus status,
+			@RequestParam(required = false) String anomalyType,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.anomalies(
+				keyword, source, status, anomalyType, pageable));
+	}
+
+	@Operation(summary = "관리자 이미지 목록",
+			description = "장학금 연결 정보를 포함하며 이미지 없는 장학금도 필터로 조회합니다.")
+	@GetMapping("/admin/images")
+	public ApiResponse<Page<AdminImageRowResponse>> adminImages(
+			@RequestParam(required = false) String keyword,
+			@RequestParam(required = false) String source,
+			@RequestParam(required = false) Boolean hasImage,
+			Pageable pageable) {
+		return ApiResponse.ok(scholarshipAdminOverviewService.images(keyword, source, hasImage, pageable));
+	}
+
+	@Operation(summary = "장학금 이미지 URL 등록·교체",
+			description = "기존 이미지 행이 있으면 새 S3 객체로 교체합니다. 이전 S3 객체는 자동 삭제하지 않습니다.")
+	@PutMapping("/admin/scholarships/{scholarshipId}/image-url")
+	public ApiResponse<String> replaceImageUrl(@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId, @Valid @RequestBody AdminImageUrlRequest request) {
+		String url = adminScholarshipImageService.replaceFromUrl(scholarshipId, request.imageUrl());
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
+				"SCHOLARSHIP", scholarshipId, "이미지 URL 등록·교체");
+		return ApiResponse.ok(url);
+	}
+
+	@Operation(summary = "장학금 이미지 파일 등록·교체")
+	@PutMapping(value = "/admin/scholarships/{scholarshipId}/image-file",
+			consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public ApiResponse<String> replaceImageFile(@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId, @RequestPart("file") MultipartFile file) {
+		String url = adminScholarshipImageService.replaceFromUpload(scholarshipId, file);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
+				"SCHOLARSHIP", scholarshipId, "이미지 파일 등록·교체");
+		return ApiResponse.ok(url);
 	}
 
 	@Operation(summary = "장학금 엑셀 내보내기",
@@ -292,9 +368,25 @@ public class ScholarshipAdminController {
 	@GetMapping("/merge/candidates")
 	public ApiResponse<MergeCandidateResponse> listMergeCandidates(
 			@RequestParam(defaultValue = "PENDING") MergeCandidateStatus status,
+			@RequestParam(required = false) MergeCandidateOrigin origin,
+			@RequestParam(required = false) String keyword,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
-		return ApiResponse.ok(scholarshipDedupService.list(status, page, size));
+		return ApiResponse.ok(scholarshipDedupService.list(status, origin, keyword, page, size));
+	}
+
+	@Operation(summary = "관리자 수기 중복 후보 생성",
+			description = "두 장학금을 직접 선택해 승인 대기 큐에 올립니다. 생성만으로 병합되지 않습니다.")
+	@PostMapping("/merge/candidates/manual")
+	public ApiResponse<MergeCandidateResponse> createManualMergeCandidate(
+			@AuthenticationPrincipal String actorId,
+			@Valid @RequestBody ManualMergeCandidateRequest request) {
+		MergeCandidateResponse result = scholarshipDedupService.queueManual(request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_CANDIDATE_MANUAL_CREATE,
+				"SCHOLARSHIP", request.primaryScholarshipId(),
+				"수기 중복 후보: 유지 %d, 병합 %d".formatted(
+						request.primaryScholarshipId(), request.duplicateScholarshipId()));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "중복 장학금 병합 승인",
@@ -462,6 +554,36 @@ public class ScholarshipAdminController {
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
+	@Operation(summary = "실패 원본 수기 정제",
+			description = "LLM 대신 관리자가 원본을 구조화하고 기존 raw_scholarship을 새 장학금에 연결합니다.")
+	@PostMapping("/admin/raw/{rawId}/manual")
+	public ResponseEntity<ApiResponse<ScholarshipManualFullResponse>> createManualFromRaw(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long rawId,
+			@Valid @RequestBody ScholarshipManualFullRequest request) {
+		ScholarshipManualFullResponse result = scholarshipManualAggregateService.createFromRaw(rawId, request);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(), "원본 #" + rawId + " 수기 정제");
+		return ResponseEntity.status(201).body(ApiResponse.ok(result));
+	}
+
+	@Operation(summary = "장학금 통합 수기 수정",
+			description = "장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는 전달된 최종 목록으로 교체합니다.")
+	@PutMapping("/manual/{scholarshipId}/full")
+	public ApiResponse<ScholarshipManualFullResponse> updateManualFull(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody ScholarshipManualFullRequest request) {
+		AdminScholarshipEditSnapshot before = AdminScholarshipEditSnapshot.from(
+				scholarshipAdminOverviewService.detail(scholarshipId));
+		ScholarshipManualFullResponse result = scholarshipManualAggregateService.update(scholarshipId, request);
+		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(
+				scholarshipAdminOverviewService.detail(scholarshipId));
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_AGGREGATE_UPDATE,
+				"SCHOLARSHIP", scholarshipId, "조건·서류·심사 분기 통합 수정", before, after);
+		return ApiResponse.ok(result);
+	}
+
 	@Operation(summary = "통합 수기 등록 엑셀 양식",
 			description = "장학금·조건·제출서류·이미지 4개 시트를 임시키로 연결하는 신규 등록용 xlsx 양식을 내려받습니다. (ADMIN 전용)")
 	@GetMapping("/admin/manual-excel/template")
@@ -524,8 +646,10 @@ public class ScholarshipAdminController {
 	@GetMapping("/reports")
 	public ApiResponse<Page<ScholarshipReportResponse>> reports(
 			@RequestParam(required = false) ReportStatus status,
+			@RequestParam(required = false) ReportReason reason,
+			@RequestParam(required = false) String keyword,
 			Pageable pageable) {
-		return ApiResponse.ok(scholarshipReportService.findAll(status, pageable));
+		return ApiResponse.ok(scholarshipReportService.findAll(status, reason, keyword, pageable));
 	}
 
 	@Operation(summary = "오등록 신고 처리",

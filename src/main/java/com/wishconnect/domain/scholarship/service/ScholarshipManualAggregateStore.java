@@ -39,24 +39,7 @@ public class ScholarshipManualAggregateStore {
 	public SavedAggregate create(ScholarshipManualFullRequest request) {
 		validatePeriod(request);
 		String manualKey = Scholarship.MANUAL_SOURCE + ":" + UUID.randomUUID();
-		Scholarship scholarship = Scholarship.createManual(
-				request.title().trim(),
-				request.provider(),
-				request.summary(),
-				request.description(),
-				request.scholarshipType() == null ? ScholarshipType.EXTERNAL : request.scholarshipType(),
-				request.applicationStartAt(),
-				request.applicationEndAt(),
-				request.selectionCount(),
-				request.amount(),
-				request.homepageUrl(),
-				manualKey);
-		scholarship.applyManualDetails(
-				request.detailUrl(), request.recruitmentStatus(), request.noticeKind(), request.combined(),
-				request.submissionMethod(), request.submissionChannel(), request.submissionEvidence(),
-				request.contact(), request.essayRequirement(), request.essayEvidence(),
-				request.interviewRequirement(), request.interviewEvidence());
-		scholarshipRepository.save(scholarship);
+		Scholarship scholarship = createScholarship(request, manualKey);
 
 		ScholarshipManualFullRequest.Source source = request.source();
 		RawScholarship raw = rawScholarshipRepository.save(RawScholarship.builder()
@@ -71,7 +54,75 @@ public class ScholarshipManualAggregateStore {
 
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
-		return new SavedAggregate(scholarship.getId(), raw.getId(), request.conditions() == null
+		return saved(request, scholarship, raw.getId(), refCount, documentCount);
+	}
+
+	/** 실패 원본을 사람이 구조화해 기존 raw 행과 새 scholarship을 연결한다. */
+	@Transactional
+	public SavedAggregate createFromRaw(Long rawId, ScholarshipManualFullRequest request) {
+		validatePeriod(request);
+		RawScholarship raw = rawScholarshipRepository.findById(rawId)
+				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		if (raw.getScholarship() != null) {
+			throw new CustomException(ErrorCode.INVALID_INPUT);
+		}
+		Scholarship scholarship = createScholarship(request, "MANUAL_RAW:" + rawId);
+		raw.markParsed(scholarship);
+		int refCount = saveConditions(scholarship, safe(request.conditions()));
+		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		return saved(request, scholarship, raw.getId(), refCount, documentCount);
+	}
+
+	/** 통합 편집은 조건·서류 목록을 화면에 보이는 최종 상태로 교체한다. */
+	@Transactional
+	public SavedAggregate update(Long scholarshipId, ScholarshipManualFullRequest request) {
+		validatePeriod(request);
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.filter(value -> !value.isDeleted())
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		scholarship.replaceByAdmin(
+				request.title().trim(), request.provider(), request.summary(), request.description(),
+				request.scholarshipType(), request.applicationStartAt(), request.applicationEndAt(),
+				request.recruitmentStatus(), request.selectionCount(), request.amount(), request.homepageUrl(),
+				request.detailUrl(), request.noticeKind(), request.combined(), request.submissionMethod(),
+				request.submissionChannel(), request.submissionEvidence(), request.contact(),
+				request.essayRequirement(), request.essayEvidence(), request.interviewRequirement(),
+				request.interviewEvidence());
+
+		scholarshipConditionRepository.deleteByScholarship(scholarship);
+		scholarshipDocumentRepository.deleteByScholarship(scholarship);
+		scholarshipConditionRepository.flush();
+		scholarshipDocumentRepository.flush();
+		int refCount = saveConditions(scholarship, safe(request.conditions()));
+		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		return saved(request, scholarship, null, refCount, documentCount);
+	}
+
+	private Scholarship createScholarship(ScholarshipManualFullRequest request, String dedupKey) {
+		Scholarship scholarship = Scholarship.createManual(
+				request.title().trim(),
+				request.provider(),
+				request.summary(),
+				request.description(),
+				request.scholarshipType() == null ? ScholarshipType.EXTERNAL : request.scholarshipType(),
+				request.applicationStartAt(),
+				request.applicationEndAt(),
+				request.selectionCount(),
+				request.amount(),
+				request.homepageUrl(),
+				dedupKey);
+		scholarship.applyManualDetails(
+				request.detailUrl(), request.recruitmentStatus(), request.noticeKind(), request.combined(),
+				request.submissionMethod(), request.submissionChannel(), request.submissionEvidence(),
+				request.contact(), request.essayRequirement(), request.essayEvidence(),
+				request.interviewRequirement(), request.interviewEvidence());
+		scholarshipRepository.save(scholarship);
+		return scholarship;
+	}
+
+	private SavedAggregate saved(ScholarshipManualFullRequest request, Scholarship scholarship,
+			Long rawId, int refCount, int documentCount) {
+		return new SavedAggregate(scholarship.getId(), rawId, request.conditions() == null
 				? 0 : request.conditions().size(), refCount, documentCount, scholarship.getTitle());
 	}
 
@@ -92,6 +143,13 @@ public class ScholarshipManualAggregateStore {
 					.build();
 			Set<ConditionRef> refs = conditionRefResolver.resolve(
 					request.conditionType(), safe(request.refLabels()));
+			refs = new java.util.LinkedHashSet<>(refs);
+			for (Long refId : safe(request.refIds())) {
+				if (refId != null) refs.add(ConditionRef.ofId(refId));
+			}
+			for (String refCode : safe(request.refCodes())) {
+				if (refCode != null && !refCode.isBlank()) refs.add(ConditionRef.ofCode(refCode.trim()));
+			}
 			condition.applyRefs(refs);
 			refCount += refs.size();
 			scholarshipConditionRepository.save(condition);

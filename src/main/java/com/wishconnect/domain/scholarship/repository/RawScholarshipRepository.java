@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,7 +17,8 @@ import org.springframework.data.repository.query.Param;
 외부 API 원본 데이터(raw_scholarship)를 저장하고 조회하는 Repository입니다.
 source + sourceId 조합으로 이미 수집한 원본인지 확인해 중복 저장을 막습니다.
  */
-public interface RawScholarshipRepository extends JpaRepository<RawScholarship, Long> {
+public interface RawScholarshipRepository extends JpaRepository<RawScholarship, Long>,
+		JpaSpecificationExecutor<RawScholarship> {
 
 	Optional<RawScholarship> findBySourceAndSourceId(String source, String sourceId);
 

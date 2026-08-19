@@ -18,17 +18,33 @@ public class ScholarshipManualAggregateService {
 	private final ImageStorageService imageStorageService;
 
 	public ScholarshipManualFullResponse create(ScholarshipManualFullRequest request) {
-		ScholarshipManualAggregateStore.SavedAggregate saved = aggregateStore.create(request);
+		return response(aggregateStore.create(request), request.imageSourceUrl(), false);
+	}
+
+	public ScholarshipManualFullResponse createFromRaw(Long rawId, ScholarshipManualFullRequest request) {
+		return response(aggregateStore.createFromRaw(rawId, request), request.imageSourceUrl(), false);
+	}
+
+	public ScholarshipManualFullResponse update(Long scholarshipId, ScholarshipManualFullRequest request) {
+		return response(aggregateStore.update(scholarshipId, request), request.imageSourceUrl(), true);
+	}
+
+	private ScholarshipManualFullResponse response(ScholarshipManualAggregateStore.SavedAggregate saved,
+			String imageSourceUrl, boolean replace) {
 		boolean imageSaved = false;
-		if (StringUtils.hasText(request.imageSourceUrl())) {
-			imageSaved = imageStorageService.storeFromUrl(
-					request.imageSourceUrl(),
+		if (StringUtils.hasText(imageSourceUrl)) {
+			String url = replace
+					? imageStorageService.replaceFromUrl(imageSourceUrl, "scholarships/admin",
+							ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, saved.scholarshipId(), saved.title())
+					: imageStorageService.storeFromUrl(
+					imageSourceUrl,
 					"scholarships/manual",
 					ImageStorageService.ENTITY_TYPE_SCHOLARSHIP,
 					saved.scholarshipId(),
-					saved.title()) != null;
+					saved.title());
+			imageSaved = url != null;
 			if (!imageSaved) {
-				log.warn("[Scholarship] 수기 등록 이미지 저장 실패 (scholarshipId={})", saved.scholarshipId());
+				log.warn("[Scholarship] 관리자 이미지 저장 실패 (scholarshipId={})", saved.scholarshipId());
 			}
 		}
 		return new ScholarshipManualFullResponse(

@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -69,9 +70,26 @@ public class ScholarshipReportService {
 	/** 관리자 신고 목록. status 가 null 이면 전체를 최신순으로 준다. */
 	@Transactional(readOnly = true)
 	public Page<ScholarshipReportResponse> findAll(ReportStatus status, Pageable pageable) {
-		Page<ScholarshipReport> reports = status == null
-				? scholarshipReportRepository.findAllByOrderByIdDesc(pageable)
-				: scholarshipReportRepository.findAllByStatusOrderByIdDesc(status, pageable);
+		return findAll(status, null, null, pageable);
+	}
+
+	@Transactional(readOnly = true)
+	public Page<ScholarshipReportResponse> findAll(ReportStatus status, ReportReason reason,
+			String keyword, Pageable pageable) {
+		Specification<ScholarshipReport> spec = (root, query, cb) -> {
+			java.util.ArrayList<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+			if (status != null) predicates.add(cb.equal(root.get("status"), status));
+			if (reason != null) predicates.add(cb.isMember(reason, root.get("reasons")));
+			if (keyword != null && !keyword.isBlank()) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				var scholarship = root.join("scholarship");
+				predicates.add(cb.or(cb.like(cb.lower(scholarship.get("title")), like),
+						cb.like(cb.lower(scholarship.get("provider")), like),
+						cb.like(cb.lower(root.get("detail")), like)));
+			}
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		Page<ScholarshipReport> reports = scholarshipReportRepository.findAll(spec, pageable);
 		return reports.map(ScholarshipReportResponse::from);
 	}
 

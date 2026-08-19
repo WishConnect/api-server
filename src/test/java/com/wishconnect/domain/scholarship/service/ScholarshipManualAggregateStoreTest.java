@@ -30,6 +30,7 @@ import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -111,6 +112,62 @@ class ScholarshipManualAggregateStoreTest {
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.INVALID_APPLICATION_PERIOD);
 		verify(scholarshipRepository, never()).save(any());
+	}
+
+	@Test
+	@DisplayName("실패 원본을 수기 정제하면 새 장학금에 연결하고 PARSED로 바꾼다")
+	void createsScholarshipFromFailedRaw() {
+		RawScholarship raw = RawScholarship.builder()
+				.source("UNIV_KONKUK")
+				.sourceId("notice-77")
+				.sourceUrl("https://example.com/77")
+				.parseStatus(ParseStatus.FAILED)
+				.parseError("본문 파싱 실패")
+				.build();
+		ReflectionTestUtils.setField(raw, "id", 77L);
+		given(rawScholarshipRepository.findById(77L)).willReturn(Optional.of(raw));
+		given(scholarshipRepository.save(any())).willAnswer(invocation -> {
+			Scholarship value = invocation.getArgument(0);
+			ReflectionTestUtils.setField(value, "id", 177L);
+			return value;
+		});
+
+		ScholarshipManualAggregateStore.SavedAggregate saved = store.createFromRaw(
+				77L, request(LocalDateTime.of(2026, 8, 19, 0, 0),
+						LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(saved.scholarshipId()).isEqualTo(177L);
+		assertThat(saved.rawScholarshipId()).isEqualTo(77L);
+		assertThat(raw.getParseStatus()).isEqualTo(ParseStatus.PARSED);
+		assertThat(raw.getScholarship().getId()).isEqualTo(177L);
+	}
+
+	@Test
+	@DisplayName("통합 수정은 기본정보를 바꾸고 조건·서류를 최종 목록으로 교체한다")
+	void replacesAggregateForManualEdit() {
+		Scholarship existing = Scholarship.builder()
+				.title("수정 전")
+				.scholarshipType(ScholarshipType.EXTERNAL)
+				.recruitmentStatus(RecruitmentStatus.OPEN)
+				.build();
+		ReflectionTestUtils.setField(existing, "id", 301L);
+		given(scholarshipRepository.findById(301L)).willReturn(Optional.of(existing));
+		given(conditionRefResolver.resolve(ConditionType.REGION_RESIDENCY, List.of("서울 광진구")))
+				.willReturn(Set.of(ConditionRef.ofId(17L)));
+
+		ScholarshipManualAggregateStore.SavedAggregate saved = store.update(
+				301L, request(LocalDateTime.of(2026, 8, 19, 0, 0),
+						LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(saved.scholarshipId()).isEqualTo(301L);
+		assertThat(existing.getTitle()).isEqualTo("건국희망 장학");
+		assertThat(existing.isVerified()).isTrue();
+		verify(scholarshipConditionRepository).deleteByScholarship(existing);
+		verify(scholarshipDocumentRepository).deleteByScholarship(existing);
+		verify(scholarshipConditionRepository).flush();
+		verify(scholarshipDocumentRepository).flush();
+		verify(scholarshipConditionRepository).save(any(ScholarshipCondition.class));
+		verify(scholarshipDocumentRepository).save(any(ScholarshipDocument.class));
 	}
 
 	private ScholarshipManualFullRequest request(LocalDateTime start, LocalDateTime end) {

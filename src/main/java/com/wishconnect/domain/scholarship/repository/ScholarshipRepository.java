@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,7 +22,7 @@ import org.springframework.data.repository.query.Param;
 정제된 장학금 데이터(scholarship)를 저장하고 조회하는 Repository입니다.
 raw_scholarship 파싱 단계가 붙으면 최종 서비스용 장학금 데이터를 이 Repository로 관리합니다.
  */
-public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> {
+public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>, JpaSpecificationExecutor<Scholarship> {
 
 	Optional<Scholarship> findByDedupKey(String dedupKey);
 

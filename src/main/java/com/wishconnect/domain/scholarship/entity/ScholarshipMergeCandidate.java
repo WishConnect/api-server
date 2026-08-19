@@ -58,6 +58,10 @@ public class ScholarshipMergeCandidate extends BaseEntity {
 	@Column(nullable = false, length = 20)
 	private MergeCandidateStatus status;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private MergeCandidateOrigin origin;
+
 	/** LLM 이 중복이라고 본 이유. 사람이 승인 여부를 판단하는 근거가 된다. */
 	@Column(columnDefinition = "TEXT")
 	private String reason;
@@ -74,11 +78,13 @@ public class ScholarshipMergeCandidate extends BaseEntity {
 	private LocalDateTime reviewedAt;
 
 	@Builder
-	private ScholarshipMergeCandidate(Scholarship primary, Scholarship duplicate, String reason) {
+	private ScholarshipMergeCandidate(Scholarship primary, Scholarship duplicate, String reason,
+			MergeCandidateOrigin origin) {
 		this.primary = primary;
 		this.duplicate = duplicate;
 		this.reason = reason;
 		this.status = MergeCandidateStatus.PENDING;
+		this.origin = origin == null ? MergeCandidateOrigin.LLM : origin;
 	}
 
 	public void markMerged(UUID reviewer, String note) {

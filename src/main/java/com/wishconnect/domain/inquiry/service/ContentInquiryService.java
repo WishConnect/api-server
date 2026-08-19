@@ -5,6 +5,7 @@ import com.wishconnect.domain.inquiry.dto.ContentInquiryResolveRequest;
 import com.wishconnect.domain.inquiry.dto.ContentInquiryResponse;
 import com.wishconnect.domain.inquiry.entity.ContentInquiry;
 import com.wishconnect.domain.inquiry.entity.ContentInquiryStatus;
+import com.wishconnect.domain.inquiry.entity.ContentInquiryType;
 import com.wishconnect.domain.inquiry.repository.ContentInquiryRepository;
 import com.wishconnect.domain.inquiry.service.InquiryAttachmentStorageService.StoredAttachment;
 import com.wishconnect.global.exception.CustomException;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -38,9 +40,25 @@ public class ContentInquiryService {
 
 	@Transactional(readOnly = true)
 	public Page<ContentInquiryResponse> findAll(ContentInquiryStatus status, Pageable pageable) {
-		Page<ContentInquiry> inquiries = status == null
-				? contentInquiryRepository.findAllByOrderByIdDesc(pageable)
-				: contentInquiryRepository.findAllByStatusOrderByIdDesc(status, pageable);
+		return findAll(status, null, null, pageable);
+	}
+
+	@Transactional(readOnly = true)
+	public Page<ContentInquiryResponse> findAll(ContentInquiryStatus status, ContentInquiryType type,
+			String keyword, Pageable pageable) {
+		Specification<ContentInquiry> spec = (root, query, cb) -> {
+			java.util.ArrayList<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+			if (status != null) predicates.add(cb.equal(root.get("status"), status));
+			if (type != null) predicates.add(cb.equal(root.get("inquiryType"), type));
+			if (keyword != null && !keyword.isBlank()) {
+				String like = "%" + keyword.trim().toLowerCase() + "%";
+				predicates.add(cb.or(cb.like(cb.lower(root.get("inquiryTarget")), like),
+						cb.like(cb.lower(root.get("organizationName")), like),
+						cb.like(cb.lower(root.get("content")), like)));
+			}
+			return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+		};
+		Page<ContentInquiry> inquiries = contentInquiryRepository.findAll(spec, pageable);
 		return inquiries.map(this::toResponse);
 	}
 

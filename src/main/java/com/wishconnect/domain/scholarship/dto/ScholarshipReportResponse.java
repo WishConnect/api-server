@@ -11,6 +11,7 @@ public record ScholarshipReportResponse(
 		Long reportId,
 		Long scholarshipId,
 		String scholarshipTitle,
+		String scholarshipProvider,
 		/** 선택된 사유 전부. 화면이 다중 선택이라 단건이 아니다. */
 		List<ReportReason> reasons,
 		String detail,
@@ -25,6 +26,7 @@ public record ScholarshipReportResponse(
 				report.getId(),
 				report.getScholarship().getId(),
 				report.getScholarship().getTitle(),
+				report.getScholarship().getProvider(),
 				List.copyOf(report.getReasons()),
 				report.getDetail(),
 				report.getStatus(),
