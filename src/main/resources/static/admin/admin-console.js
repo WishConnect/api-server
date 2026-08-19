@@ -145,7 +145,9 @@
 			escapeHtml(s.summary || s.description || '설명 없음') + '</p><div class="actions">' +
 			(!s.deletedAt ? '<button class="btn primary" data-edit-scholarship="' + s.id + '">통합 수정</button>' : '') +
 			(safeUrl(s.detailUrl || s.homepageUrl) !== '#' ? '<a class="btn" target="_blank" rel="noopener noreferrer" href="' +
-			attr(safeUrl(s.detailUrl || s.homepageUrl)) + '">원문 열기</a>' : '') + '</div></div>' +
+			attr(safeUrl(s.detailUrl || s.homepageUrl)) + '">원문 열기</a>' : '') +
+			// 관리자가 데이터 이상을 발견한 자리에서 바로 남긴다. 따로 화면을 옮기면 안 남긴다.
+			'<button class="btn" data-report-scholarship="' + s.id + '">신고하기</button>' + '</div></div>' +
 			'<div class="detail-section"><h3>이미지 ' + images.length + '개</h3>' +
 			(images.map(image => '<div class="image-card"><img src="' + attr(safeUrl(image.previewUrl)) +
 			'" alt=""><small>' + escapeHtml(image.originalName || image.imageType || '이미지') +
@@ -166,6 +168,31 @@
 	function bindDetailActions(target) {
 		target.querySelectorAll('[data-edit-scholarship]').forEach(button =>
 			button.onclick = () => openEditScholarship(Number(button.dataset.editScholarship)).catch(showError));
+		target.querySelectorAll('[data-report-scholarship]').forEach(button =>
+			button.onclick = () => reportScholarship(Number(button.dataset.reportScholarship)).catch(showError));
+	}
+
+	/** 관리자가 데이터 이상을 발견한 자리에서 바로 신고한다. 화면을 옮기게 하면 결국 안 남긴다. */
+	async function reportScholarship(scholarshipId) {
+		const reason = prompt('신고 사유를 고르세요.\n'
+				+ '1 이미 마감  2 정보 오류  3 조건 오류  4 중복  5 마감일 오류  6 금액 오류  7 기타', '2');
+		if (reason === null) {
+			return;
+		}
+		const reasons = {'1':'ALREADY_CLOSED','2':'WRONG_INFO','3':'WRONG_CONDITION','4':'DUPLICATE',
+			'5':'WRONG_DEADLINE','6':'WRONG_AMOUNT','7':'OTHER'};
+		const picked = reasons[reason.trim()];
+		if (!picked) {
+			toast('사유 번호가 올바르지 않습니다.');
+			return;
+		}
+		const detail = (prompt('무엇이 잘못됐는지 적어 주세요(선택, 200자).', '') || '').slice(0, 200);
+		await api('/api/v1/scholarships/' + scholarshipId + '/reports', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({reasons: [picked], detail: detail || null})
+		});
+		toast('신고했습니다. 중복 판정 탭에서 확인할 수 있습니다.');
 	}
 
 	async function loadScholarshipDetail(id, targetId = 'scholarshipDetail') {
@@ -342,11 +369,23 @@
 				keyword:$('duplicateKeyword').value.trim(),page:pageState.duplicate,size:10})),
 			api('/api/v1/scholarships/reports?status=PENDING&reason=DUPLICATE&page=0&size=20&sort=createdAt,desc')
 		]);
-		$('duplicateReports').innerHTML = reports.content.length ? reports.content.map(row => '<div class="queue-item"><span>#' +
-			row.reportId + ' · 장학금 #' + row.scholarshipId + ' ' + escapeHtml(row.scholarshipTitle) + ' · ' +
+		// 두 숫자가 나란히 있어 헷갈린다. 무엇의 id 인지 붙여 쓴다.
+		$('duplicateReports').innerHTML = reports.content.length ? reports.content.map(row =>
+			'<div class="queue-item"><span class="report-open" role="button" tabindex="0" ' +
+			'data-report-detail="' + row.scholarshipId + '" title="누르면 오른쪽에 장학금 상세가 열립니다">' +
+			'신고 #' + row.reportId + ' · 장학금 ID ' + row.scholarshipId + ' · ' +
+			escapeHtml(row.scholarshipTitle) + ' · ' +
 			escapeHtml(row.scholarshipProvider || '기관 없음') + '</span><span class="actions">' +
 			'<button class="btn" data-report-primary="' + row.scholarshipId + '">유지 쪽</button><button class="btn" data-report-duplicate="' +
 			row.scholarshipId + '">내릴 쪽</button></span></div>').join('') : '대기 중인 중복 신고가 없습니다.';
+		$('duplicateReports').querySelectorAll('[data-report-detail]').forEach(cell => {
+			const open = () => loadScholarshipDetail(Number(cell.dataset.reportDetail), 'duplicateReportDetail')
+					.catch(showError);
+			cell.onclick = open;
+			cell.onkeydown = event => {
+				if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+			};
+		});
 		$('duplicateReports').querySelectorAll('[data-report-primary]').forEach(button => button.onclick = () =>
 			$('mergePrimaryId').value = button.dataset.reportPrimary);
 		$('duplicateReports').querySelectorAll('[data-report-duplicate]').forEach(button => button.onclick = () =>

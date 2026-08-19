@@ -65,7 +65,8 @@ public final class ConditionMatcher {
 				case MAJOR_FIELD -> evaluateMajor(condition, matchProfile);
 				case FINANCIAL_AID_TYPE -> evaluateAidType(condition, matchProfile);
 				case RESTRICTION -> evaluateRestriction(condition, matchProfile);
-				// 프로필에 대응 필드가 없는 유형(대학구분·추천서)은 중립 처리
+				case UNIVERSITY_TYPE -> evaluateUniversity(condition, matchProfile);
+				// 프로필에 대응 필드가 없는 유형(추천서)은 중립 처리
 				default -> Evaluation.unknown();
 			};
 		} catch (RuntimeException e) {
@@ -151,6 +152,72 @@ public final class ConditionMatcher {
 	 * <p>참조가 없는 조건은 예전 방식(원문 포함)으로 남긴다 — 규칙으로 해석되지 않은 서술형이라
 	 * 불일치를 단정할 근거가 없다.
 	 */
+	/**
+	 * 대학 구분.
+	 *
+	 * <p>교내 공고의 자격은 대개 <b>학교 이름</b>으로 적힌다 — "인천대학교 재학생".
+	 * 이 유형을 통째로 중립 처리하고 있어서, 인천대 학생이 아닌 사람에게 인천대 교내
+	 * 장학금이 추천됐다. 조건이 특정 학교를 짚는데 내 학교가 아니면 불일치다.
+	 *
+	 * <p>"4년제", "전문대" 처럼 학교 이름이 없는 문구는 판정하지 않는다. 그건 학교가 아니라
+	 * 학교의 종류를 말하는 것이고, 우리 프로필에는 대응하는 값이 없다.
+	 */
+	private static Evaluation evaluateUniversity(ScholarshipCondition condition, MatchProfile matchProfile) {
+		if (matchProfile.profile() == null || matchProfile.profile().getSchool() == null) {
+			return Evaluation.unknown();
+		}
+		String raw = condition.getValueString();
+		if (raw == null || raw.isBlank()) {
+			return Evaluation.unknown();
+		}
+		java.util.List<String> named = new java.util.ArrayList<>();
+		java.util.regex.Matcher matcher = SCHOOL_NAME.matcher(raw);
+		while (matcher.find()) {
+			// "외국대학에 재학 중이지 않은" 처럼 학교를 <가리키지 않는> 말이 걸린다.
+			// 이걸 학교명으로 보면 모두를 불일치로 몰아 자격 있는 사람을 떨어뜨린다.
+			if (!GENERIC_SCHOOL_WORDS.contains(normalizeSchool(matcher.group()))) {
+				named.add(matcher.group());
+			}
+		}
+		if (named.isEmpty()) {
+			return Evaluation.unknown();
+		}
+		String schoolName = matchProfile.profile().getSchool().getName();
+		String mine = normalizeSchool(schoolName);
+		if (mine.isBlank()) {
+			return Evaluation.unknown();
+		}
+		// 공고가 여러 학교를 나열할 수 있다("서울대·연세대·고려대 재학생"). 하나라도 내 학교면 충족.
+		boolean matched = named.stream()
+				.map(ConditionMatcher::normalizeSchool)
+				.anyMatch(school -> school.contains(mine) || mine.contains(school));
+		return matched
+				? Evaluation.match("재학 중인 학교(" + schoolName + ")")
+				: Evaluation.mismatch("다른 학교 대상(" + String.join("·", named) + ")");
+	}
+
+	/**
+	 * 학교 이름처럼 생겼지만 특정 학교가 아닌 말들.
+	 *
+	 * <p>실제 공고에서 나온 것들이다 — "외국대학에 재학 중이지 않은 대학생",
+	 * "4년제(5~6년제포함)기술대학원격대학…". 이런 문구를 학교명으로 읽으면 아무도 통과하지 못한다.
+	 */
+	private static final java.util.Set<String> GENERIC_SCHOOL_WORDS = java.util.Set.of(
+			"외국", "해외", "국내", "타", "본교", "소속", "재학", "전문", "일반", "기술", "원격",
+			"사이버", "방송", "각", "산업", "교육", "특수", "폴리텍", "학점은행제");
+
+	/** 공고에 쓰이는 학교 표기. "○○대학교"·"○○대"를 잡는다. */
+	private static final java.util.regex.Pattern SCHOOL_NAME =
+			java.util.regex.Pattern.compile("[가-힣]{2,10}(?:대학교|대학|대)(?=[\\s,에의)]|$)");
+
+	/** 표기 차이(공백, "대학교"/"대")를 흡수한다. */
+	private static String normalizeSchool(String name) {
+		if (name == null) {
+			return "";
+		}
+		return name.replaceAll("\\s+", "").replaceAll("(대학교|대학|대)$", "");
+	}
+
 	private static Evaluation evaluateRegion(ScholarshipCondition condition, MatchProfile matchProfile) {
 		Region region = matchProfile.profile().getRegion();
 		if (region == null) {
@@ -174,8 +241,40 @@ public final class ConditionMatcher {
 				|| (region.getParent() != null && containsRegionName(raw, region.getParent().getName()))) {
 			return Evaluation.match("거주지역 일치(" + region.getName() + ")");
 		}
+		// 다른 지역명이 분명히 적혀 있으면 불일치다. 여기서 unknown 을 내면 자격 게이트가
+		// MISMATCH 만 거르므로 그대로 통과한다 — 서울 사는 사람에게 울산 장학금이 추천됐다.
+		//
+		//   "…주민등록상 주소가 울산이며"   → 울산이 적혀 있다. 서울 거주자에게는 불일치.
+		//   "관내에 주소를 두고 1년 이상"    → 어느 지역인지 알 수 없다. 판정 불가로 둔다.
+		String other = firstRegionNameIn(raw);
+		if (other != null) {
+			return Evaluation.mismatch("거주지역 불일치(" + other + " 대상, 내 지역 "
+					+ region.getName() + ")");
+		}
 		return Evaluation.unknown();
 	}
+
+	/**
+	 * 조건 문구에 등장하는 <b>구체적인 지역명</b> 하나. 없으면 null.
+	 *
+	 * <p>"관내"·"도내"·"지역"처럼 어느 곳인지 알 수 없는 표현은 지역명으로 치지 않는다.
+	 * 그런 문구까지 불일치로 몰면 자격이 있는 사람을 떨어뜨린다.
+	 */
+	private static String firstRegionNameIn(String raw) {
+		java.util.regex.Matcher matcher = REGION_NAME.matcher(raw);
+		return matcher.find() ? matcher.group() : null;
+	}
+
+	/**
+	 * 공고에 쓰이는 지역 표기.
+	 *
+	 * <p>광역시·도는 이름만으로 식별되고, 시·군·구는 뒤에 단위가 붙어야 지역명인지 알 수 있다
+	 * ("관악구", "군산시"). 단위 없이 두 글자만 잡으면 "본인"·"거주" 같은 말이 걸린다.
+	 */
+	private static final java.util.regex.Pattern REGION_NAME = java.util.regex.Pattern.compile(
+			"서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주"
+					+ "|[가-힣]{2,4}(?:특별시|광역시|특별자치시|특별자치도)"
+					+ "|[가-힣]{2,4}(?:시|군|구)(?=[에의\\s,)]|$)");
 
 	/**
 	 * 본인해당·가정형태(수급자·차상위·한부모 등).
