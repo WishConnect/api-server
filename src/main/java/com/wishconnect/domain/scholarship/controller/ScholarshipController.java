@@ -1,6 +1,7 @@
 package com.wishconnect.domain.scholarship.controller;
 
 import com.wishconnect.domain.scholarship.dto.*;
+import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.service.ScholarshipCalendarService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDetailService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEventService;
@@ -12,7 +13,10 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /*
@@ -29,6 +34,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RestController
 @RequestMapping("/api/v1/scholarships")
 @RequiredArgsConstructor
+@Validated
 public class ScholarshipController {
 
 	private final ScholarshipRecommendationService scholarshipRecommendationService;
@@ -66,6 +72,12 @@ public class ScholarshipController {
 	 * <p>{@code sort} 는 비로그인 화면의 드롭다운(최신 등록순/마감 임박순)이다. 로그인 상태에는
 	 * 화면에 드롭다운이 없어 무시된다. category 필터는 태그 데이터 확보 전까지 미적용(파라미터만 수용).
 	 */
+	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
+			GUEST, ONBOARDING_REQUIRED, PERSONALIZED가 모두 사용하는 API입니다.
+			PERSONALIZED의 featured는 지원 가능한 전체를 점수 내림차순·동점이면 마감 임박순으로 내려줍니다.
+			campusScholarships는 지원 가능하고 운영기관에 사용자 학교명이 포함된 교내 장학금입니다.
+			유형·마감·금액·스크랩 필터는 마지막 영역의 ineligibleScholarships와 otherScholarships에만 공통 적용됩니다.
+			""")
 	@GetMapping("/curated")
 	@Operation(summary = "사용자 상태별 장학금 큐레이팅", description = """
 			비로그인·온보딩 미완료·온보딩 완료 사용자가 모두 호출하는 동일 API입니다.
@@ -76,12 +88,25 @@ public class ScholarshipController {
 			""")
 	public ApiResponse<CuratedScholarshipResponse> getCurated(
 			@AuthenticationPrincipal String userIdStr,
-			@RequestParam(required = false) String category,
 			@RequestParam(defaultValue = "DEADLINE") CuratedSort sort,
+			@Parameter(description = "마지막 목록 유형: INTERNAL, EXTERNAL, WORK_STUDY")
+			@RequestParam(required = false) ScholarshipType scholarshipType,
+			@Parameter(description = "마지막 목록 마감 형태: ALL, HAS_DEADLINE, ALWAYS_OPEN")
+			@RequestParam(defaultValue = "ALL") DeadlineFilter deadline,
+			@Parameter(description = "마지막 목록에서 D-day가 이 일수 이하인 공고만 조회", example = "14")
+			@RequestParam(required = false) @Positive Integer deadlineWithinDays,
+			@Parameter(description = "마지막 목록 최소 지원금(원)", example = "1000000")
+			@RequestParam(required = false) @PositiveOrZero Long minAmount,
+			@Parameter(description = "마지막 목록 최대 지원금(원)", example = "5000000")
+			@RequestParam(required = false) @PositiveOrZero Long maxAmount,
+			@Parameter(description = "true면 마지막 목록에서 내가 스크랩한 장학금만 조회")
+			@RequestParam(defaultValue = "false") boolean scrappedOnly,
 			@RequestParam(defaultValue = "1") int page,
 			@RequestParam(defaultValue = "10") int size) {
 		return ApiResponse.ok(scholarshipRecommendationService.getCuratedScholarships(
-				resolveUserId(userIdStr), sort, page, size));
+				resolveUserId(userIdStr), sort, page, size,
+				new CuratedFilters(scholarshipType, deadline, deadlineWithinDays,
+						minAmount, maxAmount, scrappedOnly)));
 	}
 
 	/** 홈 - 오늘의 장학금 소식 요약(신규 맞춤/이번 주 마감 건수). */

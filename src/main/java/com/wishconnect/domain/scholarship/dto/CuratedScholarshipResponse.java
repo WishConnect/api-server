@@ -12,10 +12,10 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@code viewMode} — 화면 상태. 어떤 섹션이 채워지는지가 이 값에 달려 있다.</li>
- *   <li>{@code featured} — 마감임박 히어로 배너. 피그마가 dot 캐러셀이라 <b>배열</b>이다(최대 5개).</li>
+ *   <li>{@code featured} — 지원 가능한 전체 추천. 프론트가 처음 5개와 더보기를 나눠 그린다.</li>
  *   <li>{@code campusScholarships} — 교내(INTERNAL) 중 <b>사용자 소속 학교</b> 것만.</li>
- *   <li>{@code otherScholarships} — 카드 그리드. 페이지네이션 대상.</li>
  *   <li>{@code ineligibleScholarships} — 조건 미충족. 피그마상 별도 섹션이라 분리했다(전체 반환).</li>
+ *   <li>{@code otherScholarships} — featured 상위 5개를 제외한 지원 가능 목록. 페이지네이션 대상.</li>
  * </ul>
  *
  * <p>상태별로 채워지는 섹션:
@@ -33,6 +33,14 @@ import java.util.List;
  */
 @Schema(description = "인증·온보딩 상태에 따라 다른 섹션을 채우는 장학금 큐레이팅 응답")
 public record CuratedScholarshipResponse(
+		CuratedViewMode viewMode,
+		String rankerVersion,
+		List<ScholarshipCard> featured,
+		int profileCompletionRate,
+		List<ScholarshipCard> campusScholarships,
+		List<ScholarshipCard> ineligibleScholarships,
+		List<ScholarshipCard> otherScholarships,
+		Pagination pagination
 		@Schema(description = "프론트가 그려야 할 큐레이팅 화면 상태", example = "PERSONALIZED") CuratedViewMode viewMode,
 		@Schema(description = "현재 추천 점수식 버전. 이벤트 요청에 그대로 전달", example = "v2") String rankerVersion,
 		@Schema(description = "히어로 캐러셀. GUEST는 빈 배열, 나머지는 최대 5건") List<ScholarshipCard> featured,
