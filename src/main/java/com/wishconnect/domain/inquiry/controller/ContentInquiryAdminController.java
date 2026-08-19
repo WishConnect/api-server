@@ -8,6 +8,7 @@ import com.wishconnect.global.audit.AdminAction;
 import com.wishconnect.global.audit.AdminAuditLogService;
 import com.wishconnect.global.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
@@ -35,6 +36,7 @@ public class ContentInquiryAdminController {
 	@GetMapping
 	@Operation(summary = "콘텐츠 이용 문의 목록", description = "상태 미지정 시 전체를 최신순으로 반환합니다. ADMIN 전용입니다.")
 	public ApiResponse<Page<ContentInquiryResponse>> findAll(
+			@Parameter(description = "처리 상태 필터: PENDING, RESOLVED, REJECTED")
 			@RequestParam(required = false) ContentInquiryStatus status, Pageable pageable) {
 		return ApiResponse.ok(contentInquiryService.findAll(status, pageable));
 	}
@@ -42,7 +44,9 @@ public class ContentInquiryAdminController {
 	@PatchMapping("/{inquiryId}")
 	@Operation(summary = "콘텐츠 이용 문의 처리", description = "처리 상태와 관리자 메모를 변경합니다. ADMIN 전용입니다.")
 	public ApiResponse<ContentInquiryResponse> resolve(
+			@Parameter(hidden = true)
 			@AuthenticationPrincipal String actorId,
+			@Parameter(description = "처리할 문의 ID", example = "12")
 			@PathVariable Long inquiryId,
 			@Valid @RequestBody ContentInquiryResolveRequest request) {
 		ContentInquiryResponse response = contentInquiryService.resolve(inquiryId, request);
