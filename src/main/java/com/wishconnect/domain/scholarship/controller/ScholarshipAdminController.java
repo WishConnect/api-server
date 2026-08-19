@@ -23,6 +23,7 @@ import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualRequest;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminChangeResult;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualResponse;
@@ -500,10 +501,10 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId,
 			@Valid @RequestBody ScholarshipManualRequest request) {
-		ScholarshipManualResponse result = scholarshipManualService.update(scholarshipId, request);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
-				"SCHOLARSHIP", scholarshipId, result.title());
-		return ApiResponse.ok(result);
+		ScholarshipAdminChangeResult result = scholarshipManualService.updateWithSnapshot(scholarshipId, request);
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
+				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+		return ApiResponse.ok(result.response());
 	}
 
 	@Operation(summary = "장학금 내리기",
@@ -512,9 +513,9 @@ public class ScholarshipAdminController {
 	public ApiResponse<Void> deleteManual(
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId) {
-		scholarshipManualService.delete(scholarshipId);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
-				"SCHOLARSHIP", scholarshipId, null);
+		ScholarshipAdminChangeResult result = scholarshipManualService.deleteWithSnapshot(scholarshipId);
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
+				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
 		return ApiResponse.ok();
 	}
 

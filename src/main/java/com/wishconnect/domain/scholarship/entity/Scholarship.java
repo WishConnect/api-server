@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -505,6 +506,24 @@ public class Scholarship extends BaseEntity {
 			throw new IllegalStateException("상시모집 중인 장학금만 확인 처리할 수 있습니다.");
 		}
 		this.alwaysOpenReviewedAt = LocalDateTime.now();
+	}
+
+	/** 감사로그의 수기 변경 스냅샷으로 복구한다. 자동 파싱 전용 필드는 건드리지 않는다. */
+	public void restoreAdminSnapshot(ScholarshipAdminSnapshot snapshot) {
+		this.title = snapshot.title();
+		this.provider = snapshot.provider();
+		this.summary = snapshot.summary();
+		this.description = snapshot.description();
+		this.scholarshipType = snapshot.scholarshipType();
+		this.applicationStartAt = snapshot.applicationStartAt();
+		this.applicationEndAt = snapshot.applicationEndAt();
+		this.recruitmentStatus = snapshot.recruitmentStatus();
+		this.selectionCount = snapshot.selectionCount();
+		this.amount = snapshot.amount();
+		this.homepageUrl = snapshot.homepageUrl();
+		this.active = snapshot.active();
+		this.verified = snapshot.verified();
+		this.deletedAt = snapshot.deletedAt();
 	}
 
 	public boolean isDeleted() {
