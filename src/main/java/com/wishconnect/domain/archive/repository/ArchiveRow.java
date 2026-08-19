@@ -4,4 +4,5 @@ public interface ArchiveRow {
     Long getScholarshipId();
     Long getEssayId();
     String getEssayStatus();
+    Boolean getIsScrapped();
 }

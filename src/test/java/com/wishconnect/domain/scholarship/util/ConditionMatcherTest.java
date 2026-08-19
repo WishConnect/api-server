@@ -154,13 +154,90 @@ class ConditionMatcherTest {
 		}
 
 		@Test
-		@DisplayName("포함되지 않으면 배제하지 않고 UNKNOWN")
-		void unknownWhenNotContained() {
+		@DisplayName("다른 지역이 분명히 적혀 있으면 MISMATCH")
+		void mismatchWhenAnotherRegionNamed() {
+			// UNKNOWN 으로 두면 자격 게이트가 MISMATCH 만 거르므로 그대로 통과한다.
+			// 서울 사는 사람에게 울산 장학금이 추천되던 원인이다.
 			UserProfile profile = UserProfile.builder()
 					.region(Region.builder().name("부산").build())
 					.build();
 			var evaluation = ConditionMatcher.evaluate(
 					condition(ConditionType.REGION_RESIDENCY, null, null, "경기도 내 거주자"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.MISMATCH);
+		}
+
+		@Test
+		@DisplayName("어느 지역인지 알 수 없는 문구는 UNKNOWN — 자격 있는 사람을 떨어뜨리지 않는다")
+		void unknownWhenRegionNotIdentifiable() {
+			UserProfile profile = UserProfile.builder()
+					.region(Region.builder().name("부산").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.REGION_RESIDENCY, null, null,
+							"신청일 현재 관내에 주소를 두고 1년 이상 거주"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.UNKNOWN);
+		}
+
+		@Test
+		@DisplayName("실제 공고 문구 — 울산 조건은 서울 거주자에게 MISMATCH")
+		void realNoticeUlsan() {
+			UserProfile profile = UserProfile.builder()
+					.region(Region.builder().name("서울").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.REGION_RESIDENCY, null, null,
+							"공고일 기준 대학(원)생 본인 또는 직계존속의 주민등록상 주소가 울산이며"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.MISMATCH);
+		}
+	}
+
+	@Nested
+	@DisplayName("대학 구분(UNIVERSITY_TYPE)")
+	class UniversityType {
+
+		@Test
+		@DisplayName("다른 학교를 짚는 조건은 MISMATCH — 교내 장학금이 남의 학교에 새어 나갔다")
+		void mismatchWhenAnotherSchool() {
+			UserProfile profile = UserProfile.builder()
+					.school(com.wishconnect.domain.common.entity.School.builder().name("서울여자대학교").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.UNIVERSITY_TYPE, null, null, "인천대학교 재학생"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.MISMATCH);
+		}
+
+		@Test
+		@DisplayName("내 학교면 MATCH — 표기가 달라도(인천대 / 인천대학교)")
+		void matchIgnoringSuffix() {
+			UserProfile profile = UserProfile.builder()
+					.school(com.wishconnect.domain.common.entity.School.builder().name("인천대").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.UNIVERSITY_TYPE, null, null, "인천대학교 재학생"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.MATCH);
+		}
+
+		@Test
+		@DisplayName("실제 공고 문구 — '외국대학에 재학 중이지 않은' 을 학교명으로 읽지 않는다")
+		void ignoresGenericSchoolWords() {
+			// 이걸 학교명으로 보면 모두를 불일치로 몰아 자격 있는 사람을 떨어뜨린다.
+			UserProfile profile = UserProfile.builder()
+					.school(com.wishconnect.domain.common.entity.School.builder().name("인천대학교").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.UNIVERSITY_TYPE, null, null,
+							"학적이 '재학'인 본교 재학생 (외국대학에 재학 중이지 않은 대학생)"), profile);
+			assertThat(evaluation.result()).isEqualTo(Result.UNKNOWN);
+		}
+
+		@Test
+		@DisplayName("학교 이름이 없는 문구는 UNKNOWN — '4년제' 는 학교가 아니라 종류다")
+		void unknownWhenNoSchoolNamed() {
+			UserProfile profile = UserProfile.builder()
+					.school(com.wishconnect.domain.common.entity.School.builder().name("인천대학교").build())
+					.build();
+			var evaluation = ConditionMatcher.evaluate(
+					condition(ConditionType.UNIVERSITY_TYPE, null, null, "대학 구분 : 4년제(5~6년제포함)"), profile);
 			assertThat(evaluation.result()).isEqualTo(Result.UNKNOWN);
 		}
 	}

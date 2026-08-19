@@ -146,12 +146,13 @@ public class ArchiveService {
                 scholarship.getId(),
                 row.getEssayId(),
                 scholarship.getTitle(),
-                List.of(),  // TODO: ScholarshipTag 매핑 테이블 부재로 임시 처리
+                List.of(),
                 scholarship.getApplicationEndAt(),
                 dDay,
                 urgency,
                 posterMap.get(scholarship.getId()),
                 applicationStatus,
+                Boolean.TRUE.equals(row.getIsScrapped()),
                 progress
         );
     }
