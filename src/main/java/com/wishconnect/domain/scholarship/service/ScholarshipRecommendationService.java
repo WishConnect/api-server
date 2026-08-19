@@ -159,7 +159,7 @@ public class ScholarshipRecommendationService {
 				.toList();
 
 		return new CuratedScholarshipResponse(CuratedViewMode.GUEST, ScholarshipRanker.RANKER_VERSION,
-				List.of(), 0, List.of(), List.of(), cards, paged.pagination());
+				List.of(), 0, 0, List.of(), List.of(), cards, paged.pagination());
 	}
 
 	/**
@@ -194,7 +194,7 @@ public class ScholarshipRecommendationService {
 				.toList();
 
 		return new CuratedScholarshipResponse(CuratedViewMode.ONBOARDING_REQUIRED, ScholarshipRanker.RANKER_VERSION,
-				cards, 0, List.of(), List.of(), List.of(), new Pagination(1, 0, 0, 0));
+				cards, 0, 0, List.of(), List.of(), List.of(), new Pagination(1, 0, 0, 0));
 	}
 
 	private CuratedScholarshipResponse personalizedCurated(
@@ -251,6 +251,7 @@ public class ScholarshipRecommendationService {
 				CuratedViewMode.PERSONALIZED,
 				ScholarshipRanker.RANKER_VERSION,
 				featured.stream().map(s -> s.toCard(SECTION_FEATURED, scrappedIds, posters)).toList(),
+				eligibleList.size(),
 				calculateProfileCompletionRate(profile),
 				campus,
 				ineligible,
@@ -483,6 +484,9 @@ public class ScholarshipRecommendationService {
 
 	/** 프로필과 매칭에 쓰는 사용자 값들을 한 번에 모은다. 없으면 모든 참조 대조가 판정 불가로 넘어간다. */
 	private MatchProfile matchProfileOf(UUID userId) {
+		if (userId == null) {
+			return MatchProfile.of(null);
+		}
 		return matchProfileOf(userId, userProfileRepository.findByUserId(userId).orElse(null));
 	}
 

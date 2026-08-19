@@ -130,11 +130,11 @@ public class ScholarshipController {
 
 	/** 장학금 상세(요약 테이블 + 선발 일정 타임라인 + 제출 서류 + 매칭 사유). */
 	@GetMapping("/{scholarshipId}")
-	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다.")
+	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다. 비로그인도 조회할 수 있으며 이때 isScrapped는 false, matchReasons는 빈 배열, 조건 판정은 UNKNOWN입니다.")
 	public ApiResponse<ScholarshipDetailResponse> getDetail(
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {
-		return ApiResponse.ok(scholarshipDetailService.getDetail(UUID.fromString(userId), scholarshipId));
+		return ApiResponse.ok(scholarshipDetailService.getDetail(resolveUserId(userId), scholarshipId));
 	}
 
 	/** 장학금을 키워드·카테고리로 검색한다. 비로그인도 조회 가능하며 이때 isScrapped 는 항상 false 다. */

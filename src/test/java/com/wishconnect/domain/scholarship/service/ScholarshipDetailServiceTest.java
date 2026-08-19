@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
@@ -122,6 +124,29 @@ class ScholarshipDetailServiceTest {
 		assertThat(detail.selectionSchedule().get(0).status()).isEqualTo("CURRENT");
 		assertThat(detail.requiredDocuments()).extracting("name").containsExactly("자기소개서 1부");
 		assertThat(detail.matchReasons()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("비로그인 상세는 스크랩·추천 사유 조회 없이 공개 정보를 반환한다")
+	void guestReturnsPublicDetailWithoutPersonalDataLookup() {
+		Scholarship scholarship = scholarship(1L);
+		given(scholarshipRepository.findById(1L)).willReturn(Optional.of(scholarship));
+		given(scholarshipConditionRepository.findAllByScholarshipId(1L)).willReturn(List.of());
+		given(scholarshipDocumentRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
+				.willReturn(List.of());
+		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
+				.willReturn(List.of());
+		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
+				.willReturn(Optional.empty());
+
+		ScholarshipDetailResponse detail = scholarshipDetailService.getDetail(null, 1L);
+
+		assertThat(detail.isScrapped()).isFalse();
+		assertThat(detail.matchReasons()).isEmpty();
+		assertThat(detail.title()).isEqualTo("테스트 장학금");
+		verify(scrapRepository, never()).existsByUserIdAndScholarshipId(any(), any());
+		verify(scholarshipRecommendationService, never()).getMatchReasons(any(), any(), anyList());
 	}
 
 	@Test

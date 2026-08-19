@@ -36,6 +36,7 @@ public record CuratedScholarshipResponse(
 		@Schema(description = "프론트가 그려야 할 큐레이팅 화면 상태", example = "PERSONALIZED") CuratedViewMode viewMode,
 		@Schema(description = "현재 추천 점수식 버전. 이벤트 요청에 그대로 전달", example = "v2") String rankerVersion,
 		@Schema(description = "지원 가능한 추천 목록. GUEST는 빈 배열이며 프론트가 최초 5건과 더보기를 나눠 표시") List<ScholarshipCard> featured,
+		@Schema(description = "지원 가능한 추천 장학금 전체 개수. PERSONALIZED 외에는 0", example = "50") int featuredCount,
 		@Schema(description = "프로필 완성도(0~100)", example = "80") int profileCompletionRate,
 		@Schema(description = "PERSONALIZED에서만 채워지는 사용자 소속 학교의 교내 장학금") List<ScholarshipCard> campusScholarships,
 		@Schema(description = "PERSONALIZED에서 필수 조건을 충족하지 못한 장학금") List<ScholarshipCard> ineligibleScholarships,
