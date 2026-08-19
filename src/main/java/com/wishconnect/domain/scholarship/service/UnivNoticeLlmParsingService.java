@@ -202,7 +202,7 @@ public class UnivNoticeLlmParsingService {
 							parser.resolveSubmission(notice, body, title);
 					scholarship.applyLlmSupplement(essay.level(), essay.evidence(),
 							interview.level(), interview.evidence(),
-							submission.method(), submission.channel(), submission.evidence());
+							submission.method(), submission.channel(), submission.evidence(), notice.contact());
 					saveLog(raw, new UnivNoticeLlmParser.ExtractedBody(body, false, body.length()),
 							ParseStatus.PARSED, notice, null, "공공데이터 조건 보강");
 				}
@@ -442,7 +442,7 @@ public class UnivNoticeLlmParsingService {
 					parser.resolveAmount(notice.amount()),
 					raw.getSourceUrl(),
 					essay.level(), essay.evidence(), interview.level(), interview.evidence(),
-					kind, combined, submission.method(), submission.channel(), submission.evidence());
+					kind, combined, submission.method(), submission.channel(), submission.evidence(), notice.contact());
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -472,6 +472,7 @@ public class UnivNoticeLlmParsingService {
 						.submissionMethod(submission.method())
 						.submissionChannel(submission.channel())
 						.submissionEvidence(submission.evidence())
+						.contact(notice.contact())
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));

@@ -174,7 +174,8 @@ public class ScholarshipExcelService {
 				readDateTime(row.getCell(COL_END)),
 				toInt(readLong(row.getCell(COL_SELECTION))),
 				readLong(row.getCell(COL_AMOUNT)),
-				readText(row.getCell(COL_URL)));
+				readText(row.getCell(COL_URL)),
+				null);
 
 		if (isEmptyRequest(request)) {
 			return false;

@@ -54,7 +54,8 @@ public record ParsedNotice(
 		String interviewRequirement,
 		String interviewEvidence,
 		List<String> documents,
-		List<Condition> conditions
+		List<Condition> conditions,
+		String contact
 ) {
 
 	/**

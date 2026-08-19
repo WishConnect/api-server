@@ -278,6 +278,9 @@ class ScholarshipRecommendationServiceTest {
 
 		assertThat(response.featured()).hasSize(5);
 		assertThat(idsOf(response.featured())).containsExactly(1L, 2L, 3L, 4L, 5L);
+		assertThat(response.rankerVersion())
+				.isEqualTo(com.wishconnect.domain.scholarship.util.ScholarshipRanker.RANKER_VERSION);
+		assertThat(response.featured()).allMatch(card -> card.section().equals("featured"));
 		// featured 로 올라간 건은 그 외 목록에서 중복 노출되지 않는다
 		assertThat(idsOf(response.otherScholarships())).containsExactlyInAnyOrder(6L, 7L);
 	}
@@ -295,6 +298,20 @@ class ScholarshipRecommendationServiceTest {
 		CuratedScholarshipResponse response = curate();
 
 		assertThat(idsOf(response.campusScholarships())).containsExactly(1L);
+	}
+
+	@Test
+	@DisplayName("교내 장학금은 점수와 무관하게 마감 임박순으로 내려간다")
+	void campusSortedByDeadline() {
+		Scholarship later = scholarship(1L, "나중 마감", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(12), LocalDateTime.now(), "연세대학교");
+		Scholarship sooner = scholarship(2L, "먼저 마감", ScholarshipType.INTERNAL,
+				LocalDateTime.now().plusDays(3), LocalDateTime.now(), "연세대학교");
+		stubScholarships(UserProfile.builder().school(school("연세대학교")).build(),
+				List.of(later, sooner), List.of());
+
+		assertThat(idsOf(curate().campusScholarships())).containsExactly(2L, 1L);
+		assertThat(curate().campusScholarships()).allMatch(card -> card.section().equals("campus"));
 	}
 
 	@Test

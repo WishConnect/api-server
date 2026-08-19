@@ -198,6 +198,10 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long> 
 
 	long countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus recruitmentStatus);
 
+	org.springframework.data.domain.Page<Scholarship>
+	findByRecruitmentStatusAndDeletedAtIsNullOrderByCreatedAtAsc(
+			RecruitmentStatus recruitmentStatus, org.springframework.data.domain.Pageable pageable);
+
 	long countByCreatedAtGreaterThanEqual(LocalDateTime from);
 
 	@Query("select max(s.lastSyncedAt) from Scholarship s")

@@ -134,7 +134,7 @@ public class ScholarshipDetailService {
 				byType.get(ConditionType.FINANCIAL_AID_TYPE),
 				byType.get(ConditionType.RESTRICTION),
 				scholarship.getProvider(),
-				null,
+				scholarship.getContact(),
 				byType.get(ConditionType.SPECIFIC_QUALIFICATION),
 				byType.get(ConditionType.ACADEMIC_CRITERIA),
 				byType.get(ConditionType.INCOME_CRITERIA),

@@ -43,7 +43,7 @@ class UnivNoticeLlmParserTest {
 				null, null,                        // noticeKind · combined
 				null, null, null,                  // submissionMethod · submissionChannel · 근거
 				null, null, null, null,            // 자소서·면접 판단과 근거
-				List.of(), conditions);            // documents · conditions
+				List.of(), conditions, null);      // documents · conditions · contact
 	}
 
 	// --- v4: 제출방식 근거 · 첨부 · 새 분류 ---
@@ -56,7 +56,7 @@ class UnivNoticeLlmParserTest {
 				null, null,
 				method, channel, evidence,
 				null, null, null, null,
-				List.of(), List.of());
+				List.of(), List.of(), null);
 	}
 
 	@Test

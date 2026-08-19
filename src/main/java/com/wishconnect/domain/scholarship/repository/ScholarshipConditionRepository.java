@@ -21,6 +21,8 @@ public interface ScholarshipConditionRepository extends JpaRepository<Scholarshi
 	/** 상세 화면용: 특정 장학금의 조건 전체. */
 	List<ScholarshipCondition> findAllByScholarshipId(Long scholarshipId);
 
+	long countByScholarshipId(Long scholarshipId);
+
 	/** LLM 구조화 추출 대상: 아직 추출 안 됐고 수치도 비어 있는 조건. */
 	List<ScholarshipCondition> findTop50ByAutoExtractedFalseAndValueIntIsNullAndConditionTypeIn(
 			List<com.wishconnect.domain.scholarship.entity.ConditionType> conditionTypes);

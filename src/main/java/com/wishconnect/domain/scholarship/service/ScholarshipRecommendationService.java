@@ -81,6 +81,11 @@ public class ScholarshipRecommendationService {
 	private static final int DEADLINE_SOON_DAYS = 7;
 	/** 히어로 배너(dot 캐러셀) 노출 개수. 피그마 기준 5개. */
 	private static final int FEATURED_LIMIT = 5;
+	private static final int FEATURED_WINDOW_DAYS = 14;
+	private static final String SECTION_FEATURED = "featured";
+	private static final String SECTION_CAMPUS = "campus";
+	private static final String SECTION_OTHER = "other";
+	private static final String SECTION_INELIGIBLE = "ineligible";
 	private static final int NEW_MATCHED_DAYS = 7;
 
 	private final ScholarshipRepository scholarshipRepository;
@@ -137,10 +142,10 @@ public class ScholarshipRecommendationService {
 
 		// 비로그인은 스크랩 상태가 없고(로그인해야 스크랩할 수 있다) 판정 근거도 없다.
 		List<ScholarshipCard> cards = paged.items().stream()
-				.map(s -> ScholarshipCard.of(s, posters.get(s.getId()), 0, List.of(), true, false))
+				.map(s -> ScholarshipCard.of(SECTION_OTHER, s, posters.get(s.getId()), 0, List.of(), true, false))
 				.toList();
 
-		return new CuratedScholarshipResponse(CuratedViewMode.GUEST,
+		return new CuratedScholarshipResponse(CuratedViewMode.GUEST, ScholarshipRanker.RANKER_VERSION,
 				List.of(), 0, List.of(), cards, List.of(), paged.pagination());
 	}
 
@@ -171,11 +176,11 @@ public class ScholarshipRecommendationService {
 		Map<Long, String> posters = findPosterUrls(featuredIds);
 
 		List<ScholarshipCard> cards = featured.stream()
-				.map(s -> ScholarshipCard.of(s, posters.get(s.getId()), 0, List.of(), true,
+				.map(s -> ScholarshipCard.of(SECTION_FEATURED, s, posters.get(s.getId()), 0, List.of(), true,
 						scrappedIds.contains(s.getId())))
 				.toList();
 
-		return new CuratedScholarshipResponse(CuratedViewMode.ONBOARDING_REQUIRED,
+		return new CuratedScholarshipResponse(CuratedViewMode.ONBOARDING_REQUIRED, ScholarshipRanker.RANKER_VERSION,
 				cards, 0, List.of(), List.of(), List.of(), new Pagination(1, 0, 0, 0));
 	}
 
@@ -194,12 +199,23 @@ public class ScholarshipRecommendationService {
 
 		// featured: 마감 임박순 상위 N. 피그마가 dot 캐러셀이라 단건이 아니라 목록이다.
 		// 근로장학은 추천 성격이 아니라 그 외 목록에서 빠지므로, 히어로 배너에도 올리지 않는다.
-		List<ScoredScholarship> featured = eligibleList.stream()
+		List<ScoredScholarship> featuredCandidates = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
 				.filter(s -> s.dDay() != null && s.dDay() >= 0)
-				.sorted(Comparator.comparingLong(ScoredScholarship::dDay))
+				.toList();
+		List<ScoredScholarship> featured = featuredCandidates.stream()
+				.filter(s -> s.dDay() <= FEATURED_WINDOW_DAYS)
+				.sorted(featuredComparator())
 				.limit(FEATURED_LIMIT)
 				.toList();
+		if (featured.size() < FEATURED_LIMIT) {
+			Set<Long> selectedIds = featured.stream()
+					.map(s -> s.scholarship().getId()).collect(Collectors.toSet());
+			featured = Stream.concat(featured.stream(), featuredCandidates.stream()
+					.filter(s -> !selectedIds.contains(s.scholarship().getId()))
+					.sorted(featuredComparator()))
+					.limit(FEATURED_LIMIT).toList();
+		}
 		Set<Long> featuredIds = featured.stream()
 				.map(s -> s.scholarship().getId())
 				.collect(Collectors.toSet());
@@ -208,7 +224,9 @@ public class ScholarshipRecommendationService {
 		List<ScholarshipCard> campus = eligibleList.stream()
 				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
 				.filter(s -> isSameSchool(s.scholarship(), profile))
-				.map(s -> s.toCard(scrappedIds, posters))
+				.sorted(Comparator.comparing(ScoredScholarship::dDay,
+						Comparator.nullsLast(Comparator.naturalOrder())))
+				.map(s -> s.toCard(SECTION_CAMPUS, scrappedIds, posters))
 				.toList();
 
 		// 그 외 추천: 지원 가능한 교외(EXTERNAL) 공고를 점수순으로. featured 중복은 제외한다.
@@ -223,28 +241,36 @@ public class ScholarshipRecommendationService {
 		// 올려서 상위 열 칸이 전부 같은 학교가 되는 일이 실제로 있다. 순서만 흩고 점수는 그대로 둔다.
 		List<ScholarshipCard> others = ScholarshipRanker
 				.diversify(otherRanked, s -> s.scholarship().getProvider()).stream()
-				.map(s -> s.toCard(scrappedIds, posters))
+				.map(s -> s.toCard(SECTION_OTHER, scrappedIds, posters))
 				.toList();
 
 		// 조건 미충족은 피그마상 별도 섹션이라 분리한다. 근로장학(WORK_STUDY)은 성격이 달라 제외.
-		List<ScholarshipCard> ineligible = scored.stream()
+		List<ScoredScholarship> ineligibleRanked = scored.stream()
 				.filter(s -> !s.eligible())
 				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.WORK_STUDY)
-				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed())
-				.map(s -> s.toCard(scrappedIds, posters))
+				.sorted(Comparator.comparingInt(ScoredScholarship::matchScore).reversed()).toList();
+		List<ScholarshipCard> ineligible = ScholarshipRanker
+				.diversify(ineligibleRanked, s -> s.scholarship().getProvider()).stream()
+				.map(s -> s.toCard(SECTION_INELIGIBLE, scrappedIds, posters))
 				.toList();
 
 		Page<ScholarshipCard> paged = slice(others, page, size);
 
 		return new CuratedScholarshipResponse(
 				CuratedViewMode.PERSONALIZED,
-				featured.stream().map(s -> s.toCard(scrappedIds, posters)).toList(),
+				ScholarshipRanker.RANKER_VERSION,
+				featured.stream().map(s -> s.toCard(SECTION_FEATURED, scrappedIds, posters)).toList(),
 				calculateProfileCompletionRate(profile),
 				campus,
 				paged.items(),
 				ineligible,
 				paged.pagination()
 		);
+	}
+
+	private Comparator<ScoredScholarship> featuredComparator() {
+		return Comparator.comparingInt(ScoredScholarship::matchScore).reversed()
+				.thenComparing(ScoredScholarship::dDay);
 	}
 
 	/** 정렬 드롭다운을 비교자로 바꾼다. 마감일이 없는 공고는 어느 기준에서든 뒤로 민다. */
@@ -521,8 +547,8 @@ public class ScholarshipRecommendationService {
 	private record ScoredScholarship(Scholarship scholarship, boolean eligible, int matchScore, Long dDay,
 			List<String> matchReasons) {
 
-		ScholarshipCard toCard(Set<Long> scrappedIds, Map<Long, String> posterUrls) {
-			return ScholarshipCard.of(scholarship, posterUrls.get(scholarship.getId()), matchScore,
+		ScholarshipCard toCard(String section, Set<Long> scrappedIds, Map<Long, String> posterUrls) {
+			return ScholarshipCard.of(section, scholarship, posterUrls.get(scholarship.getId()), matchScore,
 					matchReasons, eligible, scrappedIds.contains(scholarship.getId()));
 		}
 	}

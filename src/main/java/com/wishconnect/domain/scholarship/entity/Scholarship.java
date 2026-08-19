@@ -116,6 +116,9 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "submission_method", length = 300)
 	private String submissionMethod;
 
+	@Column(name = "contact", length = 500)
+	private String contact;
+
 	/**
 	 * 공공데이터 장학금의 <b>보조 정보만</b> 채운다.
 	 *
@@ -129,8 +132,10 @@ public class Scholarship extends BaseEntity {
 			String interviewEvidence,
 			String submissionMethod,
 			SubmissionChannel submissionChannel,
-			String submissionEvidence
+			String submissionEvidence,
+			String contact
 	) {
+		this.contact = contact;
 		this.essayRequirement = essayRequirement;
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
@@ -214,8 +219,10 @@ public class Scholarship extends BaseEntity {
 		boolean combined,
 		String submissionMethod,
 		SubmissionChannel submissionChannel,
-		String submissionEvidence
+		String submissionEvidence,
+		String contact
 	) {
+		this.contact = contact;
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
@@ -414,8 +421,10 @@ public class Scholarship extends BaseEntity {
 		boolean combined,
 		String submissionMethod,
 		SubmissionChannel submissionChannel,
-		String submissionEvidence
+		String submissionEvidence,
+		String contact
 	) {
+		this.contact = contact;
 		this.noticeKind = noticeKind;
 		this.combined = combined;
 		this.submissionMethod = submissionMethod;
@@ -449,6 +458,11 @@ public class Scholarship extends BaseEntity {
 	public void softDelete() {
 		this.deletedAt = LocalDateTime.now();
 		this.active = false;
+	}
+
+	public void updateRecruitmentStatusByAdmin(RecruitmentStatus recruitmentStatus) {
+		this.recruitmentStatus = recruitmentStatus;
+		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
 	}
 
 	public boolean isDeleted() {

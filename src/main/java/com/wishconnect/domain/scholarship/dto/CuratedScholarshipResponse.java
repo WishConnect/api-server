@@ -32,6 +32,7 @@ import java.util.List;
  */
 public record CuratedScholarshipResponse(
 		CuratedViewMode viewMode,
+		String rankerVersion,
 		List<ScholarshipCard> featured,
 		int profileCompletionRate,
 		List<ScholarshipCard> campusScholarships,
@@ -41,6 +42,7 @@ public record CuratedScholarshipResponse(
 ) {
 
 	public record ScholarshipCard(
+			String section,
 			Long scholarshipId,
 			String title,
 			String organization,
@@ -60,9 +62,10 @@ public record CuratedScholarshipResponse(
 			boolean isScrapped
 	) {
 
-		public static ScholarshipCard of(Scholarship scholarship, String posterUrl, int matchScore,
+		public static ScholarshipCard of(String section, Scholarship scholarship, String posterUrl, int matchScore,
 				List<String> matchReasons, boolean eligible, boolean isScrapped) {
 			return new ScholarshipCard(
+					section,
 					scholarship.getId(),
 					scholarship.getTitle(),
 					scholarship.getProvider(),

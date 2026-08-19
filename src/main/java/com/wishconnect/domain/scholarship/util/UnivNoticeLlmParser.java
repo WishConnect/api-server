@@ -97,7 +97,7 @@ public class UnivNoticeLlmParser {
 	 * 제목 판별 기준과 제목 동봉 · 자소서/면접 판단 · 공지 종류(RECRUITMENT/RESULT/GUIDE) ·
 	 * 통합 공고 · 제출 방식과 경로 · FINANCIAL_AID_TYPE 정의 축소.
 	 */
-	public static final String PROMPT_VERSION = "v5";
+	public static final String PROMPT_VERSION = "v6";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
@@ -125,7 +125,7 @@ public class UnivNoticeLlmParser {
 					"submissionMethod", "submissionChannel", "submissionEvidence", "essayRequirement",
 					"essayEvidence", "interviewRequirement", "interviewEvidence", "applicationStart",
 					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
-					"documents", "conditions"),
+					"documents", "conditions", "contact"),
 			"properties", buildProperties());
 
 	private static Map<String, Object> buildProperties() {
@@ -150,6 +150,7 @@ public class UnivNoticeLlmParser {
 		properties.put("essayEvidence", nullable("string"));
 		properties.put("interviewRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
 		properties.put("interviewEvidence", nullable("string"));
+		properties.put("contact", nullable("string"));
 		properties.put("documents", Map.of("type", "array", "items", Map.of("type", "string")));
 		properties.put("conditions", Map.of(
 				"type", "array",
@@ -246,6 +247,7 @@ public class UnivNoticeLlmParser {
 			  "essayEvidence": 문자열|null,
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
 			  "interviewEvidence": 문자열|null,
+			  "contact": 문자열|null,
 			  "documents": [문자열],
 			  "conditions": [{"type": 문자열, "evidence": 문자열, "necessity": "REQUIRED"|"PREFERRED",
 			                  "refLabels": [문자열], "operator": 문자열|null,
@@ -307,6 +309,7 @@ public class UnivNoticeLlmParser {
 			- <문의처는 제출 경로가 아니다.> "문의 : ○○팀 (02-000-0000, a@b.ac.kr)",
 			  "이메일로 문의 가능" 은 제출 방법이 아니다. 서류를 어디로 <내는지>만 본다.
 			  제출처가 안 적혀 있으면 방식·채널·근거를 모두 null 로 둔다.
+			- contact: 문의처는 담당 부서·전화·이메일이다. 서류를 내는 경로와 구분한다.
 			- submissionEvidence: submissionMethod/submissionChannel 의 근거가 된 본문 문장을
 			  그대로 인용한다. 인용할 문장이 없으면 <셋 다 null 로 둔다>. 본문이 없는 공고에
 			  "이메일로 서류 접수" 를 지어낸 일이 있었다.
