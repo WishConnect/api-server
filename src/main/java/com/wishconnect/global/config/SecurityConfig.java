@@ -17,6 +17,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 
 @Configuration
 @EnableMethodSecurity
@@ -46,18 +49,7 @@ public class SecurityConfig {
 			"/api/v1/regions",
 			"/api/v1/regions/**",
 			"/actuator/health",
-			"/swagger-ui/**",
-			"/swagger-ui.html",
-			"/v3/api-docs/**",
 			"/api/v1/scholarships/search",
-			/*
-			관리자 화면의 정적 파일(HTML/JS)만 공개한다. 데이터는 전부 ADMIN 전용 API 로만 오므로
-			이 파일 자체에는 비밀이 없다. 브라우저가 토큰 없이 첫 요청을 보내기 때문에 열어둔다.
-
-			⚠️ 실질적인 접근 통제는 Nginx IP allowlist 로 한다. deploy/README.md 참고.
-			 */
-			"/admin",
-			"/admin/**",
 			"/api/v1/scholarships/search",
 			// 비로그인 큐레이팅. 가입 전에 어떤 장학금이 있는지 보여주지 못하면 가입할 이유가 없다.
 			// 토큰이 있으면 필터가 인증을 채워 주므로, 열어 둬도 로그인 사용자는 개인화 응답을 받는다.
@@ -65,6 +57,13 @@ public class SecurityConfig {
 			"/api/v1/insights",
 			// 권리자·기관 담당자는 회원이 아닐 수 있으므로 콘텐츠 이용 문의 접수는 공개한다.
 			"/api/v1/content-inquiries"
+	};
+
+	private static final String[] ADMIN_VIEW_ENDPOINTS = {
+			"/admin/**",
+			"/swagger-ui/**",
+			"/swagger-ui.html",
+			"/v3/api-docs/**"
 	};
 
 	/**
@@ -100,13 +99,24 @@ public class SecurityConfig {
 				.sessionManagement(session ->
 						session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
+						// 로그인 화면과 로그인·로그아웃 요청만 인증 전 접근을 허용한다.
+						.requestMatchers("/admin", "/admin/login.html",
+								"/api/v1/admin/auth/login", "/api/v1/admin/auth/logout").permitAll()
+						.requestMatchers(ADMIN_VIEW_ENDPOINTS).hasRole("ADMIN")
 						.requestMatchers(ADMIN_ENDPOINTS).hasRole("ADMIN")
 						// 추천·검색 목록을 비로그인에게 보여주므로, 해당 카드의 상세도 열어야 한다.
 						.requestMatchers(HttpMethod.GET, "/api/v1/scholarships/{scholarshipId}").permitAll()
 						.requestMatchers(PUBLIC_ENDPOINTS).permitAll()
 						.anyRequest().authenticated())
-				.exceptionHandling(handler ->
-						handler.authenticationEntryPoint(authenticationEntryPoint))
+				.exceptionHandling(handler -> handler
+						.defaultAuthenticationEntryPointFor(
+								new LoginUrlAuthenticationEntryPoint("/admin/login.html"),
+								new OrRequestMatcher(
+										new AntPathRequestMatcher("/admin/**"),
+										new AntPathRequestMatcher("/swagger-ui/**"),
+										new AntPathRequestMatcher("/swagger-ui.html"),
+										new AntPathRequestMatcher("/v3/api-docs/**")))
+						.authenticationEntryPoint(authenticationEntryPoint))
 				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore),
 						UsernamePasswordAuthenticationFilter.class);
 		return http.build();
