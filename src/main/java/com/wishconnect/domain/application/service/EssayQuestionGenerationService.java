@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.wishconnect.global.lock.RedisLock;
+import java.util.Optional;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +52,7 @@ public class EssayQuestionGenerationService {
 	private final EssayQuestionStore store;
 	private final EssayQuestionPromptBuilder promptBuilder;
 	private final LlmClient llmClient;
+	private final RedisLock redisLock;
 	private final StringRedisTemplate redisTemplate;
 
 	/**
@@ -63,8 +66,13 @@ public class EssayQuestionGenerationService {
 	 */
 	public EssayQuestionGenerationResponse generate(UUID userId, Long applicationId) {
 		EssayQuestionStore.Prepared prepared = store.prepare(userId, applicationId);
+		if (prepared.existing() != null) {
+			// 이미 맞춤 문항으로 교체된 지원서다. LLM 도 한도도 쓰지 않고 그대로 돌려준다.
+			return prepared.existing();
+		}
 
-		if (!acquireLock(applicationId)) {
+		Optional<String> lockToken = redisLock.tryLock(LOCK_KEY + applicationId, LOCK_TTL);
+		if (lockToken.isEmpty()) {
 			// 같은 지원서에 이미 생성이 돌고 있다. 두 번 교체하지 않는다.
 			return store.current(userId, applicationId, "문항 생성이 이미 진행 중입니다.");
 		}
@@ -105,13 +113,9 @@ public class EssayQuestionGenerationService {
 			}
 			return store.replace(userId, applicationId, generated);
 		} finally {
-			redisTemplate.delete(LOCK_KEY + applicationId);
+			// 내가 잡은 잠금만 해제한다. TTL 이 만료돼 다른 요청이 새로 잡았다면 건드리지 않는다.
+			redisLock.unlock(LOCK_KEY + applicationId, lockToken.get());
 		}
-	}
-
-	private boolean acquireLock(Long applicationId) {
-		return Boolean.TRUE.equals(redisTemplate.opsForValue()
-				.setIfAbsent(LOCK_KEY + applicationId, "1", LOCK_TTL));
 	}
 
 	/** 사용자별 생성 횟수를 제한한다. 지원서 ID 를 순회해도 크레딧이 무한정 나가지 않게 한다. */

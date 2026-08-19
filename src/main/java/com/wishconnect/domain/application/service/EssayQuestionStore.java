@@ -4,6 +4,7 @@ import com.wishconnect.domain.application.dto.response.EssayQuestionGenerationRe
 import com.wishconnect.domain.application.entity.Essay;
 import com.wishconnect.domain.application.entity.EssayAnswer;
 import com.wishconnect.domain.application.entity.EssayQuestion;
+import com.wishconnect.domain.application.entity.EssayQuestionSource;
 import com.wishconnect.domain.application.repository.AiInterviewRepository;
 import com.wishconnect.domain.application.repository.EssayAnswerRepository;
 import com.wishconnect.domain.application.repository.EssayQuestionRepository;
@@ -55,6 +56,17 @@ public class EssayQuestionStore {
 
 		List<EssayQuestion> questions = essayQuestionRepository
 				.findByEssay_IdOrderByQuestionOrderAsc(applicationId);
+
+		/*
+		이미 맞춤 문항으로 교체된 지원서면 다시 만들지 않는다. 재시도·더블클릭·화면 재진입으로
+		같은 API 가 또 불려도 LLM 을 부르지 않고, 한도도 깎지 않고, questionId 도 그대로 둔다.
+		이 검사가 없으면 성공한 요청을 다시 보내는 것만으로 비용이 나가고 화면이 들고 있던
+		ID 가 무효가 된다.
+		 */
+		if (essay.getQuestionSource() == EssayQuestionSource.GENERATED) {
+			return new Prepared(null, List.of(),
+					response(EssayQuestionGenerationResponse.Source.GENERATED, questions, null));
+		}
 		if (hasStartedWriting(questions)) {
 			throw new CustomException(ErrorCode.ESSAY_QUESTIONS_LOCKED);
 		}
@@ -68,7 +80,7 @@ public class EssayQuestionStore {
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
 		return new Prepared(scholarship,
-				scholarshipConditionRepository.findAllByScholarshipId(scholarshipId));
+				scholarshipConditionRepository.findAllByScholarshipId(scholarshipId), null);
 	}
 
 	/**
@@ -122,6 +134,8 @@ public class EssayQuestionStore {
 					.isCompleted(false)
 					.build());
 		}
+		// 교체 성공을 남긴다. 다음 호출은 LLM 없이 현재 문항을 돌려준다.
+		essay.markQuestionsGenerated();
 		return response(EssayQuestionGenerationResponse.Source.GENERATED, created, null);
 	}
 
@@ -179,6 +193,7 @@ public class EssayQuestionStore {
 	 * <p>엔티티를 트랜잭션 밖으로 넘기므로 <b>프록시가 아닌 실제 엔티티여야 한다.</b>
 	 * 프롬프트가 읽는 것은 제목·기관·요약·설명처럼 전부 기본 컬럼이다.
 	 */
-	public record Prepared(Scholarship scholarship, List<ScholarshipCondition> conditions) {
+	public record Prepared(Scholarship scholarship, List<ScholarshipCondition> conditions,
+			EssayQuestionGenerationResponse existing) {
 	}
 }

@@ -31,6 +31,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import com.wishconnect.global.lock.RedisLock;
+import java.util.Optional;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -62,6 +64,7 @@ class EssayQuestionGenerationServiceTest {
 
 	@Mock private EssayQuestionStore store;
 	@Mock private LlmClient llmClient;
+	@Mock private RedisLock redisLock;
 	@Mock private StringRedisTemplate redisTemplate;
 	@Mock private ValueOperations<String, String> valueOperations;
 
@@ -70,13 +73,14 @@ class EssayQuestionGenerationServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new EssayQuestionGenerationService(store,
-				new EssayQuestionPromptBuilder(new ObjectMapper()), llmClient, redisTemplate);
+				new EssayQuestionPromptBuilder(new ObjectMapper()), llmClient,
+				redisLock, redisTemplate);
 		given(redisTemplate.opsForValue()).willReturn(valueOperations);
-		given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-				.willReturn(true);
+		given(redisLock.tryLock(anyString(), any(Duration.class)))
+				.willReturn(Optional.of("token"));
 		given(valueOperations.increment(anyString())).willReturn(1L);
 		given(store.prepare(USER_ID, APPLICATION_ID))
-				.willReturn(new EssayQuestionStore.Prepared(scholarship(), List.of()));
+				.willReturn(new EssayQuestionStore.Prepared(scholarship(), List.of(), null));
 		given(store.current(any(), anyLong(), any()))
 				.willAnswer(i -> response(Source.DEFAULT, i.getArgument(2)));
 		given(store.replace(any(), anyLong(), any()))
@@ -189,8 +193,7 @@ class EssayQuestionGenerationServiceTest {
 	@Test
 	@DisplayName("잠금을 못 잡으면 LLM 을 부르지 않고 현재 문항을 돌려준다")
 	void skipsWhenLocked() {
-		given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
-				.willReturn(false);
+		given(redisLock.tryLock(anyString(), any(Duration.class))).willReturn(Optional.empty());
 
 		EssayQuestionGenerationResponse result = service.generate(USER_ID, APPLICATION_ID);
 
@@ -212,13 +215,34 @@ class EssayQuestionGenerationServiceTest {
 	}
 
 	@Test
-	@DisplayName("성공하든 실패하든 잠금을 푼다")
-	void releasesLock() {
+	@DisplayName("성공하든 실패하든 잠금을 푼다 — 내가 받은 토큰으로만 푼다")
+	void releasesLockWithOwnToken() {
+		given(redisLock.tryLock(anyString(), any(Duration.class)))
+				.willReturn(Optional.of("my-token"));
 		given(llmClient.chat(any())).willThrow(new RuntimeException("boom"));
 
 		service.generate(USER_ID, APPLICATION_ID);
 
-		verify(redisTemplate).delete("essay-question:lock:" + APPLICATION_ID);
+		// 토큰 없이 지우면 TTL 만료 뒤 남의 잠금을 지운다.
+		verify(redisLock).unlock("essay-question:lock:" + APPLICATION_ID, "my-token");
+	}
+
+	// --- 재호출 멱등성 ---
+
+	@Test
+	@DisplayName("이미 맞춤 문항으로 교체된 지원서는 다시 만들지 않는다 — LLM·한도·questionId 모두 그대로")
+	void isIdempotentAfterSuccess() {
+		// 재시도·더블클릭·화면 재진입으로 같은 API 가 또 불리는 상황.
+		given(store.prepare(USER_ID, APPLICATION_ID)).willReturn(
+				new EssayQuestionStore.Prepared(null, List.of(), response(Source.GENERATED, null)));
+
+		EssayQuestionGenerationResponse result = service.generate(USER_ID, APPLICATION_ID);
+
+		assertThat(result.source()).isEqualTo(Source.GENERATED);
+		verify(llmClient, never()).chat(any());
+		verify(store, never()).replace(any(), anyLong(), any());
+		verify(valueOperations, never()).increment(anyString());
+		verify(redisLock, never()).tryLock(anyString(), any(Duration.class));
 	}
 
 	@Test
