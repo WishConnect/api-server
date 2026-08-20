@@ -70,12 +70,24 @@ public class ScholarshipMergeExecutor {
 		moved.put("dispatchLog.moved", repoint("NotificationDispatchLog", from, to));
 		moved.put("recommendation.moved", repoint("ScholarshipRecommendation", from, to));
 		moved.put("timeline.moved", repoint("ScholarshipTimeline", from, to));
+		// 추천 노출·클릭 기록. 옮기지 않으면 사라진 장학금을 가리킨 채 남아 랭킹 학습 데이터가 샌다.
+		moved.put("event.moved", repoint("ScholarshipEvent", from, to));
 
 		// 4) 원본: 어느 공고에서 나온 정제 데이터인지 추적이 이어져야 한다.
 		moved.put("rawScholarship.moved", repoint("RawScholarship", from, to));
 
 		// 5) 파생 데이터는 옮기지 않고 지운다. primary 쪽 값이 이미 있고,
 		//    합치면 같은 조건·서류가 중복으로 쌓인다. 재파싱하면 다시 만들어진다.
+		//
+		//    조건보다 <b>참조를 먼저</b> 지워야 한다. scholarship_condition_ref 는
+		//    @ElementCollection 이고 벌크 JPQL delete 는 컬렉션 테이블을 정리해 주지 않는다.
+		//    자식 행이 남은 채 부모를 지우려 하면 FK 위반으로 트랜잭션이 통째로 롤백되고,
+		//    관리자 화면에서는 "병합 버튼을 눌러도 아무 일이 없는" 것처럼 보인다.
+		moved.put("conditionRef.deleted", entityManager.createNativeQuery("""
+				delete from scholarship_condition_ref
+				where condition_id in (select id from scholarship_condition where scholarship_id = :id)
+				""")
+				.setParameter("id", from).executeUpdate());
 		moved.put("condition.deleted", deleteBy("ScholarshipCondition", from));
 		moved.put("document.deleted", deleteBy("ScholarshipDocument", from));
 

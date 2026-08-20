@@ -1,13 +1,17 @@
 package com.wishconnect.domain.scholarship.entity;
 
+import com.wishconnect.domain.common.entity.School;
 import com.wishconnect.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
@@ -200,6 +204,24 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "enriched_at")
 	private LocalDateTime enrichedAt;
 
+	/**
+	 * 이 공고를 낸 학교. <b>교내 공고를 다른 학교 학생에게 보여주지 않기 위한 것</b>이다.
+	 *
+	 * <p>그동안은 {@code provider} 문자열을 프로필 학교명과 견줬는데, 표기가 조금만 달라도
+	 * ("인천대"/"인천대학교"/"국립인천대학교") 대조가 빗나갔다. 게다가 타입으로는 거를 수 없다 —
+	 * 학교를 짚는 공고 17건 중 16건이 {@code INTERNAL} 이 아니라 {@code WORK_STUDY}·{@code EXTERNAL}
+	 * 로 분류돼 있었다(근로장학은 대개 교내인데 타입이 다르게 붙는다).
+	 *
+	 * <p><b>수집 시점에는 어느 대학인지 이미 안다.</b> 대학 공지 수집기는 사이트별로 돌고
+	 * {@code UnivNoticeProperties} 에 학교명이 있다. 그 사실을 여기 남겨 두면 추천에서 확실히 쓸 수 있다.
+	 *
+	 * <p>{@code null} 은 "학교와 무관한 공고"가 아니라 <b>"모른다"</b>이다. 공공데이터(재단·기업)
+	 * 공고는 대부분 여기에 해당하고, 관문은 값이 있을 때만 건다.
+	 */
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "school_id")
+	private School school;
+
 	@Builder
 	private Scholarship(
 		String title,
@@ -289,6 +311,16 @@ public class Scholarship extends BaseEntity {
 		// (조회 쿼리가 전부 deletedAt IS NULL 로 거른다)
 		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
+	}
+
+	/**
+	 * 공고를 낸 학교를 지정한다.
+	 *
+	 * <p>빌더가 아니라 별도 메서드인 이유: {@code @Builder} 가 붙은 생성자를 <b>위치 기반</b>으로
+	 * 부르는 곳이 있어({@code ScholarshipMapper}) 인자를 늘리면 조용히 어긋난다.
+	 */
+	public void assignSchool(School school) {
+		this.school = school;
 	}
 
 	/** 자동 보완 결과 반영. 상세 URL 을 못 찾았어도 시도 시각은 남겨 재시도 주기를 지킨다. */
