@@ -45,6 +45,7 @@ class ScholarshipMergeExecutorTest {
 	private ScholarshipMergeExecutor executor;
 	private Scholarship primary;
 	private Scholarship duplicate;
+	private final List<String> issuedQueries = new java.util.ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -52,7 +53,15 @@ class ScholarshipMergeExecutorTest {
 		primary = scholarship(10L, "남길 장학금");
 		duplicate = scholarship(11L, "중복 장학금");
 
-		given(entityManager.createQuery(anyString())).willReturn(query);
+		issuedQueries.clear();
+		given(entityManager.createQuery(anyString())).will(invocation -> {
+			issuedQueries.add(invocation.getArgument(0));
+			return query;
+		});
+		given(entityManager.createNativeQuery(anyString())).will(invocation -> {
+			issuedQueries.add(invocation.getArgument(0));
+			return query;
+		});
 		given(query.setParameter(anyString(), org.mockito.ArgumentMatchers.any())).willReturn(query);
 		given(query.executeUpdate()).willReturn(0);
 	}
@@ -69,10 +78,14 @@ class ScholarshipMergeExecutorTest {
 		return scholarship;
 	}
 
+	/**
+	 * 실행된 쿼리를 <b>호출 순서대로</b> 돌려준다.
+	 *
+	 * <p>ArgumentCaptor 로는 JPQL(createQuery)과 네이티브(createNativeQuery)의 상대 순서를 알 수 없다.
+	 * 조건 참조를 조건보다 먼저 지웠는지 검증하려면 그 순서가 필요해서 직접 기록한다.
+	 */
 	private List<String> executedQueries() {
-		ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-		verify(entityManager, org.mockito.Mockito.atLeastOnce()).createQuery(captor.capture());
-		return captor.getAllValues();
+		return issuedQueries;
 	}
 
 	// --- 누락 감지 (가장 중요) ---
@@ -82,24 +95,25 @@ class ScholarshipMergeExecutorTest {
 	void reportsEveryReferencingTable() {
 		Map<String, Integer> moved = executor.merge(primary, duplicate);
 
-		// 조사 시점(2026-08) 기준 scholarship 을 참조하는 테이블 9개를 전부 다룬다.
+		// scholarship 을 참조하는 테이블을 전부 다룬다.
 		// 새 참조 테이블이 추가되면 이 테스트가 실패해 병합 로직 갱신을 강제한다.
 		assertThat(moved.keySet()).containsExactlyInAnyOrder(
 				"scrap.deletedDuplicate", "scrap.moved",
 				"essay.moved", "report.moved", "dispatchLog.moved",
-				"recommendation.moved", "timeline.moved", "rawScholarship.moved",
-				"condition.deleted", "document.deleted");
+				"recommendation.moved", "timeline.moved", "event.moved",
+				"rawScholarship.moved",
+				"conditionRef.deleted", "condition.deleted", "document.deleted");
 	}
 
 	@Test
-	@DisplayName("사용자 데이터 7종은 재지정(update)하고 파생 데이터 2종은 삭제(delete)한다")
+	@DisplayName("사용자 데이터 8종은 재지정(update)하고 파생 데이터 2종은 삭제(delete)한다")
 	void repointsUserDataAndDeletesDerived() {
 		executor.merge(primary, duplicate);
 		List<String> queries = executedQueries();
 
 		for (String entity : List.of("Scrap", "Essay", "ScholarshipReport",
 				"NotificationDispatchLog", "ScholarshipRecommendation",
-				"ScholarshipTimeline", "RawScholarship")) {
+				"ScholarshipTimeline", "ScholarshipEvent", "RawScholarship")) {
 			assertThat(queries)
 					.as(entity + " 재지정")
 					.anyMatch(q -> q.startsWith("update " + entity + " e set e.scholarship.id"));
@@ -109,6 +123,29 @@ class ScholarshipMergeExecutorTest {
 					.as(entity + " 삭제")
 					.anyMatch(q -> q.startsWith("delete from " + entity + " e"));
 		}
+	}
+
+	@Test
+	@DisplayName("조건 참조를 조건보다 먼저 지운다 — 순서가 뒤바뀌면 FK 위반으로 병합이 통째로 롤백된다")
+	void deletesConditionRefsBeforeConditions() {
+		executor.merge(primary, duplicate);
+		List<String> queries = executedQueries();
+
+		int refDelete = indexOfMatch(queries, q -> q.contains("delete from scholarship_condition_ref"));
+		int conditionDelete = indexOfMatch(queries, q -> q.startsWith("delete from ScholarshipCondition e"));
+
+		assertThat(refDelete).as("scholarship_condition_ref 삭제 쿼리").isNotNegative();
+		assertThat(conditionDelete).as("ScholarshipCondition 삭제 쿼리").isNotNegative();
+		assertThat(refDelete).as("참조를 먼저 지워야 한다").isLessThan(conditionDelete);
+	}
+
+	private static int indexOfMatch(List<String> queries, java.util.function.Predicate<String> predicate) {
+		for (int i = 0; i < queries.size(); i++) {
+			if (predicate.test(queries.get(i))) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	@Test

@@ -106,6 +106,8 @@ public class ScholarshipRecommendationService {
 	// 카드 그리드가 포스터 중심이라 목록에서도 이미지를 함께 내려준다.
 	private final ImageRepository imageRepository;
 	private final ImageStorageService imageStorageService;
+	// 사는 곳·다니는 학교가 다른 공고를 걷어내는 관문. 자격 판정과 분리해 둔다.
+	private final ScholarshipEligibilityGate eligibilityGate;
 
 	/**
 	 * 큐레이팅 메인. 로그인·온보딩 여부에 따라 세 가지 화면 중 하나를 만든다.
@@ -199,7 +201,8 @@ public class ScholarshipRecommendationService {
 
 	private CuratedScholarshipResponse personalizedCurated(
 			UUID userId, UserProfile profile, int page, int size, CuratedFilters filters) {
-		List<ScoredScholarship> scored = scoreOpenScholarships(matchProfileOf(userId, profile));
+		MatchProfile matchProfile = matchProfileOf(userId, profile);
+		List<ScoredScholarship> scored = scoreOpenScholarships(matchProfile);
 
 		// 화면에 노출되는 카드(featured/교내/그외)의 스크랩 여부를 한 번에 조회한다.
 		// 상세·검색과 달리 큐레이팅 카드에 isScrapped 가 없어, 뒤로가기 시 스크랩 상태가 사라지던 문제 해결.
@@ -208,24 +211,32 @@ public class ScholarshipRecommendationService {
 		Map<Long, String> posters = findPosterUrls(
 				scored.stream().map(s -> s.scholarship().getId()).toList());
 
-		List<ScoredScholarship> eligibleList = scored.stream().filter(ScoredScholarship::eligible).toList();
+		// 사는 곳·다니는 학교가 다른 공고를 먼저 걷어낸다.
+		//
+		// 타입(INTERNAL)으로 거르던 방식은 새어 나갔다. 학교를 짚는 공고 17건 중 16건이
+		// INTERNAL 이 아니라 WORK_STUDY(9)·EXTERNAL(7) 로 분류돼 있어, 인천대 근로장학금이
+		// 그대로 통과했다. 그래서 타입이 아니라 <학교 id·조건·제목> 을 본다.
+		//
+		// 자격 게이트(eligible)와 따로 거는 이유도 있다. 자격 게이트는 우대사항(PREFERRED)과
+		// 통합 공고(combined)를 봐주는데, 사는 곳·다니는 학교는 봐주면 안 된다.
+		List<ScoredScholarship> eligibleList = scored.stream()
+				.filter(ScoredScholarship::eligible)
+				.filter(s -> eligibilityGate.belongsTo(s.scholarship(), s.conditions(), matchProfile))
+				.toList();
 
 		// 프론트가 처음 5건과 더보기를 나누므로, 지원 가능한 전체를 정렬해 내려준다.
 		// 교내·교외·근로를 모두 포함하고 점수 동점일 때만 마감일을 본다.
-		// 교내 공고는 소속 학교 것만 배너에 올린다. 필터가 없어서 인천대 학생이 아닌 사람에게
-		// 인천대 교내장학금이 최상단에 떴다. 조건이 "인천대학교 재학생" 이라도 자격 게이트가
-		// 그것만으로 걸러 주지는 못한다 — 학교를 못 적은 공고가 있기 때문이다.
 		List<ScoredScholarship> featured = eligibleList.stream()
-				.filter(s -> s.scholarship().getScholarshipType() != ScholarshipType.INTERNAL
-						|| isSameSchool(s.scholarship(), profile))
 				.sorted(recommendationComparator()).toList();
 		Set<Long> featuredTopIds = featured.stream().limit(FEATURED_LIMIT)
 				.map(s -> s.scholarship().getId())
 				.collect(Collectors.toSet());
 
 		// 교내는 소속 학교 것만 노출한다. 학교 정보가 없으면 판단할 수 없어 비운다.
+		// 타입이 INTERNAL 이 아니어도(근로장학이 대표적) 학교가 지정돼 있으면 교내로 본다.
 		List<ScholarshipCard> campus = eligibleList.stream()
-				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL)
+				.filter(s -> s.scholarship().getScholarshipType() == ScholarshipType.INTERNAL
+						|| s.scholarship().getSchool() != null)
 				.filter(s -> isSameSchool(s.scholarship(), profile))
 				.sorted(recommendationComparator())
 				.map(s -> s.toCard(SECTION_CAMPUS, scrappedIds, posters))
@@ -242,8 +253,11 @@ public class ScholarshipRecommendationService {
 				.toList();
 
 		// 조건 미충족은 모집 중인 전체 장학금을 대상으로 하며 근로도 제외하지 않는다.
+		// 다만 사는 곳·다니는 학교가 다른 공고는 "조건이 아쉬운 공고"가 아니라 애초에 상관없는
+		// 공고라, 여기에도 올리지 않는다.
 		List<ScoredScholarship> ineligibleRanked = scored.stream()
 				.filter(s -> !s.eligible())
+				.filter(s -> eligibilityGate.belongsTo(s.scholarship(), s.conditions(), matchProfile))
 				.filter(s -> matchesFilters(s, filters, scrappedIds))
 				.sorted(recommendationComparator()).toList();
 		List<ScholarshipCard> ineligible = ineligibleRanked.stream()
@@ -359,6 +373,10 @@ public class ScholarshipRecommendationService {
 		if (profile == null || profile.getSchool() == null) {
 			return false;
 		}
+		// 학교가 지정돼 있으면 id 로 끝낸다. 문자열 대조는 표기가 다르면 빗나간다.
+		if (scholarship.getSchool() != null && scholarship.getSchool().getId() != null) {
+			return scholarship.getSchool().getId().equals(profile.getSchool().getId());
+		}
 		String schoolName = profile.getSchool().getName();
 		String provider = scholarship.getProvider();
 		if (schoolName == null || provider == null) {
@@ -384,8 +402,12 @@ public class ScholarshipRecommendationService {
 
 	@Transactional(readOnly = true)
 	public HomeSummaryResponse getHomeSummary(UUID userId) {
-		List<ScoredScholarship> eligibleList = scoreOpenScholarships(matchProfileOf(userId)).stream()
+		// 큐레이팅 목록과 같은 기준으로 세야 한다. 관문을 빠뜨리면 홈의 "새 맞춤 장학금 N건" 이
+		// 목록에 없는 공고까지 세어 숫자가 어긋난다.
+		MatchProfile summaryProfile = matchProfileOf(userId);
+		List<ScoredScholarship> eligibleList = scoreOpenScholarships(summaryProfile).stream()
 				.filter(ScoredScholarship::eligible)
+				.filter(s -> eligibilityGate.belongsTo(s.scholarship(), s.conditions(), summaryProfile))
 				.toList();
 
 		LocalDateTime newSince = LocalDateTime.now().minusDays(NEW_MATCHED_DAYS);
@@ -425,8 +447,14 @@ public class ScholarshipRecommendationService {
 						.collect(Collectors.groupingBy(condition -> condition.getScholarship().getId()));
 
 		return candidates.stream()
-				.filter(scholarship -> score(scholarship,
-						conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of()), matchProfile).eligible())
+				.filter(scholarship -> {
+					List<ScholarshipCondition> conditions =
+							conditionsByScholarshipId.getOrDefault(scholarship.getId(), List.of());
+					// 달력도 목록과 같은 기준으로 걸러야 한다. 관문을 빠뜨리면 목록에는 없는
+					// 다른 학교·다른 지역 공고가 달력에만 남는다.
+					return score(scholarship, conditions, matchProfile).eligible()
+							&& eligibilityGate.belongsTo(scholarship, conditions, matchProfile);
+				})
 				.map(Scholarship::getId)
 				.collect(Collectors.toSet());
 	}
@@ -561,7 +589,7 @@ public class ScholarshipRecommendationService {
 					.map(Evaluation::description)
 					.toList();
 		}
-		return new ScoredScholarship(scholarship, eligible, score, dDay, reasons);
+		return new ScoredScholarship(scholarship, eligible, score, dDay, reasons, conditions);
 	}
 
 	/** 매칭에 쓰이는 프로필 필드(9개) 중 채워진 비율(%). 프로필 없으면 0. */
@@ -580,7 +608,7 @@ public class ScholarshipRecommendationService {
 	}
 
 	private record ScoredScholarship(Scholarship scholarship, boolean eligible, int matchScore, Long dDay,
-			List<String> matchReasons) {
+			List<String> matchReasons, List<ScholarshipCondition> conditions) {
 
 		ScholarshipCard toCard(String section, Set<Long> scrappedIds, Map<Long, String> posterUrls) {
 			return ScholarshipCard.of(section, scholarship, posterUrls.get(scholarship.getId()), matchScore,
