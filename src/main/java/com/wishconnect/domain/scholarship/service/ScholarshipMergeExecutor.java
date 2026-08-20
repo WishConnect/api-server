@@ -76,6 +76,13 @@ public class ScholarshipMergeExecutor {
 		// 4) 원본: 어느 공고에서 나온 정제 데이터인지 추적이 이어져야 한다.
 		moved.put("rawScholarship.moved", repoint("RawScholarship", from, to));
 
+		// 추천 노출·클릭 기록. @ManyToOne이 아니라 scholarshipId 필드만 있으므로 따로 처리.
+		moved.put("event.moved", entityManager.createQuery(
+						"update ScholarshipEvent e set e.scholarshipId = :to where e.scholarshipId = :from")
+				.setParameter("to", to)
+				.setParameter("from", from)
+				.executeUpdate());
+
 		// 5) 파생 데이터는 옮기지 않고 지운다. primary 쪽 값이 이미 있고,
 		//    합치면 같은 조건·서류가 중복으로 쌓인다. 재파싱하면 다시 만들어진다.
 		//
