@@ -1,7 +1,5 @@
 package com.wishconnect.domain.scholarship.service;
 
-import com.wishconnect.domain.common.entity.Region;
-import com.wishconnect.domain.common.repository.RegionRepository;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
@@ -9,14 +7,8 @@ import com.wishconnect.domain.scholarship.util.ConditionMatcher;
 import com.wishconnect.domain.scholarship.util.ConditionMatcher.Result;
 import com.wishconnect.domain.scholarship.util.MatchProfile;
 import com.wishconnect.domain.user.entity.UserProfile;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 /**
  * <b>나와 상관없는 공고</b>를 추천에서 걷어낸다. 자격 게이트와는 별개로 늘 적용한다.
@@ -29,35 +21,25 @@ import org.springframework.util.StringUtils;
  * 곧바로 "왜 이게 뜨지"가 된다. 실제로 인천대에 다니지 않는 사용자에게 인천대 장학금이,
  * 서울 사는 사용자에게 울산·목포 장학금이 떴다.
  *
- * <p>판단 근거는 세 가지이고, <b>하나라도 어긋나면 막는다.</b>
+ * <p>판단 근거는 두 가지이고, <b>하나라도 어긋나면 막는다.</b>
  * <ol>
  *   <li>학교 — {@code scholarship.school_id} 가 프로필 학교와 다르면 막는다. 가장 확실한 신호다.</li>
  *   <li>조건 — {@code UNIVERSITY_TYPE}·{@code REGION_RESIDENCY} 조건이 불일치면 막는다.
  *       necessity·combined 와 무관하게 본다.</li>
- *   <li>제목 — 지역 조건이 아예 없는 공고는 제목에서 지역명을 찾아 견준다.</li>
  * </ol>
+ *
+ * <p><b>제목으로 추론하지 않는다.</b> 한때 지역 조건이 없는 공고는 제목에서 지역명을 찾아 견줬는데,
+ * 그러면 {@code "서울장학재단 전국 대학생 장학금"} 처럼 기관 이름에 지역이 들어간 전국 공고가
+ * 서울 밖 사용자에게서 사라진다. 제목은 근거가 아니라 힌트다. 근거는 본문에 있고,
+ * {@code RegionConditionBackfillService} 가 본문을 읽어 <b>조건으로 저장</b>한다.
+ * 이 관문은 저장된 조건만 본다 — 판단이 추론이 아니라 사실이고, 근거 문장이 남아 검증할 수 있다.
  *
  * <p><b>판정할 수 없으면 통과시킨다.</b> "관내에 주소를 두고" 처럼 어느 지역인지 알 수 없는 문구나,
  * 프로필에 학교·지역이 없는 사용자까지 막으면 자격 있는 사람을 떨어뜨린다. 모르는 것을 막는 실패는
  * 사용자가 알아챌 방법이 없어서, 잘못 보여주는 실패보다 고치기 어렵다.
  */
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class ScholarshipEligibilityGate {
-
-	private final RegionRepository regionRepository;
-
-	/**
-	 * 지역 마스터의 이름 색인. {@code "울산"} → 그 지역과 상위 시도의 id 집합.
-	 *
-	 * <p>마스터는 시딩으로만 바뀌는 정적 데이터라 한 번 읽어 두고 재사용한다. 요청마다 245건을
-	 * 다시 읽으면 큐레이팅 한 번에 쿼리가 그만큼 늘어난다.
-	 *
-	 * <p>여러 지역에 같은 이름이 있으면({@code "서구"} 는 대구·인천·광주·대전·부산에 모두 있다)
-	 * <b>색인에서 뺀다.</b> 어느 곳인지 특정할 수 없는 채로 막으면 엉뚱한 사람이 탈락한다.
-	 */
-	private volatile Map<String, Set<Long>> regionIndex;
 
 	/** 추천 목록에 올려도 되는 공고인지. */
 	public boolean belongsTo(Scholarship scholarship, List<ScholarshipCondition> conditions,
@@ -85,27 +67,15 @@ public class ScholarshipEligibilityGate {
 		}
 
 		List<ScholarshipCondition> checked = conditions == null ? List.of() : conditions;
-		boolean hasRegionCondition = false;
 		for (ScholarshipCondition condition : checked) {
 			ConditionType type = condition.getConditionType();
 			if (type != ConditionType.UNIVERSITY_TYPE && type != ConditionType.REGION_RESIDENCY) {
 				continue;
 			}
-			if (type == ConditionType.REGION_RESIDENCY) {
-				hasRegionCondition = true;
-			}
 			ConditionMatcher.Evaluation evaluation = ConditionMatcher.evaluate(condition, matchProfile);
 			if (evaluation.result() == Result.MISMATCH) {
 				return Decision.block(evaluation.description() == null
 						? "조건 불일치(" + type + ")" : evaluation.description());
-			}
-		}
-
-		// 지역 조건이 없는 공고가 훨씬 많다. 그 경우에만 제목을 본다.
-		if (!hasRegionCondition) {
-			String titleBlock = blockedByTitleRegion(scholarship, matchProfile);
-			if (titleBlock != null) {
-				return Decision.block(titleBlock);
 			}
 		}
 		return Decision.allow();
@@ -127,79 +97,6 @@ public class ScholarshipEligibilityGate {
 			return null;
 		}
 		return "다른 학교 공고(" + scholarship.getSchool().getName() + ")";
-	}
-
-	/**
-	 * 제목에 지역이 박힌 공고를 견준다. {@code "울산광역시 인재육성 장학금"}, {@code "목포시 장학회"}.
-	 *
-	 * <p><b>본문은 보지 않는다.</b> 제목은 짧아서 지역명이 나오면 대상을 한정하는 뜻일 때가 거의
-	 * 전부지만, 본문에는 기관 주소·문의처·연혁처럼 대상과 무관한 지역명이 흔하다. 본문까지 훑으면
-	 * 전국 대상 공고를 지역 공고로 오인해 자격 있는 학생을 떨어뜨린다.
-	 */
-	private String blockedByTitleRegion(Scholarship scholarship, MatchProfile matchProfile) {
-		if (scholarship == null || !StringUtils.hasText(scholarship.getTitle())) {
-			return null;
-		}
-		Region myRegion = matchProfile.profile().getRegion();
-		if (myRegion == null || matchProfile.regionIds().isEmpty()) {
-			return null;
-		}
-		String title = scholarship.getTitle().replaceAll("\\s+", "");
-
-		String matchedName = null;
-		Set<Long> matchedIds = null;
-		for (Map.Entry<String, Set<Long>> entry : regionIndex().entrySet()) {
-			String name = entry.getKey();
-			if (!title.contains(name)) {
-				continue;
-			}
-			// 더 긴 이름이 더 구체적이다. "울산" 과 "울주군" 이 함께 걸리면 뒤쪽을 쓴다.
-			if (matchedName == null || name.length() > matchedName.length()) {
-				matchedName = name;
-				matchedIds = entry.getValue();
-			}
-		}
-		if (matchedName == null) {
-			return null;
-		}
-		boolean mine = matchedIds.stream().anyMatch(matchProfile.regionIds()::contains);
-		return mine ? null
-				: "다른 지역 공고(제목의 " + matchedName + " · 내 지역 " + myRegion.getName() + ")";
-	}
-
-	private Map<String, Set<Long>> regionIndex() {
-		Map<String, Set<Long>> cached = regionIndex;
-		if (cached != null) {
-			return cached;
-		}
-		synchronized (this) {
-			if (regionIndex == null) {
-				regionIndex = buildRegionIndex();
-			}
-			return regionIndex;
-		}
-	}
-
-	private Map<String, Set<Long>> buildRegionIndex() {
-		Map<String, Set<Long>> byName = new HashMap<>();
-		Set<String> ambiguous = new java.util.HashSet<>();
-		for (Region region : regionRepository.findAll()) {
-			String name = region.getName();
-			if (!StringUtils.hasText(name) || name.length() < 2 || region.getId() == null) {
-				continue;
-			}
-			Set<Long> ids = new java.util.LinkedHashSet<>();
-			ids.add(region.getId());
-			if (region.getParent() != null && region.getParent().getId() != null) {
-				ids.add(region.getParent().getId());
-			}
-			if (byName.putIfAbsent(name, ids) != null) {
-				ambiguous.add(name);
-			}
-		}
-		ambiguous.forEach(byName::remove);
-		log.info("[EligibilityGate] 지역 색인 {}건 (이름이 겹쳐 제외 {}건)", byName.size(), ambiguous.size());
-		return Map.copyOf(byName);
 	}
 
 	/** 통과 여부와 막은 이유. {@code reason} 은 통과일 때 null. */

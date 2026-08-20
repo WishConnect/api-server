@@ -1,11 +1,9 @@
 package com.wishconnect.domain.scholarship.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.BDDMockito.given;
 
 import com.wishconnect.domain.common.entity.Region;
 import com.wishconnect.domain.common.entity.School;
-import com.wishconnect.domain.common.repository.RegionRepository;
 import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
 import com.wishconnect.domain.scholarship.entity.ConditionOperator;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
@@ -20,7 +18,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -36,29 +33,15 @@ import org.mockito.quality.Strictness;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ScholarshipEligibilityGateTest {
 
-	@Mock private RegionRepository regionRepository;
-
 	private ScholarshipEligibilityGate gate;
 
-	private Region seoul;
 	private Region gwangjin;
-	private Region ulsan;
-	private Region mokpo;
 
 	@BeforeEach
 	void setUp() {
-		seoul = region(1L, "서울", null);
+		Region seoul = region(1L, "서울", null);
 		gwangjin = region(2L, "광진구", seoul);
-		ulsan = region(3L, "울산", null);
-		Region jeonnam = region(4L, "전남", null);
-		mokpo = region(5L, "목포시", jeonnam);
-		// 이름이 겹치는 지역. 색인에서 빠져야 한다.
-		Region daeguSeogu = region(6L, "서구", region(7L, "대구", null));
-		Region incheonSeogu = region(8L, "서구", region(9L, "인천", null));
-
-		given(regionRepository.findAll()).willReturn(
-				List.of(seoul, gwangjin, ulsan, jeonnam, mokpo, daeguSeogu, incheonSeogu));
-		gate = new ScholarshipEligibilityGate(regionRepository);
+		gate = new ScholarshipEligibilityGate();
 	}
 
 	// --- 학교 ---
@@ -130,44 +113,41 @@ class ScholarshipEligibilityGateTest {
 		}
 
 		@Test
-		@DisplayName("제목에 다른 지역이 박혀 있으면 막는다 — 조건이 아예 없는 공고가 새던 경로")
-		void blocksByTitle() {
-			var decision = gate.decide(scholarship("2026학년도 목포시 인재육성 장학생 모집"), List.of(),
-					profileWith(null, gwangjin));
-
-			assertThat(decision.allowed()).isFalse();
-			assertThat(decision.reason()).contains("목포시");
-		}
-
-		@Test
-		@DisplayName("제목의 지역이 내 상위 시도면 통과한다 — 서울 사는 사람에게 서울 공고")
-		void allowsParentSido() {
-			assertThat(gate.belongsTo(scholarship("서울 청년 장학금"), List.of(),
+		@DisplayName("제목에 지역명이 있어도 조건이 없으면 막지 않는다 — '서울장학재단 전국 대학생 장학금' 이 사라지면 안 된다")
+		void doesNotInferFromTitle() {
+			assertThat(gate.belongsTo(scholarship("서울장학재단 전국 대학생 장학금"), List.of(),
+					profileWith(null, gwangjin))).isTrue();
+			assertThat(gate.belongsTo(scholarship("2026학년도 목포시 인재육성 장학생 모집"), List.of(),
 					profileWith(null, gwangjin))).isTrue();
 		}
 
 		@Test
-		@DisplayName("이름이 여러 지역에 겹치면 판단하지 않는다 — '서구'는 대구·인천 양쪽에 있다")
-		void ignoresAmbiguousRegionName() {
-			assertThat(gate.belongsTo(scholarship("서구 장학회 장학생 모집"), List.of(),
-					profileWith(null, gwangjin))).isTrue();
+		@DisplayName("본문 근거로 저장된 조건이면 막는다 — 백필이 채워 주는 경로")
+		void blocksByBackfilledCondition() {
+			ScholarshipCondition backfilled = condition(ConditionType.REGION_RESIDENCY,
+					"목포시에 주민등록을 두고 거주하는 자", ConditionNecessity.REQUIRED);
+
+			assertThat(gate.belongsTo(scholarship("2026학년도 목포시 인재육성 장학생 모집"),
+					List.of(backfilled), profileWith(null, gwangjin))).isFalse();
 		}
 
 		@Test
-		@DisplayName("지역 조건이 이미 있으면 제목은 보지 않는다 — 조건이 판정 불가여도 마찬가지")
-		void skipsTitleWhenConditionExists() {
+		@DisplayName("어느 지역인지 알 수 없는 문구는 판정하지 않고 통과시킨다")
+		void allowsVagueCondition() {
 			ScholarshipCondition vague = condition(ConditionType.REGION_RESIDENCY,
 					"관내에 주소를 두고 1년 이상", ConditionNecessity.REQUIRED);
 
-			assertThat(gate.belongsTo(scholarship("울산 장학금"), List.of(vague),
+			assertThat(gate.belongsTo(scholarship("○○ 장학금"), List.of(vague),
 					profileWith(null, gwangjin))).isTrue();
 		}
 
 		@Test
 		@DisplayName("프로필에 지역이 없으면 판단하지 않고 통과시킨다")
 		void allowsWhenProfileRegionMissing() {
-			assertThat(gate.belongsTo(scholarship("울산 장학금"), List.of(), profileWith(null, null)))
-					.isTrue();
+			ScholarshipCondition condition = condition(ConditionType.REGION_RESIDENCY,
+					"주민등록상 주소가 울산이며", ConditionNecessity.REQUIRED);
+			assertThat(gate.belongsTo(scholarship("울산 장학금"), List.of(condition),
+					profileWith(null, null))).isTrue();
 		}
 	}
 

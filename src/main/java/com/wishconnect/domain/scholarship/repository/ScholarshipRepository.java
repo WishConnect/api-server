@@ -216,6 +216,24 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	/** 중복 탐지용: 삭제되지 않은 장학금을 최신순으로. 최근 수집분에 중복이 몰리므로 내림차순이다. */
 	List<Scholarship> findByDeletedAtIsNullOrderByIdDesc(Pageable pageable);
 
+	/**
+	 * 거주 요건 조건이 <b>아직 없는</b> 공고. 본문 근거로 조건을 채울 대상이다.
+	 *
+	 * <p>조건이 이미 있으면 건드리지 않는다. LLM 이나 공공데이터 필드로 채운 값을 규칙 스캔이
+	 * 덮어쓰면 더 나쁜 값으로 되돌린다.
+	 */
+	@Query("""
+			select s from Scholarship s
+			where s.deletedAt is null
+			  and not exists (
+			      select 1 from ScholarshipCondition c
+			      where c.scholarship = s and c.conditionType = :type)
+			order by s.id
+			""")
+	List<Scholarship> findWithoutConditionType(
+			@Param("type") com.wishconnect.domain.scholarship.entity.ConditionType type,
+			Pageable pageable);
+
 	/** 배치용: 마감일이 지났는데 CLOSED가 아닌 공고를 일괄 마감 처리한다. 처리 건수 반환. */
 	@Modifying(clearAutomatically = true)
 	@Query("""

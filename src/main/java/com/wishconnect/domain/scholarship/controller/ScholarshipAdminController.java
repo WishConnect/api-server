@@ -27,6 +27,7 @@ import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionRefBackfillResponse;
+import com.wishconnect.domain.scholarship.dto.RegionConditionBackfillResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
@@ -42,6 +43,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.AdminScholarshipImageService;
 import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
+import com.wishconnect.domain.scholarship.service.RegionConditionBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
@@ -106,6 +108,7 @@ public class ScholarshipAdminController {
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
 	private final ConditionRefBackfillService conditionRefBackfillService;
+	private final RegionConditionBackfillService regionConditionBackfillService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
@@ -515,6 +518,40 @@ public class ScholarshipAdminController {
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
 				null, null, "대상 %d건, 채움 %d건, 참조 %d개"
 						.formatted(result.targetCount(), result.filledCount(), result.refCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "거주 요건 조건 본문 백필",
+			description = """
+					거주 요건 조건이 <b>없는</b> 공고의 본문을 읽어 조건을 채운다.
+
+					추천 관문이 알아야 하는 건 "이 공고에 거주 요건이 있는가, 어디인가" 하나인데,
+					조건이 없는 공고는 막을 근거가 없어 서울 사는 사용자에게 울산·목포 장학금이 나갔다.
+					제목으로 추론하면 "서울장학재단 전국 대학생 장학금" 같은 전국 공고가 사라지므로,
+					근거는 본문에서만 찾는다.
+
+                    판별은 기존 수집 규칙을 그대로 쓴다 — 지역명 단독으로는 잡지 않고
+					**거주·출신·소재** 가 가까이 붙어야 잡는다. 어느 지역인지 해석하지 못하면
+					아무것도 만들지 않는다.
+
+					**먼저 dryRun=true 로 돌려 무엇이 채워질지 확인할 것.** 켠 뒤에 추천이
+					비어버리는 것을 배포 후에 알아채면 늦다.
+
+					**파라미터**
+					- limit: 검사 건수 (1~2000, 기본 500)
+					- dryRun: true 면 저장하지 않고 미리보기만 (기본 true). (ADMIN 전용)
+					""")
+	@PostMapping("/conditions/region-backfill")
+	public ApiResponse<RegionConditionBackfillResponse> backfillRegionConditions(
+			@AuthenticationPrincipal String actorId,
+			@RequestParam(defaultValue = "500") int limit,
+			@RequestParam(defaultValue = "true") boolean dryRun) {
+		RegionConditionBackfillResponse result = regionConditionBackfillService.backfill(limit, dryRun);
+		if (!dryRun) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
+					null, null, "거주요건 백필 — 검사 %d건, 근거발견 %d건, 채움 %d건, 해석실패 %d건"
+							.formatted(result.scanned(), result.matched(), result.filled(), result.unresolved()));
+		}
 		return ApiResponse.ok(result);
 	}
 
