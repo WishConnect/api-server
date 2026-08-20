@@ -22,6 +22,8 @@ import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import com.wishconnect.domain.scholarship.dto.DedupScanRow;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,9 +55,17 @@ LLM 판정을 곧바로 실행하지 않는 이유는, 병합이 되돌리기 �
 @RequiredArgsConstructor
 public class ScholarshipDedupService {
 
-	/** 한 번에 검사할 장학금 수 상한. 그룹 수만큼 LLM 을 호출하므로 크레딧 방어가 필요하다. */
-	private static final int MAX_SCAN_SIZE = 500;
-	private static final int DEFAULT_SCAN_SIZE = 200;
+	/**
+	 * 한 번에 LLM 에 넘길 <b>묶음(그룹) 수</b> 상한.
+	 *
+	 * <p>예전에는 "검사할 장학금 수" 였는데, 그 방식은 중복 쌍이 <b>같은 창에 함께 담겨야만</b>
+	 * 잡혔다. 실제 중복은 대부분 며칠 차이로 들어온 출처가 다른 쌍이라 그 조건이 거의 성립하지
+	 * 않았고, 그래서 승인 큐가 계속 비어 있었다.
+	 *
+	 * <p>지금은 묶기를 <b>전체 공고</b>에 돌린다(제목만 보므로 비용이 없다). 비용이 드는 것은
+	 * 묶음당 1회인 LLM 판정뿐이라, 상한도 거기에 건다. 숫자가 곧 하루 LLM 호출 수라 읽기도 쉽다.
+	 */
+	private static final int MAX_GROUP_LIMIT = 200;
 
 	/** 한 그룹에서 비교할 최대 건수. 이보다 많으면 blocking 키가 너무 뭉툭한 것이므로 건너뛴다. */
 	private static final int MAX_GROUP_SIZE = 6;
@@ -94,34 +104,33 @@ public class ScholarshipDedupService {
 	 * @param limit 검사할 장학금 수 (1 ~ {@value #MAX_SCAN_SIZE})
 	 */
 	@Transactional
-	public MergeDetectionResponse detect(int limit) {
-		int size = Math.min(Math.max(limit, 1), MAX_SCAN_SIZE);
-		List<Scholarship> targets = scholarshipRepository
-				.findByDeletedAtIsNullOrderByIdDesc(PageRequest.of(0, size));
+	public MergeDetectionResponse detect(int groupLimit) {
+		int limit = Math.min(Math.max(groupLimit, 1), MAX_GROUP_LIMIT);
+
+		// 1) 묶기 — 전체 공고를 대상으로 한다. 제목만 보므로 LLM 비용이 없다.
+		List<DedupScanRow> rows = scholarshipRepository.findDedupScanRows();
 
 		// 이미 후보로 올라와 있는 장학금은 제외한다. 한 장학금이 여러 쌍에 동시에 올라
 		// 병합 순서에 따라 결과가 달라지는 것을 막는다.
 		Set<Long> alreadyQueued = new HashSet<>(
 				mergeCandidateRepository.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
 
-		Map<String, List<Scholarship>> groups = new LinkedHashMap<>();
-		for (Scholarship scholarship : targets) {
-			if (alreadyQueued.contains(scholarship.getId())) {
+		Map<String, List<DedupScanRow>> groups = new LinkedHashMap<>();
+		for (DedupScanRow row : rows) {
+			if (alreadyQueued.contains(row.id())) {
 				continue;
 			}
-			String key = ScholarshipTitleBlocker.blockingKey(scholarship.getTitle());
+			String key = ScholarshipTitleBlocker.blockingKey(row.title());
 			if (key != null) {
-				groups.computeIfAbsent(key, k -> new ArrayList<>()).add(scholarship);
+				groups.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
 			}
 		}
 
-		int groupCount = 0;
-		int created = 0;
-		int skipped = 0;
-		int failed = 0;
-
+		// 2) 아직 안 본 공고가 든 묶음부터 고른다. 전부 검사를 마친 묶음은 다시 물어도
+		//    같은 답이 나오므로 크레딧만 쓴다. 새 공고가 들어오면 그 묶음이 다시 대상이 된다.
+		List<Map.Entry<String, List<DedupScanRow>>> selected = new ArrayList<>();
 		for (var entry : groups.entrySet()) {
-			List<Scholarship> group = entry.getValue();
+			List<DedupScanRow> group = entry.getValue();
 			if (group.size() < 2) {
 				continue;
 			}
@@ -131,7 +140,31 @@ public class ScholarshipDedupService {
 				log.warn("[Dedup] 그룹이 너무 큼 → 건너뜀. key={} size={}", entry.getKey(), group.size());
 				continue;
 			}
+			if (group.stream().noneMatch(DedupScanRow::neverScanned)) {
+				continue;
+			}
+			selected.add(entry);
+			if (selected.size() >= limit) {
+				break;
+			}
+		}
+
+		int groupCount = 0;
+		int created = 0;
+		int skipped = 0;
+		int failed = 0;
+		int scanned = 0;
+		Set<Long> scannedIds = new HashSet<>();
+
+		// 3) 판정 — 여기서만 LLM 을 쓴다. 묶음에 속한 공고만 엔티티로 읽는다.
+		for (var entry : selected) {
+			List<Long> ids = entry.getValue().stream().map(DedupScanRow::id).toList();
+			List<Scholarship> group = scholarshipRepository.findAllById(ids);
+			if (group.size() < 2) {
+				continue;
+			}
 			groupCount++;
+			scanned += group.size();
 			try {
 				for (DuplicatePair pair : askLlm(group)) {
 					Long primaryId = pair.primaryId();
@@ -153,6 +186,8 @@ public class ScholarshipDedupService {
 							.build());
 					created++;
 				}
+				// 판정을 마친 묶음만 표시한다. 실패한 묶음은 안 본 것으로 남겨 다음 배치가 다시 본다.
+				scannedIds.addAll(ids);
 			} catch (Exception e) {
 				// 한 그룹이 실패해도 나머지는 계속 본다.
 				log.warn("[Dedup] 그룹 판정 실패 key={} : {}", entry.getKey(), e.getMessage());
@@ -160,9 +195,17 @@ public class ScholarshipDedupService {
 			}
 		}
 
-		log.info("[Dedup] 검사={} 그룹={} 신규후보={} 중복스킵={} 실패={}",
-				targets.size(), groupCount, created, skipped, failed);
-		return new MergeDetectionResponse(targets.size(), groupCount, created, skipped, failed);
+		if (!scannedIds.isEmpty()) {
+			scholarshipRepository.markDedupScanned(scannedIds, LocalDateTime.now());
+		}
+
+		long remaining = groups.values().stream()
+				.filter(group -> group.size() >= 2 && group.size() <= MAX_GROUP_SIZE)
+				.filter(group -> group.stream().anyMatch(DedupScanRow::neverScanned))
+				.count() - groupCount;
+		log.info("[Dedup] 전체={} 묶음판정={} 검사={} 신규후보={} 중복스킵={} 실패={} 남은묶음={}",
+				rows.size(), groupCount, scanned, created, skipped, failed, Math.max(remaining, 0));
+		return new MergeDetectionResponse(scanned, groupCount, created, skipped, failed);
 	}
 
 	/** 승인 대기 목록 조회. */

@@ -99,8 +99,22 @@ class ScholarshipRecommendationServiceTest {
 	@Mock
 	private UserRepository userRepository;
 
+	/**
+	 * 사는 곳·다니는 학교 관문. 규칙 자체는 {@code ScholarshipEligibilityGateTest} 가 검증하고,
+	 * 여기서는 <b>관문이 어느 목록에 걸리는지</b>만 본다. 기본값은 "전부 통과" 라 기존
+	 * 랭킹·섹션 테스트는 영향을 받지 않는다.
+	 */
+	@Mock
+	private ScholarshipEligibilityGate eligibilityGate;
+
 	@InjectMocks
 	private ScholarshipRecommendationService scholarshipRecommendationService;
+
+	@org.junit.jupiter.api.BeforeEach
+	void allowEverythingByDefault() {
+		// 비로그인·온보딩 미완 화면은 관문까지 가지 않는다. 그 테스트들이 깨지지 않게 lenient 로 둔다.
+		lenient().when(eligibilityGate.belongsTo(any(), any(), any())).thenReturn(true);
+	}
 
 	// ---------- 픽스처 ----------
 
@@ -286,6 +300,26 @@ class ScholarshipRecommendationServiceTest {
 		assertThat(response.featured()).allMatch(card -> card.section().equals("featured"));
 		// featured 로 올라간 건은 그 외 목록에서 중복 노출되지 않는다
 		assertThat(idsOf(response.otherScholarships())).containsExactlyInAnyOrder(6L, 7L);
+	}
+
+	@Test
+	@DisplayName("관문에 막힌 공고는 featured·더보기·조건미충족 어디에도 나오지 않는다")
+	void gateAppliesToEverySection() {
+		Scholarship mine = scholarship(1L, "우리 학교 장학금", ScholarshipType.EXTERNAL,
+				LocalDateTime.now().plusDays(5), LocalDateTime.now().minusDays(30));
+		Scholarship notMine = scholarship(2L, "인천대 교내장학금", ScholarshipType.WORK_STUDY,
+				LocalDateTime.now().plusDays(3), LocalDateTime.now().minusDays(30));
+		stubScholarships(UserProfile.builder().build(), List.of(mine, notMine), List.of());
+
+		// 배너에서만 막고 더보기에 그대로 두면 "더 보기" 를 눌렀을 때 다시 나타난다.
+		// 실제로 그렇게 새고 있었다.
+		lenient().when(eligibilityGate.belongsTo(eq(notMine), any(), any())).thenReturn(false);
+
+		CuratedScholarshipResponse response = curate();
+
+		assertThat(idsOf(response.featured())).containsExactly(1L);
+		assertThat(idsOf(response.otherScholarships())).doesNotContain(2L);
+		assertThat(idsOf(response.ineligibleScholarships())).doesNotContain(2L);
 	}
 
 	@Test

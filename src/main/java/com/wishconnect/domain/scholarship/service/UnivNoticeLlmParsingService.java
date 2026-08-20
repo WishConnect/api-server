@@ -87,6 +87,8 @@ public class UnivNoticeLlmParsingService {
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final UnivNoticeLlmParser parser;
+	// 교내 공고를 다른 학교 학생에게 보여주지 않으려면 어느 학교 것인지 구조로 남겨야 한다.
+	private final com.wishconnect.domain.common.service.SchoolResolver schoolResolver;
 	private final LlmClient llmClient;
 	// 파싱 1회를 기록해 정확도 측정·실패 원인 추적에 쓴다.
 	private final NoticeParseLogRepository noticeParseLogRepository;
@@ -443,6 +445,7 @@ public class UnivNoticeLlmParsingService {
 					raw.getSourceUrl(),
 					essay.level(), essay.evidence(), interview.level(), interview.evidence(),
 					kind, combined, submission.method(), submission.channel(), submission.evidence(), notice.contact());
+			assignSchool(existing, provider);
 			// 재파싱은 조건·서류를 다시 만든다. 옛 값이 남으면 새 파싱 결과와 섞인다.
 			scholarshipConditionRepository.deleteByScholarship(existing);
 			scholarshipDocumentRepository.deleteByScholarship(existing);
@@ -450,7 +453,7 @@ public class UnivNoticeLlmParsingService {
 		}
 
 		String dedupKey = ScholarshipDedupKey.of(raw.getSource(), raw.getSourceId());
-		return scholarshipRepository.findByDedupKey(dedupKey).orElseGet(() ->
+		Scholarship saved = scholarshipRepository.findByDedupKey(dedupKey).orElseGet(() ->
 				scholarshipRepository.save(Scholarship.builder()
 						.title(cleanTitle(title))
 						.provider(provider)
@@ -476,6 +479,26 @@ public class UnivNoticeLlmParsingService {
 						.dedupKey(dedupKey)
 						.homepageUrl(raw.getSourceUrl())
 						.build()));
+		assignSchool(saved, provider);
+		return saved;
+	}
+
+	/**
+	 * 공고를 낸 학교를 지정한다. 해석하지 못하면 비워 둔다.
+	 *
+	 * <p>대학 공지 수집은 사이트별로 도는데, 그때 아는 "어느 대학인지"가 지금까지 {@code provider}
+	 * 문자열로만 남아 있었다. 추천에서 표기 차이("인천대"/"인천대학교")로 대조가 빗나가던 원인이다.
+	 *
+	 * <p>이미 지정돼 있으면 건드리지 않는다. 관리자가 손으로 고친 값을 재파싱이 되돌리면 안 된다.
+	 */
+	private void assignSchool(Scholarship scholarship, String provider) {
+		if (scholarship == null || scholarship.getSchool() != null) {
+			return;
+		}
+		com.wishconnect.domain.common.entity.School school = schoolResolver.byName(provider);
+		if (school != null) {
+			scholarship.assignSchool(school);
+		}
 	}
 
 	/**

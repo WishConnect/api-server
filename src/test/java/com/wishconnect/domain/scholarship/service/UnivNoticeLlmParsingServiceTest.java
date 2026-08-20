@@ -84,6 +84,7 @@ class UnivNoticeLlmParsingServiceTest {
 	/** 포스터 저장. 파싱 성패와 무관하므로 스텁하지 않는다. */
 	@Mock private ImageStorageService imageStorageService;
 	@Mock private RegionResolver regionResolver;
+	@Mock private com.wishconnect.domain.common.service.SchoolResolver schoolResolver;
 	@Mock private FamilyTypeRepository familyTypeRepository;
 	@Mock private InterestRepository interestRepository;
 
@@ -94,7 +95,7 @@ class UnivNoticeLlmParsingServiceTest {
 		service = new UnivNoticeLlmParsingService(
 				rawScholarshipRepository, imageStorageService, scholarshipRepository,
 				scholarshipConditionRepository, scholarshipDocumentRepository,
-				new UnivNoticeLlmParser(new ObjectMapper()), llmClient,
+				new UnivNoticeLlmParser(new ObjectMapper()), schoolResolver, llmClient,
 				noticeParseLogRepository,
 				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
 						"claude-haiku-4-5", "claude-haiku-4-5", 4096),

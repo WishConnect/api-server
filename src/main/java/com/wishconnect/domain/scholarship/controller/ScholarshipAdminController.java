@@ -27,6 +27,7 @@ import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionRefBackfillResponse;
+import com.wishconnect.domain.scholarship.dto.RegionConditionBackfillResponse;
 import com.wishconnect.domain.scholarship.dto.EnrichmentResult;
 import com.wishconnect.domain.scholarship.dto.ExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ReportResolveRequest;
@@ -42,6 +43,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.AdminScholarshipImageService;
 import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
+import com.wishconnect.domain.scholarship.service.RegionConditionBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
@@ -106,6 +108,7 @@ public class ScholarshipAdminController {
 	private final DedicatedNoticeCollectors dedicatedNoticeCollectors;
 	private final ConditionExtractionService conditionExtractionService;
 	private final ConditionRefBackfillService conditionRefBackfillService;
+	private final RegionConditionBackfillService regionConditionBackfillService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
 	private final ScholarshipManualService scholarshipManualService;
@@ -341,17 +344,21 @@ public class ScholarshipAdminController {
 
 					제목을 정규화해 같은 공고일 가능성이 있는 것끼리 먼저 묶고(규칙), 묶인 그룹만
 					LLM 에 넘긴다. 모든 쌍을 LLM 에 물으면 호출이 O(n^2) 로 폭발하기 때문이다.
-					실측(로컬 86건): 후보그룹 5개 → LLM 호출 5회.
 
-					**주의**: 그룹 수만큼 LLM 크레딧을 소모한다. (ADMIN 전용)
+					묶기는 **전체 공고**를 대상으로 한다(제목만 보므로 비용이 없다). 아직 검사하지
+					않은 공고가 든 묶음부터 가져가므로, 밀린 만큼은 여러 번에 걸쳐 한 바퀴 돈다.
+
+					**파라미터**
+					- limit: 이번에 판정할 **묶음 수** (1~200, 기본 40). 곧 LLM 호출 수다.
+					  장학금 건수가 아니라는 점에 주의. (ADMIN 전용)
 					""")
 	@PostMapping("/merge/detect")
 	public ApiResponse<MergeDetectionResponse> detectMergeCandidates(
 			@AuthenticationPrincipal String actorId,
-			@RequestParam(defaultValue = "200") int limit) {
+			@RequestParam(defaultValue = "40") int limit) {
 		MergeDetectionResponse result = scholarshipDedupService.detect(limit);
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_DETECT_TRIGGER,
-				null, null, "검사 %d건, 그룹 %d개, 신규후보 %d건, 실패 %d건".formatted(
+				null, null, "검사 %d건, 묶음 %d개, 신규후보 %d건, 실패 %d건".formatted(
 						result.scannedCount(), result.groupCount(),
 						result.candidateCount(), result.failedCount()));
 		return ApiResponse.ok(result);
@@ -515,6 +522,40 @@ public class ScholarshipAdminController {
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
 				null, null, "대상 %d건, 채움 %d건, 참조 %d개"
 						.formatted(result.targetCount(), result.filledCount(), result.refCount()));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "거주 요건 조건 본문 백필",
+			description = """
+					거주 요건 조건이 <b>없는</b> 공고의 본문을 읽어 조건을 채운다.
+
+					추천 관문이 알아야 하는 건 "이 공고에 거주 요건이 있는가, 어디인가" 하나인데,
+					조건이 없는 공고는 막을 근거가 없어 서울 사는 사용자에게 울산·목포 장학금이 나갔다.
+					제목으로 추론하면 "서울장학재단 전국 대학생 장학금" 같은 전국 공고가 사라지므로,
+					근거는 본문에서만 찾는다.
+
+                    판별은 기존 수집 규칙을 그대로 쓴다 — 지역명 단독으로는 잡지 않고
+					**거주·출신·소재** 가 가까이 붙어야 잡는다. 어느 지역인지 해석하지 못하면
+					아무것도 만들지 않는다.
+
+					**먼저 dryRun=true 로 돌려 무엇이 채워질지 확인할 것.** 켠 뒤에 추천이
+					비어버리는 것을 배포 후에 알아채면 늦다.
+
+					**파라미터**
+					- limit: 검사 건수 (1~2000, 기본 500)
+					- dryRun: true 면 저장하지 않고 미리보기만 (기본 true). (ADMIN 전용)
+					""")
+	@PostMapping("/conditions/region-backfill")
+	public ApiResponse<RegionConditionBackfillResponse> backfillRegionConditions(
+			@AuthenticationPrincipal String actorId,
+			@RequestParam(defaultValue = "500") int limit,
+			@RequestParam(defaultValue = "true") boolean dryRun) {
+		RegionConditionBackfillResponse result = regionConditionBackfillService.backfill(limit, dryRun);
+		if (!dryRun) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONDITION_REF_BACKFILL,
+					null, null, "거주요건 백필 — 검사 %d건, 근거발견 %d건, 채움 %d건, 해석실패 %d건"
+							.formatted(result.scanned(), result.matched(), result.filled(), result.unresolved()));
+		}
 		return ApiResponse.ok(result);
 	}
 
