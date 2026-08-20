@@ -67,8 +67,13 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260819_12__admin_audit_snapshots.sql` | 수기 수정·내리기 변경 전후 스냅샷과 1회 복구 이력 추가 | ✅ 2026-08-19 |
 | `V20260819_13__merge_candidate_origin.sql` | 중복 후보 생성 경로(LLM/관리자 수기) 구분 | ✅ 2026-08-19 |
 | `V20260819_14__add_admin_console_actions.sql` | 통합 수정·이미지·수기 중복 후보 감사 액션 추가 | ✅ 2026-08-19 |
+| `V20260820_03__scholarship_dedup_scanned_at.sql` | `scholarship.dedup_scanned_at` 추가 (중복 탐지를 "최신 30건 다시 보기"에서 "안 본 것부터 한 바퀴"로) | ⬜ 미적용 |
 | `V20260820_02__scholarship_school_id.sql` | `scholarship.school_id` 추가 + provider 기준 백필 (교내 공고를 다른 학교 학생에게 보여주지 않기 위함) | ⬜ 미적용 |
 | `V20260820_01__interview_prep_answer_guide.sql` | 면접 준비 자료 — `interview_prep_question` 에 `answer_tip`·`sample_answer` 추가, `interview_prep_guide_step`·`interview_prep_sample_answer` 테이블 신규 | ⬜ 미적용 |
+
+> ⚠️ **`V20260820_03` 도 배포보다 먼저** 적용해야 한다. `Scholarship.dedupScannedAt` 이 새로 생겨
+> 컬럼이 없으면 `validate` 가 실패한다. 기존 행은 전부 NULL(= 아직 검사 안 함)로 두는 것이 의도다 —
+> 처음 몇 번의 배치가 밀린 분량을 나눠 처리한다.
 
 > ⚠️ **`V20260820_02` 는 반드시 배포보다 먼저** 적용해야 한다. `Scholarship` 엔티티에 `school`
 > 연관이 새로 생기므로, 컬럼이 없으면 `validate` 가 실패해 **애플리케이션이 아예 뜨지 않는다.**

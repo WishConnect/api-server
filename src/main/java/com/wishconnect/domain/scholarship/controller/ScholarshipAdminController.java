@@ -344,17 +344,21 @@ public class ScholarshipAdminController {
 
 					제목을 정규화해 같은 공고일 가능성이 있는 것끼리 먼저 묶고(규칙), 묶인 그룹만
 					LLM 에 넘긴다. 모든 쌍을 LLM 에 물으면 호출이 O(n^2) 로 폭발하기 때문이다.
-					실측(로컬 86건): 후보그룹 5개 → LLM 호출 5회.
 
-					**주의**: 그룹 수만큼 LLM 크레딧을 소모한다. (ADMIN 전용)
+					묶기는 **전체 공고**를 대상으로 한다(제목만 보므로 비용이 없다). 아직 검사하지
+					않은 공고가 든 묶음부터 가져가므로, 밀린 만큼은 여러 번에 걸쳐 한 바퀴 돈다.
+
+					**파라미터**
+					- limit: 이번에 판정할 **묶음 수** (1~200, 기본 40). 곧 LLM 호출 수다.
+					  장학금 건수가 아니라는 점에 주의. (ADMIN 전용)
 					""")
 	@PostMapping("/merge/detect")
 	public ApiResponse<MergeDetectionResponse> detectMergeCandidates(
 			@AuthenticationPrincipal String actorId,
-			@RequestParam(defaultValue = "200") int limit) {
+			@RequestParam(defaultValue = "40") int limit) {
 		MergeDetectionResponse result = scholarshipDedupService.detect(limit);
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_DETECT_TRIGGER,
-				null, null, "검사 %d건, 그룹 %d개, 신규후보 %d건, 실패 %d건".formatted(
+				null, null, "검사 %d건, 묶음 %d개, 신규후보 %d건, 실패 %d건".formatted(
 						result.scannedCount(), result.groupCount(),
 						result.candidateCount(), result.failedCount()));
 		return ApiResponse.ok(result);

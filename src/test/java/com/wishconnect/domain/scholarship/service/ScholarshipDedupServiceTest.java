@@ -137,15 +137,49 @@ class ScholarshipDedupServiceTest {
 	}
 
 	@Test
-	@DisplayName("입력 상한을 넘겨도 조회 크기를 넘기지 않는다 — 크레딧 방어")
-	void clampsScanSize() {
-		givenScholarships();
+	@DisplayName("묶음 상한만큼만 LLM 에 묻는다 — 상한이 곧 호출 수다")
+	void limitsGroupsNotRows() {
+		givenScholarships(
+				scholarship("2026학년도 1학기 국가장학금 1차 신청 안내"),
+				scholarship("2026학년도 2학기 국가장학금 2차 신청기간 안내"),
+				scholarship("2026학년도 1학기 교내 성적우수 장학금 선발 공고"),
+				scholarship("2026학년도 2학기 교내 성적우수 장학금 선발 안내"));
+		given(llmClient.chat(any())).willReturn("[]");
 
-		service.detect(100_000);
+		MergeDetectionResponse result = service.detect(1);
 
-		ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-		verify(scholarshipRepository).findByDeletedAtIsNullOrderByIdDesc(captor.capture());
-		assertThat(captor.getValue().getPageSize()).isEqualTo(500);
+		verify(llmClient, org.mockito.Mockito.times(1)).chat(any());
+		assertThat(result.groupCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("판정을 마친 묶음에만 검사 시각을 찍는다 — 다음 배치가 안 본 것부터 가져간다")
+	void stampsScannedGroups() {
+		givenScholarships(
+				scholarship("2026학년도 1학기 국가장학금 1차 신청 안내"),
+				scholarship("2026학년도 2학기 국가장학금 2차 신청기간 안내"));
+		given(llmClient.chat(any())).willReturn("[]");
+
+		service.detect(40);
+
+		verify(scholarshipRepository).markDedupScanned(any(), any());
+	}
+
+	@Test
+	@DisplayName("전부 검사를 마친 묶음은 다시 묻지 않는다 — 같은 답에 크레딧만 쓴다")
+	void skipsFullyScannedGroups() {
+		Scholarship first = scholarship("2026학년도 1학기 국가장학금 1차 신청 안내");
+		Scholarship second = scholarship("2026학년도 2학기 국가장학금 2차 신청기간 안내");
+		given(scholarshipRepository.findDedupScanRows()).willReturn(List.of(
+				new com.wishconnect.domain.scholarship.dto.DedupScanRow(
+						first.getId(), first.getTitle(), java.time.LocalDateTime.now().minusDays(1)),
+				new com.wishconnect.domain.scholarship.dto.DedupScanRow(
+						second.getId(), second.getTitle(), java.time.LocalDateTime.now().minusDays(1))));
+
+		MergeDetectionResponse result = service.detect(40);
+
+		verify(llmClient, never()).chat(any());
+		assertThat(result.groupCount()).isZero();
 	}
 
 	// --- 탐지: LLM 응답 방어 ---
@@ -410,9 +444,20 @@ class ScholarshipDedupServiceTest {
 
 	// --- fixture ---
 
+	/**
+	 * 묶기는 전체 공고의 제목만 읽고, 판정 대상이 된 묶음만 엔티티로 다시 읽는다.
+	 * {@code dedupScannedAt} 을 null 로 두면 "아직 검사하지 않음" 이라 전부 대상이 된다.
+	 */
 	private void givenScholarships(Scholarship... scholarships) {
-		given(scholarshipRepository.findByDeletedAtIsNullOrderByIdDesc(any(Pageable.class)))
-				.willReturn(List.of(scholarships));
+		List<Scholarship> all = List.of(scholarships);
+		given(scholarshipRepository.findDedupScanRows()).willReturn(all.stream()
+				.map(s -> new com.wishconnect.domain.scholarship.dto.DedupScanRow(
+						s.getId(), s.getTitle(), null))
+				.toList());
+		given(scholarshipRepository.findAllById(any())).willAnswer(invocation -> {
+			java.util.Collection<?> ids = invocation.getArgument(0);
+			return all.stream().filter(s -> ids.contains(s.getId())).toList();
+		});
 	}
 
 	private Scholarship scholarship(String title) {

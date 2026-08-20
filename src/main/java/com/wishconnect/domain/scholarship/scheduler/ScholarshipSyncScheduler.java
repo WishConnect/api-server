@@ -77,9 +77,18 @@ public class ScholarshipSyncScheduler {
 	@Value("${scholarship.kosaf.condition-batch-limit:20}")
 	private int kosafConditionBatchLimit;
 
-	/** 중복 후보 탐지 상한. 그룹당 LLM 1회를 쓰므로 함께 제한한다. */
-	@Value("${scholarship.merge.batch-limit:30}")
-	private int mergeDetectBatchLimit;
+	/**
+	 * 하루에 중복 판정할 <b>묶음 수</b> 상한. 곧 하루 LLM 호출 수다.
+	 *
+	 * <p>예전 값은 "검사할 장학금 수 30" 이었다. 그러면 매일 최신 30건만 다시 봐서 오래된 공고는
+	 * 영영 검사되지 않았고, 정작 실제 중복인 <b>출처가 다른 쌍</b>은 며칠 차이로 들어와 같은 창에
+	 * 담일 일이 없었다 — 중복 판정 큐가 계속 비어 있던 이유다.
+	 *
+	 * <p>지금은 묶기를 전체 공고에 돌리고(제목만 보므로 비용이 없다) 안 본 묶음부터 가져간다.
+	 * 밀린 만큼은 며칠에 걸쳐 한 바퀴 돈다.
+	 */
+	@Value("${scholarship.merge.group-limit:40}")
+	private int mergeDetectGroupLimit;
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
@@ -166,8 +175,8 @@ public class ScholarshipSyncScheduler {
 		try {
 			// 파싱이 끝난 뒤라야 새로 들어온 공고까지 중복 검사 대상이 된다.
 			// 병합하지는 않는다 — 승인 큐에 올리기만 하고 사람이 확인한다.
-			MergeDetectionResponse merge = scholarshipDedupService.detect(mergeDetectBatchLimit);
-			log.info("[SyncBatch] 중복 후보 탐지 완료 검사={} 그룹={} 신규후보={} 실패={}",
+			MergeDetectionResponse merge = scholarshipDedupService.detect(mergeDetectGroupLimit);
+			log.info("[SyncBatch] 중복 후보 탐지 완료 검사={} 묶음={} 신규후보={} 실패={}",
 					merge.scannedCount(), merge.groupCount(), merge.candidateCount(),
 					merge.failedCount());
 		} catch (Exception e) {

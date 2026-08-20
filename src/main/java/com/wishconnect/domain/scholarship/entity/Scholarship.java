@@ -222,6 +222,19 @@ public class Scholarship extends BaseEntity {
 	@JoinColumn(name = "school_id")
 	private School school;
 
+	/**
+	 * 중복 후보 탐지를 마지막으로 마친 시각. 한 번도 안 봤으면 {@code null}.
+	 *
+	 * <p>없을 때는 <b>매일 최신 30건만</b> 다시 봤다. 그래서 오래된 공고는 영영 검사되지 않았고,
+	 * 정작 실제 중복인 <b>출처가 다른 쌍</b>(공공데이터 vs 대학공지)은 며칠 차이로 들어와
+	 * 같은 창에 함께 담길 일이 없었다 — 중복 판정 큐가 계속 비어 있던 이유다.
+	 *
+	 * <p>이 값을 두면 안 본 것부터 가져가 전체가 한 바퀴 돈다. 새 공고가 들어오면 그 공고가
+	 * 속한 묶음이 다시 대상이 되므로, 오래된 쪽과 짝이 맞는지도 그때 확인된다.
+	 */
+	@Column(name = "dedup_scanned_at")
+	private LocalDateTime dedupScannedAt;
+
 	@Builder
 	private Scholarship(
 		String title,
