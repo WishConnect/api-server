@@ -551,7 +551,7 @@ public class ScholarshipRecommendationService {
 			if (!scholarship.getSchoolId().equals(profile.getSchool().getId())) {
 				// 타대학 장학금이므로 지원 불가
 				Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());
-				return new ScoredScholarship(scholarship, false, 0, dDay, List.of("다른 학교 장학금"));
+				return new ScoredScholarship(scholarship, false, 0, dDay, List.of("다른 학교 장학금"), conditions);
 			}
 		}
 
