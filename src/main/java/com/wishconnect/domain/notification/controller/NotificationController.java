@@ -14,11 +14,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,8 +41,10 @@ public class NotificationController {
 		return ApiResponse.ok(notificationService.getNotifications(UUID.fromString(userId), type, page, size));
 	}
 
-	@Operation(summary = "알림 읽음 처리", description = "특정 알림을 읽음 상태로 변경합니다.")
-	@PatchMapping("/{notificationId}/read")
+	// Notion 명세는 PUT, 초기 구현은 PATCH 로 나갔다. FE 가 이미 PATCH 를 쓰고 있어
+	// 둘 다 받도록 한다(명세 준수 + 기존 호출 호환).
+	@Operation(summary = "알림 읽음 처리", description = "특정 알림을 읽음 상태로 변경합니다. PUT·PATCH 모두 지원합니다.")
+	@RequestMapping(path = "/{notificationId}/read", method = {RequestMethod.PUT, RequestMethod.PATCH})
 	public ApiResponse<NotificationReadResponse> markAsRead(
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long notificationId
