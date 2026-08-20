@@ -545,16 +545,6 @@ public class ScholarshipRecommendationService {
 	 */
 	private ScoredScholarship score(Scholarship scholarship, List<ScholarshipCondition> conditions,
 			MatchProfile matchProfile) {
-		// school_id가 지정된 경우, 사용자 학교와 일치하지 않으면 부적격 처리
-		UserProfile profile = matchProfile.profile();
-		if (scholarship.getSchoolId() != null && profile != null && profile.getSchool() != null) {
-			if (!scholarship.getSchoolId().equals(profile.getSchool().getId())) {
-				// 타대학 장학금이므로 지원 불가
-				Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());
-				return new ScoredScholarship(scholarship, false, 0, dDay, List.of("다른 학교 장학금"), conditions);
-			}
-		}
-
 		List<Evaluation> evaluations = conditions.stream()
 				.map(condition -> ConditionMatcher.evaluate(condition, matchProfile))
 				.toList();
