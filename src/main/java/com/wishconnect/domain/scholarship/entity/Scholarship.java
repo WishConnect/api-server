@@ -186,6 +186,9 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	@Column(name = "school_id")
+	private Long schoolId;
+
 	@Column(name = "homepage_url", length = 1000)
 	private String homepageUrl;
 
