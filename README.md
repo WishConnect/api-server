@@ -300,3 +300,42 @@ src/main/java/com/wishconnect
 - Java 파일 417개 · 엔티티 42개 · 테스트 클래스 78개
 
 <br>
+
+---
+
+## sitemap.xml · robots.txt (검색엔진 색인)
+
+[네이버 서치어드바이저 웹마스터 가이드](https://searchadvisor.naver.com/guide/seo-basic-intro)를 기준으로 맞췄다.
+공고는 매일 수집 배치로 갈리므로 정적 파일 대신 **DB 를 읽어 즉석에서 만든다**.
+
+| 엔드포인트 | 내용 |
+|---|---|
+| `GET /sitemap.xml` | 고정 페이지 + 장학금 상세 URL. 모집 중 `priority 0.8`, 마감분 `0.3` |
+| `GET /robots.txt` | 네이버 검색로봇(`Yeti`) 허용, 관리자·API 경로 차단, `Sitemap:` 위치 명시 |
+
+둘 다 인증 없이 열려 있고(크롤러는 토큰이 없다), 결과는 서버에서 1시간 캐시한다.
+설정은 `app.sitemap.*` / `app.robots.*` ([application.yml](src/main/resources/application.yml)).
+프론트 라우팅이 바뀌면 `SITEMAP_SCHOLARSHIP_PATH` / `SITEMAP_STATIC_PATHS` 환경변수만 고치면 된다.
+
+가이드에서 지킨 것:
+
+- **URL 도메인 일치** — 사이트맵 내 URL 이 소유확인한 호스트와 다르거나 상대경로면 네이버가 통째로 버린다.
+  그래서 `app.sitemap.base-url` 은 절대주소만 허용하고, 아니면 기동 시점에 예외로 막는다.
+  **www 유무까지 서치어드바이저에 등록한 호스트와 똑같이** 맞춰야 한다.
+- **용량·건수 상한** — 10MB 미만, 한 파일당 50,000 URL 미만. 상한에 닿으면 WARN 로그를 남긴다.
+- **응답 속도** — 피드가 느리면 제출이 제한되므로 생성 결과를 캐시한다.
+- **`lastmod`** — 네이버 예시와 같은 W3C Datetime(`2026-08-18T01:13:19+09:00`).
+- **모든 URL 수록 권장** — 마감 공고도 상세 페이지가 살아 있으므로 담되 `priority` 를 낮춘다
+  (`SITEMAP_INCLUDE_CLOSED=false` 로 제외 가능).
+- **robots.txt 는 `text/plain` + 2xx** — HTML 로 나가면 규칙이 무시되고, 5xx 면 사이트 전체가 수집 차단으로 해석된다.
+  Yeti 그룹에도 같은 규칙을 반복해 적는다(표준상 가장 구체적인 그룹 하나만 적용되기 때문).
+
+> ⚠️ **남은 작업은 백엔드 밖에 있다.**
+> 1. **프론트/nginx 프록시** — 두 파일 모두 사이트 루트에 있어야 한다.
+>    `https://wish-connect.com/sitemap.xml`, `/robots.txt` 요청을 이 엔드포인트로 rewrite 해야 한다.
+>    robots.txt 규칙은 호스트별로 적용되므로 API 도메인에만 있으면 프론트 수집에는 아무 영향이 없다.
+> 2. **서치어드바이저 등록** — 사이트 등록 → 소유확인(meta 태그 또는 HTML 파일) → "요청-사이트맵 제출".
+> 3. **프론트 HTML 마크업** — 페이지별 `title`·`meta description`, 표준 `<a href>` 링크, `noindex`/`nofollow` 미사용.
+>    콘텐츠를 자바스크립트로만 그리면 수집되지 않으므로 상세 페이지는 SSR 이어야 한다.
+>
+> RSS 피드는 만들지 않았다. 가이드도 "본문을 담아야 해서 URL 을 많이 넣기 어려우니 사이트맵을 우선 활용"하라고 권한다.
