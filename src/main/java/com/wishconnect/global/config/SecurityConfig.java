@@ -46,6 +46,10 @@ public class SecurityConfig {
 			"/api/v1/regions",
 			"/api/v1/regions/**",
 			"/actuator/health",
+			// 검색엔진 크롤러는 토큰이 없다. 인증을 걸면 사이트맵·수집규칙을 아예 못 읽는다.
+			// (robots.txt 가 401 이면 네이버는 4xx 를 "전체 허용"으로 읽어 규칙이 무시된다)
+			"/sitemap.xml",
+			"/robots.txt",
 			"/api/v1/scholarships/search",
 			"/api/v1/scholarships/search",
 			"/api/v1/scholarships/search/popular-keywords",

@@ -283,6 +283,36 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 											@Param("retryBefore") LocalDateTime retryBefore,
 											Pageable pageable);
 
+	/**
+	 * sitemap.xml 대상: 검색엔진에 노출할 공고의 id·최종 수정시각·모집 여부만 뽑는다.
+	 *
+	 * <p>네이버 서치어드바이저는 "사이트 내의 모든 URL 을 사이트맵에 담을 것"을 권장한다. 상세 페이지는
+	 * 마감된 뒤에도 살아 있으므로({@code deletedAt} 만 보고 응답한다) 마감분도 담을 수 있게 열어 둔다.
+	 * 다만 {@code active} 를 같이 내려, 사이트맵에서 우선순위를 낮춰 표기하도록 한다.
+	 *
+	 * <p>제외 기준은 목록·검색과 같게 맞춘다. 사이트맵에만 있고 서비스 안에서는 어디로도 갈 수 없는
+	 * URL 을 흘리면 크롤러가 고아 페이지를 긁어간다.
+	 * <ul>
+	 *   <li>{@code deletedAt is null} — 소프트 삭제분 제외</li>
+	 *   <li>{@code noticeKind <> GUIDE} — 안내문은 장학금이 아니라 목록에서도 뺀다</li>
+	 *   <li>{@code includeClosed = false} 면 마감분({@code active = false})까지 제외</li>
+	 * </ul>
+	 *
+	 * <p>최신 수정순으로 정렬한다. 상한({@code app.sitemap.max-urls})에 걸려 잘릴 때
+	 * 살아남아야 하는 쪽은 방금 갱신된 공고다.
+	 */
+	@Query("""
+			select s.id as id, s.updatedAt as updatedAt, s.active as active
+			from Scholarship s
+			where s.deletedAt is null
+			  and (s.noticeKind is null
+			       or s.noticeKind <> com.wishconnect.domain.scholarship.entity.NoticeKind.GUIDE)
+			  and (s.active = true or :includeClosed = true)
+			order by s.updatedAt desc
+			""")
+	List<ScholarshipSitemapEntry> findSitemapEntries(@Param("includeClosed") boolean includeClosed,
+													Pageable pageable);
+
 	// --- 관리자 화면 집계 -------------------------------------------------
 	// 소프트 삭제분은 품질 지표에서 뺀다(이미 목록에서 내려간 공고라 고칠 대상이 아니다).
 
