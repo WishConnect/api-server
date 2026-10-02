@@ -141,6 +141,10 @@ public enum ErrorCode {
 	EXCEL_INVALID_NUMBER(HttpStatus.BAD_REQUEST, "숫자 칸에 숫자가 아닌 값이 있습니다."),
 	EXCEL_INVALID_DATE(HttpStatus.BAD_REQUEST, "날짜 형식이 올바르지 않습니다. (yyyy-MM-dd HH:mm)"),
 
+	// 관리자 콘솔 — 중복 판정·병합
+	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
+			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),
+
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
 	EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),
