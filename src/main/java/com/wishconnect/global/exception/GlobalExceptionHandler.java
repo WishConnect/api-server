@@ -26,7 +26,13 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(CustomException.class)
 	public ResponseEntity<ApiResponse<Void>> handleCustomException(CustomException e) {
 		ErrorCode errorCode = e.getErrorCode();
-		log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		if (e.getCause() != null && errorCode.getStatus().is5xxServerError()) {
+			// 원인이 있는 5xx 는 스택트레이스까지 남긴다. WARN 한 줄로는 무엇이 터졌는지 알 수 없다.
+			log.error("[CustomException] {} - {} (cause: {})", errorCode.name(), errorCode.getMessage(),
+					e.getCause().toString(), e);
+		} else {
+			log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		}
 		return ResponseEntity.status(errorCode.getStatus())
 				.body(ApiResponse.fail(errorCode.getMessage()));
 	}

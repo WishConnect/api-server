@@ -19,11 +19,10 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.ScholarshipTitleBlocker;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import com.wishconnect.domain.scholarship.dto.DedupScanRow;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
-import com.wishconnect.domain.scholarship.dto.DedupScanRow;
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -307,9 +306,9 @@ public class ScholarshipDedupService {
 			롤백되어 남지 않기 때문에, 상태를 바꾸려는 시도를 하지 않고 로그로만 남긴다.
 			PENDING 으로 남는 것이 운영상 옳다 — 아무것도 바뀌지 않았으니 원인을 고쳐 다시 승인하면 된다.
 			 */
-			log.error("[Dedup] 병합 실패 candidateId={} primary={} duplicate={}. 후보는 PENDING 으로 남는다",
-					candidateId, primaryId, duplicateId, e);
-			throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR);
+			log.error("[Dedup] 병합 실패 candidateId={} primary={} duplicate={} cause={}. 후보는 PENDING 으로 남는다",
+					candidateId, primaryId, duplicateId, rootCause(e), e);
+			throw new CustomException(ErrorCode.MERGE_FAILED, e);
 		}
 	}
 
@@ -324,6 +323,15 @@ public class ScholarshipDedupService {
 		candidate.markRejected(reviewer, note);
 		return new MergeResultResponse(candidateId, MergeCandidateStatus.REJECTED.name(),
 				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
+	}
+
+	/** 로그 한 줄에서 바로 보이도록 가장 안쪽 원인을 요약한다. 스택트레이스는 별도로 남는다. */
+	private static String rootCause(Throwable e) {
+		Throwable cursor = e;
+		while (cursor.getCause() != null && cursor.getCause() != cursor) {
+			cursor = cursor.getCause();
+		}
+		return cursor.getClass().getSimpleName() + ": " + cursor.getMessage();
 	}
 
 	// --- LLM 판정 ---

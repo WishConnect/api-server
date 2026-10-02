@@ -399,6 +399,22 @@ class ScholarshipDedupServiceTest {
 	}
 
 	@Test
+	@DisplayName("병합 실패 예외는 원인을 보존한다 — 끊기면 운영 로그에서 장애 원인이 사라진다")
+	void preservesCauseOnMergeFailure() {
+		Scholarship a = scholarship("국가장학금 신청 안내");
+		Scholarship b = scholarship("국가장학금 신청기간 안내");
+		ScholarshipMergeCandidate candidate = candidate(a, b);
+		RuntimeException cause = new IllegalStateException("Could not resolve attribute 'scholarship'");
+		given(mergeExecutor.merge(a, b)).willThrow(cause);
+
+		assertThatThrownBy(() -> service.approve(candidate.getId(), UUID.randomUUID()))
+				.isInstanceOf(CustomException.class)
+				.satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+						.isEqualTo(com.wishconnect.global.exception.ErrorCode.MERGE_FAILED))
+				.hasCause(cause);
+	}
+
+	@Test
 	@DisplayName("병합 후 후보를 다시 읽어 MERGED 로 기록한다 — merge() 가 영속성 컨텍스트를 비우기 때문")
 	void reloadsCandidateAfterMergeClearsContext() {
 		Scholarship a = scholarship("국가장학금 신청 안내");
