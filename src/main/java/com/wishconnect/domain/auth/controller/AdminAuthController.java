@@ -28,12 +28,21 @@ public class AdminAuthController {
 	private final AdminAuthService adminAuthService;
 
 	@Operation(summary = "관리자 로그인",
-			description = "활성 LOCAL 계정의 비밀번호와 ADMIN 역할을 확인합니다. 성공하면 화면 접근용 HttpOnly 쿠키와 관리자 API 호출용 Access Token을 발급합니다.")
+			description = """
+					활성 LOCAL 계정의 비밀번호와 ADMIN 역할을 확인합니다. 성공하면 화면 접근용 HttpOnly 쿠키와
+					관리자 API 호출용 Access Token을 발급합니다.
+
+					**실패 제한**: 같은 아이디로 5회 실패하면 15분간 잠깁니다(없는 아이디도 똑같이 셉니다).
+					같은 IP 에서 15분 안에 20회 실패해도 15분간 잠깁니다. 성공하면 아이디 카운터가 초기화됩니다.
+
+					실패 응답(401 LOGIN_FAILED / 429 ADMIN_LOGIN_LOCKED)의 data 에 failedCount, maxFailures,
+					remainingAttempts, lockMinutes, locked, lockScope(ACCOUNT|IP), lockRemainingSeconds 가 담깁니다.
+					""")
 	@PostMapping("/login")
 	public ResponseEntity<ApiResponse<AdminLoginResponse>> login(
 			@Valid @RequestBody LoginRequest request,
 			HttpServletRequest servletRequest) {
-		AdminLoginResponse result = adminAuthService.login(request);
+		AdminLoginResponse result = adminAuthService.login(request, servletRequest.getRemoteAddr());
 		return ResponseEntity.ok()
 				.header(HttpHeaders.SET_COOKIE, createCookie(
 						result.accessToken(), result.expiresInSeconds(), servletRequest.isSecure()).toString())

@@ -23,6 +23,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+	/** 실패 응답에 화면이 쓸 데이터를 함께 싣는 예외(예: 관리자 로그인 실패 횟수). */
+	@ExceptionHandler(CustomDetailException.class)
+	public ResponseEntity<ApiResponse<Object>> handleCustomDetailException(CustomDetailException e) {
+		ErrorCode errorCode = e.getErrorCode();
+		log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		return ResponseEntity.status(errorCode.getStatus())
+				.body(ApiResponse.fail(errorCode.getMessage(), e.getDetail()));
+	}
+
 	@ExceptionHandler(CustomException.class)
 	public ResponseEntity<ApiResponse<Void>> handleCustomException(CustomException e) {
 		ErrorCode errorCode = e.getErrorCode();
