@@ -68,6 +68,8 @@ class AdminLoginAttemptServiceTest {
 		assertThat(result.lockScope()).isEqualTo("ACCOUNT");
 		assertThat(result.lockRemainingSeconds()).isEqualTo(900);
 		verify(values).set("admin:login:lock:id:admin01", "1", Duration.ofMinutes(15));
+		// 아이디가 잠기는 실패도 IP 카운터에 들어간다.
+		verify(values).increment("admin:login:fail:ip:" + IP);
 	}
 
 	@Test
