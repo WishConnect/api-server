@@ -70,6 +70,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260820_03__scholarship_dedup_scanned_at.sql` | `scholarship.dedup_scanned_at` 추가 (중복 탐지를 "최신 30건 다시 보기"에서 "안 본 것부터 한 바퀴"로) | ⬜ 미적용 |
 | `V20260820_02__scholarship_school_id.sql` | `scholarship.school_id` 추가 + provider 기준 백필 (교내 공고를 다른 학교 학생에게 보여주지 않기 위함) | ⬜ 미적용 |
 | `V20260820_01__interview_prep_answer_guide.sql` | 면접 준비 자료 — `interview_prep_question` 에 `answer_tip`·`sample_answer` 추가, `interview_prep_guide_step`·`interview_prep_sample_answer` 테이블 신규 | ⬜ 미적용 |
+| `V20261003_01__admin_job_failure.sql` | 배치 `PARTIAL_FAILURE` 상태(CHECK 교체) + `admin_job_failure` 테이블(단계별 실패 상세, 유형 CHECK) | ⬜ 미적용 |
 
 > ⚠️ **`V20260820_03` 도 배포보다 먼저** 적용해야 한다. `Scholarship.dedupScannedAt` 이 새로 생겨
 > 컬럼이 없으면 `validate` 가 실패한다. 기존 행은 전부 NULL(= 아직 검사 안 함)로 두는 것이 의도다 —

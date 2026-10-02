@@ -85,7 +85,7 @@ public class UnivNoticeCollector {
 						return collect(site, pages);
 					} catch (Exception e) {
 						log.warn("[UnivCollector] {} 수집 실패: {}", site.code(), e.getMessage());
-						return new CollectResultResponse(site.source(), 0, 0, 0);
+						return CollectResultResponse.failed(site.source(), e);
 					}
 				})
 				.toList();

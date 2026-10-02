@@ -83,6 +83,8 @@ public class DedicatedNoticeCollectors {
 				results.add(collector.apply(pages));
 			} catch (Exception e) {
 				log.warn("[DedicatedCollectors] {} 수집 실패(나머지 대학은 계속): {}", code, e.getMessage());
+				// 결과에서 빼면 배치 이력에 실패가 남지 않는다. 실패로 표시해 함께 돌려준다.
+				results.add(CollectResultResponse.failed(code, e));
 			}
 		});
 		return results;

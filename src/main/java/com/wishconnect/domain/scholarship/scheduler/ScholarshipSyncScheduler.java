@@ -14,6 +14,9 @@ import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
+import com.wishconnect.domain.application.client.LlmFailureClassifier;
+import com.wishconnect.global.operation.AdminJobFailureRecord;
+import com.wishconnect.global.operation.AdminJobFailureType;
 import com.wishconnect.global.operation.AdminJobRunService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -90,6 +93,16 @@ public class ScholarshipSyncScheduler {
 	@Value("${scholarship.merge.group-limit:40}")
 	private int mergeDetectGroupLimit;
 
+	static final String STEP_SYNC = "공공데이터 동기화";
+	static final String STEP_UNIV_COLLECT = "대학 공지 수집";
+	static final String STEP_DEDICATED_COLLECT = "전용 대학 수집";
+	static final String STEP_LLM_PARSE = "대학 공지 LLM 파싱";
+	static final String STEP_ORPHAN_CHECK = "고아 데이터 점검";
+	static final String STEP_KOSAF_CONDITIONS = "공공데이터 조건 보강";
+	static final String STEP_DEDUP = "중복 후보 탐지";
+	static final String STEP_CONDITION_EXTRACT = "조건 추출";
+	static final String STEP_ENRICH = "상세·첨부·이미지 보완";
+
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
 		Long runId = adminJobRunService.start("DAILY_SCHOLARSHIP_PIPELINE", "SCHEDULED", null);
@@ -103,6 +116,13 @@ public class ScholarshipSyncScheduler {
             //한국장학재단에서 받아오는 부분
 			ScholarshipSyncResponse result = scholarshipSyncService.sync();
 			long newCount = scholarshipRepository.count() - beforeCount;
+			if (result.failedCount() > 0) {
+				// 공공데이터 동기화는 건별 실패 원인을 돌려주지 않는다. 건수만 남기고 상세는 서버 로그를 본다.
+				adminJobRunService.recordFailures(runId, STEP_SYNC, List.of(new AdminJobFailureRecord(
+						"SOURCE", null, "공공데이터(KOSAF)", AdminJobFailureType.SAVE,
+						"저장 실패 " + result.failedCount() + "건 / 수집 " + result.fetchedCount()
+								+ "건. 건별 원인은 서버 로그 [ScholarshipSync] 참고")));
+			}
 			log.info("[SyncBatch] 동기화 완료 fetched={} saved={} failed={} 신규정제={}",
 					result.fetchedCount(), result.savedCount(), result.failedCount(), Math.max(newCount, 0));
 			if (result.fetchedCount() == 0) {
@@ -113,27 +133,34 @@ public class ScholarshipSyncScheduler {
 		} catch (Exception e) {
 			log.error("[SyncBatch] 동기화 실패", e);
 			adminJobRunService.fail(runId, e);
+			adminJobRunService.recordFailures(runId, STEP_SYNC, List.of(new AdminJobFailureRecord(
+					"STEP", null, null, AdminJobFailureType.STEP_ERROR,
+					e.getClass().getSimpleName() + ": " + e.getMessage())));
 			return;
 		}
 		try {
-			for (CollectResultResponse univ : univNoticeCollector.collectAll(1)) {
+			List<CollectResultResponse> results = univNoticeCollector.collectAll(1);
+			for (CollectResultResponse univ : results) {
 				log.info("[SyncBatch] 대학 공지 수집 {} fetched={} saved={}",
 						univ.source(), univ.fetchedCount(), univ.savedCount());
 			}
+			adminJobRunService.recordFailures(runId, STEP_UNIV_COLLECT, collectFailures(results));
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 대학 공지 수집 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "대학 공지 수집", e);
+			adminJobRunService.warn(runId, STEP_UNIV_COLLECT, e);
 		}
 		try {
 			// 게시판 구조가 공통 규칙으로 묶이지 않아 대학별 클래스로 처리하는 곳들.
 			// 레지스트리 안에서 대학 단위로 예외를 삼키므로 한 곳이 실패해도 나머지는 수집된다.
-			for (CollectResultResponse univ : dedicatedNoticeCollectors.collectAll(1)) {
+			List<CollectResultResponse> results = dedicatedNoticeCollectors.collectAll(1);
+			for (CollectResultResponse univ : results) {
 				log.info("[SyncBatch] 대학 공지 수집(전용) {} fetched={} saved={}",
 						univ.source(), univ.fetchedCount(), univ.savedCount());
 			}
+			adminJobRunService.recordFailures(runId, STEP_DEDICATED_COLLECT, collectFailures(results));
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 전용 수집기 실행 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "전용 대학 수집", e);
+			adminJobRunService.warn(runId, STEP_DEDICATED_COLLECT, e);
 		}
 		try {
 			// 수집 바로 다음에 온다. 수집기는 raw_html 만 저장하므로, 이 단계가 없으면
@@ -143,9 +170,10 @@ public class ScholarshipSyncScheduler {
 			log.info("[SyncBatch] LLM 파싱 완료 target={} parsed={} skipped={} failed={}",
 					parsing.targetCount(), parsing.parsedCount(), parsing.skippedCount(),
 					parsing.failedCount());
+			adminJobRunService.recordFailures(runId, STEP_LLM_PARSE, parseFailures(parsing));
 		} catch (Exception e) {
 			log.warn("[SyncBatch] LLM 파싱 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "대학 공지 LLM 파싱", e);
+			adminJobRunService.warn(runId, STEP_LLM_PARSE, e, stepFailureType(e));
 		}
 		try {
 			// 원본과 끊긴 장학금은 아무도 못 찾는 행이 된다. 조용히 쌓이는 게 가장 나빴다 —
@@ -156,7 +184,7 @@ public class ScholarshipSyncScheduler {
 			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 고아 점검 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "고아 데이터 점검", e);
+			adminJobRunService.warn(runId, STEP_ORPHAN_CHECK, e);
 		}
 		try {
 			// 공공데이터는 제목·기간이 이미 정확하므로 조건·서류만 채운다. 모집 중이면서
@@ -168,9 +196,10 @@ public class ScholarshipSyncScheduler {
 						kosaf.targetCount(), kosaf.parsedCount(), kosaf.skippedCount(),
 						kosaf.failedCount());
 			}
+			adminJobRunService.recordFailures(runId, STEP_KOSAF_CONDITIONS, parseFailures(kosaf));
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 공공데이터 조건 보강 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "공공데이터 조건 보강", e);
+			adminJobRunService.warn(runId, STEP_KOSAF_CONDITIONS, e, stepFailureType(e));
 		}
 		try {
 			// 파싱이 끝난 뒤라야 새로 들어온 공고까지 중복 검사 대상이 된다.
@@ -179,9 +208,13 @@ public class ScholarshipSyncScheduler {
 			log.info("[SyncBatch] 중복 후보 탐지 완료 검사={} 묶음={} 신규후보={} 실패={}",
 					merge.scannedCount(), merge.groupCount(), merge.candidateCount(),
 					merge.failedCount());
+			adminJobRunService.recordFailures(runId, STEP_DEDUP, merge.failures().stream()
+					.map(failure -> new AdminJobFailureRecord("GROUP", null, failure.groupKey(),
+							AdminJobFailureType.valueOf(failure.failureType()), failure.reason()))
+					.toList());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 중복 후보 탐지 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "중복 후보 탐지", e);
+			adminJobRunService.warn(runId, STEP_DEDUP, e, stepFailureType(e));
 		}
 		try {
 			ConditionExtractionResponse extraction = conditionExtractionService.extract();
@@ -189,7 +222,7 @@ public class ScholarshipSyncScheduler {
 					extraction.targetCount(), extraction.extractedCount());
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 조건 추출 실패(동기화 결과에는 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "조건 추출", e);
+			adminJobRunService.warn(runId, STEP_CONDITION_EXTRACT, e, stepFailureType(e));
 		}
 		try {
 			// 수집 직후에 돌려야 새로 들어온 공고가 그날 바로 상세 URL·첨부·포스터를 갖는다.
@@ -198,10 +231,45 @@ public class ScholarshipSyncScheduler {
 			log.info("[SyncBatch] 자동 보완 완료 target={} 상세URL={} 이미지={} 첨부={} 건너뜀={}",
 					enrichment.targetCount(), enrichment.detailUrlFound(), enrichment.imageSaved(),
 					enrichment.documentLinked(), enrichment.skippedCount());
+			if (enrichment.searchUnavailable()) {
+				adminJobRunService.recordFailures(runId, STEP_ENRICH, List.of(new AdminJobFailureRecord(
+						"STEP", null, "검색 API", AdminJobFailureType.COLLECT,
+						"검색 API 를 쓸 수 없어 상세 URL·첨부·포스터 보완을 건너뛰었습니다(키·쿼터 확인).")));
+			}
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 자동 보완 실패(다른 스텝에 영향 없음): {}", e.getMessage());
-			adminJobRunService.warn(runId, "상세·첨부·이미지 보완", e);
+			adminJobRunService.warn(runId, STEP_ENRICH, e);
 		}
 		adminJobRunService.succeed(runId, "장학금 일일 파이프라인 완료");
+	}
+
+	/** 출처 통째 실패만 고른다. 수집 0건은 실패가 아니다(새 공지가 없는 날). */
+	static List<AdminJobFailureRecord> collectFailures(List<CollectResultResponse> results) {
+		return results.stream()
+				.filter(result -> result.error() != null)
+				.map(result -> new AdminJobFailureRecord("SOURCE", null, result.source(),
+						AdminJobFailureType.COLLECT, result.error()))
+				.toList();
+	}
+
+	/** 파싱 결과에서 실패한 원문만 고른다. 건너뜀(본문 없음·이미지뿐)은 실패가 아니다. */
+	static List<AdminJobFailureRecord> parseFailures(NoticeParsingResponse response) {
+		if (response == null || response.items() == null) {
+			return List.of();
+		}
+		return response.items().stream()
+				.filter(item -> "FAILED".equals(item.status()))
+				.map(item -> new AdminJobFailureRecord("RAW_SCHOLARSHIP", item.rawId(),
+						item.title() != null ? item.title() : item.source() + " " + item.sourceUrl(),
+						item.failureType() == null ? AdminJobFailureType.OTHER
+								: AdminJobFailureType.valueOf(item.failureType()),
+						item.note()))
+				.toList();
+	}
+
+	/** 단계 전체가 터졌을 때 원인이 LLM 크레딧·인증이면 그 유형으로 남긴다. */
+	private static AdminJobFailureType stepFailureType(Exception e) {
+		AdminJobFailureType type = LlmFailureClassifier.classify(e);
+		return type == null || type == AdminJobFailureType.LLM_ERROR ? AdminJobFailureType.STEP_ERROR : type;
 	}
 }

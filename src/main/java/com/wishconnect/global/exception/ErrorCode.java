@@ -158,6 +158,8 @@ public enum ErrorCode {
 	ADMIN_SESSION_REQUIRED(HttpStatus.UNAUTHORIZED, "관리자 콘솔 로그인으로 받은 토큰이 아닙니다. 콘솔에서 다시 로그인해주세요."),
 	ADMIN_SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "관리자 세션의 최대 사용 시간이 지나 연장할 수 없습니다. 다시 로그인해주세요."),
 
+	ADMIN_JOB_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 배치 실행 기록입니다."),
+
 	// 관리자 콘솔 — 중복 판정·병합
 	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
 			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),
