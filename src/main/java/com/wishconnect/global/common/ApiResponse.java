@@ -19,4 +19,9 @@ public record ApiResponse<T>(boolean success, T data, String message) {
 	public static ApiResponse<Void> fail(String message) {
 		return new ApiResponse<>(false, null, message);
 	}
+
+	/** 실패하면서 화면이 써야 할 정보(남은 시도 횟수 등)를 함께 내려줄 때. */
+	public static <T> ApiResponse<T> fail(String message, T data) {
+		return new ApiResponse<>(false, data, message);
+	}
 }
