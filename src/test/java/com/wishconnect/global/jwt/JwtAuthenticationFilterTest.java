@@ -90,7 +90,7 @@ class JwtAuthenticationFilterTest {
 	@DisplayName("관리자 화면 GET은 HttpOnly 쿠키의 토큰으로 인증한다")
 	void authenticatesAdminViewCookie() throws Exception {
 		UUID userId = UUID.randomUUID();
-		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/index.html");
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/console");
 		request.setCookies(new Cookie(AdminAuthCookie.NAME, "admin-token"));
 		given(jwtProvider.validateToken("admin-token")).willReturn(true);
 		given(jwtProvider.getUserId("admin-token")).willReturn(userId);

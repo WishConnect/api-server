@@ -14,6 +14,8 @@ import jakarta.servlet.http.Cookie;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -37,6 +39,17 @@ class AdminPageControllerTest {
 				.andExpect(redirectedUrl("/admin/console"));
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = {"/admin/", "/admin/index.html", "/admin/layout-preview.html"})
+	@DisplayName("예전 콘솔·미리보기 주소는 관리자에게도 파일 대신 콘솔로 보낸다")
+	void redirectsLegacyUrlsToConsole(String path) throws Exception {
+		givenAdminToken();
+
+		mockMvc.perform(get(path).cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/admin/console"));
+	}
+
 	@Test
 	@DisplayName("인증 쿠키가 없으면 로그인 화면으로 보낸다")
 	void redirectsAnonymousToLogin() throws Exception {
@@ -48,16 +61,32 @@ class AdminPageControllerTest {
 	@Test
 	@DisplayName("ADMIN 쿠키가 있으면 콘솔 HTML을 반환한다")
 	void servesConsoleForAdmin() throws Exception {
-		UUID userId = UUID.randomUUID();
-		given(jwtProvider.validateToken("admin-token")).willReturn(true);
-		given(jwtProvider.getUserId("admin-token")).willReturn(userId);
-		given(jwtProvider.getRole("admin-token")).willReturn("ADMIN");
-		given(withdrawnTokenStore.isWithdrawn(userId)).willReturn(false);
+		givenAdminToken();
 
 		mockMvc.perform(get("/admin/console")
 						.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
 				.andExpect(status().isOk())
 				.andExpect(content().contentTypeCompatibleWith("text/html"))
 				.andExpect(content().string(org.hamcrest.Matchers.containsString("WishConnect Admin")));
+	}
+
+	@Test
+	@DisplayName("콘솔이 쓰는 로그인 화면과 스크립트는 그대로 열린다")
+	void keepsConsoleAssets() throws Exception {
+		mockMvc.perform(get("/admin/login.html"))
+				.andExpect(status().isOk());
+
+		givenAdminToken();
+		mockMvc.perform(get("/admin/admin-console.js")
+						.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
+				.andExpect(status().isOk());
+	}
+
+	private void givenAdminToken() {
+		UUID userId = UUID.randomUUID();
+		given(jwtProvider.validateToken("admin-token")).willReturn(true);
+		given(jwtProvider.getUserId("admin-token")).willReturn(userId);
+		given(jwtProvider.getRole("admin-token")).willReturn("ADMIN");
+		given(withdrawnTokenStore.isWithdrawn(userId)).willReturn(false);
 	}
 }
