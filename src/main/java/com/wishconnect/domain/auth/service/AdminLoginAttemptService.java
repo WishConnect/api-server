@@ -65,18 +65,19 @@ public class AdminLoginAttemptService {
 		try {
 			String idKey = ID_FAIL_PREFIX + key(loginId);
 			long count = increment(idKey, properties.loginLockDuration());
+			// IP 카운터는 아이디 잠금 여부와 무관하게 실패마다 센다.
+			long ipCount = ipLimited(ip) ? increment(IP_FAIL_PREFIX + ip, properties.ipWindow()) : 0;
+			if (ipCount >= properties.ipMaxFailures()) {
+				redisTemplate.opsForValue().set(IP_LOCK_PREFIX + ip, "1", properties.ipWindow());
+				log.warn("[AdminAuth] 로그인 잠금(IP) ip={} failures={}", ip, ipCount);
+			}
 			if (count >= max) {
 				redisTemplate.opsForValue().set(ID_LOCK_PREFIX + key(loginId), "1", properties.loginLockDuration());
 				log.warn("[AdminAuth] 로그인 잠금(아이디) loginId={} ip={} failures={}", mask(loginId), ip, count);
 				return locked("ACCOUNT", properties.loginLockDuration().toSeconds(), (int) count);
 			}
-			if (ipLimited(ip)) {
-				long ipCount = increment(IP_FAIL_PREFIX + ip, properties.ipWindow());
-				if (ipCount >= properties.ipMaxFailures()) {
-					redisTemplate.opsForValue().set(IP_LOCK_PREFIX + ip, "1", properties.ipWindow());
-					log.warn("[AdminAuth] 로그인 잠금(IP) ip={} failures={}", ip, ipCount);
-					return locked("IP", properties.ipWindow().toSeconds(), (int) count);
-				}
+			if (ipCount >= properties.ipMaxFailures()) {
+				return locked("IP", properties.ipWindow().toSeconds(), (int) count);
 			}
 			log.warn("[AdminAuth] 로그인 실패 loginId={} ip={} failures={}/{}", mask(loginId), ip, count, max);
 			return new AdminLoginAttemptResponse((int) count, max, (int) Math.max(max - count, 0),
