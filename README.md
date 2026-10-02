@@ -91,9 +91,10 @@ WishConnect는 한국장학재단 공공데이터와 전국 대학 장학공지�
 
 - **📎 Notion API 명세서 (공통 규칙 · 도메인별 상세 Request/Response · 실패 케이스)**
   → https://app.notion.com/p/API-a480adbca4ca824ba1ce810b83a1e6e7
-- **Swagger UI** — `/swagger-ui/index.html`
-  (Swagger 는 로컬·운영 모두 **ADMIN 권한 뒤에** 있습니다. `/admin/login.html` 에서 관리자 로그인 후 접근하세요.
-  외부 열람은 위 Notion 명세서를 사용해 주세요.)
+- **Swagger UI** — `/swagger-ui/index.html` (**로컬 전용**)
+  운영에서는 꺼져 있습니다(`application-prod.yml` 기본값 `SWAGGER_ENABLED=false`, Nginx 에서도 차단).
+  로컬에서도 **ADMIN 권한 뒤에** 있으니 `/admin/login.html` 에서 관리자 로그인 후 접근하세요.
+  외부 열람은 위 Notion 명세서를 사용해 주세요.
 
 ### 공통 규칙
 
