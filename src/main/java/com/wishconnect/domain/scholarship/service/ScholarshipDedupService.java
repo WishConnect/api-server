@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
+import com.wishconnect.domain.application.client.LlmFailureClassifier;
 import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmMessage;
 import com.wishconnect.domain.application.client.dto.LlmModel;
@@ -19,6 +20,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.ScholarshipTitleBlocker;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import com.wishconnect.global.operation.AdminJobFailureType;
 import com.wishconnect.domain.scholarship.dto.DedupScanRow;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -154,6 +156,7 @@ public class ScholarshipDedupService {
 		int failed = 0;
 		int scanned = 0;
 		Set<Long> scannedIds = new HashSet<>();
+		List<MergeDetectionResponse.GroupFailure> failures = new ArrayList<>();
 
 		// 3) 판정 — 여기서만 LLM 을 쓴다. 묶음에 속한 공고만 엔티티로 읽는다.
 		for (var entry : selected) {
@@ -191,6 +194,10 @@ public class ScholarshipDedupService {
 				// 한 그룹이 실패해도 나머지는 계속 본다.
 				log.warn("[Dedup] 그룹 판정 실패 key={} : {}", entry.getKey(), e.getMessage());
 				failed++;
+				AdminJobFailureType type = LlmFailureClassifier.classify(e);
+				failures.add(new MergeDetectionResponse.GroupFailure(entry.getKey(),
+						(type == null ? AdminJobFailureType.OTHER : type).name(),
+						LlmFailureClassifier.prefix(type) + e.getMessage()));
 			}
 		}
 
@@ -204,7 +211,7 @@ public class ScholarshipDedupService {
 				.count() - groupCount;
 		log.info("[Dedup] 전체={} 묶음판정={} 검사={} 신규후보={} 중복스킵={} 실패={} 남은묶음={}",
 				rows.size(), groupCount, scanned, created, skipped, failed, Math.max(remaining, 0));
-		return new MergeDetectionResponse(scanned, groupCount, created, skipped, failed);
+		return new MergeDetectionResponse(scanned, groupCount, created, skipped, failed, failures);
 	}
 
 	/** 승인 대기 목록 조회. */

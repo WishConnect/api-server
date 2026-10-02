@@ -11,7 +11,9 @@ import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.NoticeKind;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.repository.NoticeParseLogRepository;
+import com.wishconnect.domain.application.client.LlmFailureClassifier;
 import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.operation.AdminJobFailureType;
 import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
@@ -182,7 +184,7 @@ public class UnivNoticeLlmParsingService {
 				Optional<ParsedNotice> maybe = parser.readResponse(response);
 				if (maybe.isEmpty()) {
 					failed++;
-					items.add(item(raw, "FAILED", title, null, "LLM 응답을 읽지 못했습니다."));
+					items.add(failedItem(raw, title, null, "LLM 응답을 읽지 못했습니다.", AdminJobFailureType.PARSE));
 					continue;
 				}
 				ParsedNotice notice = maybe.get();
@@ -215,7 +217,8 @@ public class UnivNoticeLlmParsingService {
 			} catch (Exception e) {
 				log.warn("[KosafConditions] 파싱 실패 rawId={} : {}", raw.getId(), e.getMessage());
 				failed++;
-				items.add(item(raw, "FAILED", null, null, e.getMessage()));
+				AdminJobFailureType type = failureTypeOf(e);
+				items.add(failedItem(raw, null, null, LlmFailureClassifier.prefix(type) + e.getMessage(), type));
 			}
 		}
 
@@ -243,11 +246,12 @@ public class UnivNoticeLlmParsingService {
 			} catch (Exception e) {
 				// 한 건이 실패해도 배치 전체를 멈추지 않는다. 다음 실행에서 재시도된다.
 				log.warn("[UnivLlmParsing] 파싱 실패 rawId={} : {}", raw.getId(), e.getMessage());
+				AdminJobFailureType type = failureTypeOf(e);
 				if (!dryRun) {
-					raw.markFailed("LLM 파싱 실패: " + e.getMessage());
+					raw.markFailed(LlmFailureClassifier.prefix(type) + "LLM 파싱 실패: " + e.getMessage());
 				}
 				failed++;
-				items.add(item(raw, "FAILED", null, null, e.getMessage()));
+				items.add(failedItem(raw, null, null, e.getMessage(), type));
 			}
 		}
 
@@ -355,12 +359,14 @@ public class UnivNoticeLlmParsingService {
 			response = callWithRetry(htmlTitle, bodyText,
 					parser.extractAttachments(raw.getRawHtml()), raw.getId());
 		} catch (CustomException e) {
-			String reason = describeLlmFailure(e, extracted);
+			AdminJobFailureType type = failureTypeOf(e);
+			// 크레딧 부족·인증 오류는 말머리를 붙인다. 실패 재처리 화면에서 원인이 바로 보이도록.
+			String reason = LlmFailureClassifier.prefix(type) + describeLlmFailure(e, extracted);
 			if (!dryRun) {
 				raw.markFailed(reason);
 				saveLog(raw, extracted, ParseStatus.FAILED, null, null, reason);
 			}
-			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
+			return new Outcome(ParseStatus.FAILED, failedItem(raw, null, beforePeriod, reason, type));
 		}
 
 		Optional<ParsedNotice> maybeNotice = parser.readResponse(response);
@@ -372,7 +378,8 @@ public class UnivNoticeLlmParsingService {
 				raw.markFailed(reason);
 				saveLog(raw, extracted, ParseStatus.FAILED, null, response, reason);
 			}
-			return new Outcome(ParseStatus.FAILED, item(raw, "FAILED", null, beforePeriod, reason));
+			return new Outcome(ParseStatus.FAILED,
+					failedItem(raw, null, beforePeriod, reason, AdminJobFailureType.PARSE));
 		}
 
 		ParsedNotice notice = maybeNotice.get();
@@ -593,6 +600,18 @@ public class UnivNoticeLlmParsingService {
 			return RecruitmentStatus.ALWAYS_OPEN;
 		}
 		return now.isAfter(endAt) ? RecruitmentStatus.CLOSED : RecruitmentStatus.OPEN;
+	}
+
+	private NoticeParsingResponse.Item failedItem(RawScholarship raw, String title, String beforePeriod,
+			String note, AdminJobFailureType type) {
+		return new NoticeParsingResponse.Item(raw.getId(), raw.getSource(), raw.getSourceUrl(),
+				"FAILED", title, beforePeriod, null, 0, 0, false, note, type == null ? null : type.name());
+	}
+
+	/** LLM 원인이면 크레딧·인증·일반으로, 아니면 기타로 나눈다. */
+	private static AdminJobFailureType failureTypeOf(Throwable e) {
+		AdminJobFailureType type = LlmFailureClassifier.classify(e);
+		return type == null ? AdminJobFailureType.OTHER : type;
 	}
 
 	private NoticeParsingResponse.Item item(RawScholarship raw, String status, String title,

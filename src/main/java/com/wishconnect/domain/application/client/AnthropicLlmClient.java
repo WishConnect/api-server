@@ -84,7 +84,8 @@ public class AnthropicLlmClient implements LlmClient {
 			throw e;
 		} catch (Exception e) {
 			log.error("LLM 호출 실패. model={}, error={}", modelId, e.getMessage(), e);
-			throw new CustomException(ErrorCode.LLM_CALL_FAILED);
+			// 원인을 보존한다. 응답 코드·메시지는 그대로이고, 배치가 크레딧 부족·인증 오류를 구분하는 데 쓴다.
+			throw new CustomException(ErrorCode.LLM_CALL_FAILED, e);
 		}
 	}
 

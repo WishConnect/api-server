@@ -78,6 +78,7 @@ class ScholarshipSyncSchedulerTest {
 		verify(conditionExtractionService).extract();
 		verify(adminJobRunService).warn(org.mockito.ArgumentMatchers.eq(3L),
 				org.mockito.ArgumentMatchers.eq("조건 추출"),
-				org.mockito.ArgumentMatchers.any(RuntimeException.class));
+				org.mockito.ArgumentMatchers.any(RuntimeException.class),
+				org.mockito.ArgumentMatchers.eq(com.wishconnect.global.operation.AdminJobFailureType.STEP_ERROR));
 	}
 }

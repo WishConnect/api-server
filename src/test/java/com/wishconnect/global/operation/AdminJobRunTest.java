@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 class AdminJobRunTest {
 
 	@Test
-	@DisplayName("부분 실패가 있으면 완료 후에도 WARNING 상태를 유지한다")
+	@DisplayName("부분 실패가 있으면 완료 후에도 PARTIAL_FAILURE 상태를 유지한다")
 	void warningIsPreservedOnCompletion() {
 		AdminJobRun run = AdminJobRun.builder()
 				.jobType("DAILY_SCHOLARSHIP_PIPELINE")
@@ -18,7 +18,7 @@ class AdminJobRunTest {
 		run.warn("LLM 파싱 실패");
 		run.succeed("나머지 단계 완료");
 
-		assertThat(run.getStatus()).isEqualTo(AdminJobStatus.WARNING);
+		assertThat(run.getStatus()).isEqualTo(AdminJobStatus.PARTIAL_FAILURE);
 		assertThat(run.getFinishedAt()).isNotNull();
 		assertThat(run.getErrorMessage()).contains("LLM 파싱 실패");
 	}
