@@ -33,6 +33,15 @@ app:
 jwt:
   secret: ${JWT_SECRET}
 
+# 운영에서는 API 문서(Swagger UI·/v3/api-docs)를 끈다. 공통 설정(application.yml)의 기본값은 켜짐이라
+# 배포 env 에 SWAGGER_ENABLED 가 빠져도 운영에서 열리지 않도록 prod 기본값을 false 로 뒤집는다.
+# 잠깐 켜야 하면 EnvironmentFile 에 SWAGGER_ENABLED=true 를 넣고 재시작(Nginx 에서도 막혀 있으니 터널로 확인).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+
 kakao:
   client-id: ${KAKAO_CLIENT_ID}
   client-secret: ${KAKAO_CLIENT_SECRET}
