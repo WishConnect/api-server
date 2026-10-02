@@ -18,18 +18,15 @@ public class AdminScholarshipImageService {
 
 	public String replaceFromUrl(Long scholarshipId, String imageUrl) {
 		String title = title(scholarshipId);
-		String result = imageStorageService.replaceFromUrl(imageUrl, "scholarships/admin",
+		// 실패하면 원인별 ADMIN_IMAGE_* 예외가 그대로 올라간다. 성공했는데 조회 URL 서명만 실패하면 null 이다.
+		return imageStorageService.replaceFromUrl(imageUrl, "scholarships/admin",
 				ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId, title);
-		if (result == null) throw new CustomException(ErrorCode.ADMIN_IMAGE_SAVE_FAILED);
-		return result;
 	}
 
 	public String replaceFromUpload(Long scholarshipId, MultipartFile file) {
 		title(scholarshipId);
-		String result = imageStorageService.replaceFromUpload(file, "scholarships/admin",
+		return imageStorageService.replaceFromUpload(file, "scholarships/admin",
 				ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId);
-		if (result == null) throw new CustomException(ErrorCode.ADMIN_IMAGE_SAVE_FAILED);
-		return result;
 	}
 
 	private String title(Long scholarshipId) {
