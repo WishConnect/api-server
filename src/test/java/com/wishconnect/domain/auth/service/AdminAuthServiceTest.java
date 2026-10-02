@@ -18,7 +18,9 @@ import com.wishconnect.domain.user.repository.UserRepository;
 import com.wishconnect.global.exception.CustomDetailException;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import com.wishconnect.global.jwt.AdminSessionTokens;
 import com.wishconnect.global.jwt.JwtProvider;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +38,7 @@ class AdminAuthServiceTest {
 
 	@Mock private UserRepository userRepository;
 	@Mock private PasswordEncoder passwordEncoder;
-	@Mock private JwtProvider jwtProvider;
+	@Mock private AdminSessionTokens sessionTokens;
 	@Mock private AdminLoginAttemptService loginAttemptService;
 
 	private AdminAuthService service;
@@ -47,7 +49,7 @@ class AdminAuthServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new AdminAuthService(userRepository, passwordEncoder, loginAttemptService, jwtProvider);
+		service = new AdminAuthService(userRepository, passwordEncoder, loginAttemptService, sessionTokens);
 	}
 
 	@Test
@@ -57,13 +59,15 @@ class AdminAuthServiceTest {
 		given(userRepository.findByLoginIdAndLoginTypeAndDeletedAtIsNull("admin01", LoginType.LOCAL))
 				.willReturn(Optional.of(admin));
 		given(passwordEncoder.matches("password", "encoded")).willReturn(true);
-		given(jwtProvider.createAccessToken(admin.getId(), "ADMIN")).willReturn("admin-token");
-		given(jwtProvider.getAccessTokenValidity()).willReturn(1_800_000L);
+		Instant now = Instant.now();
+		given(sessionTokens.issueNew(admin.getId())).willReturn(new AdminSessionTokens.Issued("admin-token",
+				now.plusSeconds(1800), 1800, now, now.plusSeconds(28_800), 28_800, true));
 
 		AdminLoginResponse response = service.login(request, IP);
 
 		assertThat(response.accessToken()).isEqualTo("admin-token");
 		assertThat(response.expiresInSeconds()).isEqualTo(1800);
+		assertThat(response.sessionMaxExpiresAt()).isEqualTo(now.plusSeconds(28_800));
 		assertThat(response.name()).isEqualTo("관리자");
 		verify(loginAttemptService).reset("admin01");
 	}
@@ -126,7 +130,7 @@ class AdminAuthServiceTest {
 		assertThatThrownBy(() -> service.login(request, IP))
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.LOGIN_FAILED);
-		verify(jwtProvider, never()).createAccessToken(user.getId(), "ADMIN");
+		verify(sessionTokens, never()).issueNew(any());
 	}
 
 	@Test
@@ -141,8 +145,30 @@ class AdminAuthServiceTest {
 		assertThatThrownBy(() -> service.login(request, IP))
 				.isInstanceOf(CustomException.class)
 				.extracting("errorCode").isEqualTo(ErrorCode.LOGIN_FAILED);
-		verify(jwtProvider, never()).createAccessToken(admin.getId(), "ADMIN");
+		verify(sessionTokens, never()).issueNew(any());
 		verify(loginAttemptService).recordFailure("admin01", IP);
+	}
+
+	@Test
+	@DisplayName("세션 연장: 일반 로그인 토큰이면 ADMIN_SESSION_REQUIRED")
+	void extendRejectsPlainToken() {
+		given(sessionTokens.parse("plain")).willReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.extend("plain"))
+				.isInstanceOf(CustomException.class)
+				.extracting("errorCode").isEqualTo(ErrorCode.ADMIN_SESSION_REQUIRED);
+	}
+
+	@Test
+	@DisplayName("세션 연장: 절대 수명이 끝났으면 ADMIN_SESSION_EXPIRED")
+	void extendRejectsAfterMaxLifetime() {
+		given(sessionTokens.parse("old")).willReturn(Optional.of(new JwtProvider.AdminSessionClaims(
+				UUID.randomUUID(), Instant.now().minusSeconds(29_000), Instant.now(), Instant.now().plusSeconds(10))));
+		given(sessionTokens.extend("old")).willReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.extend("old"))
+				.isInstanceOf(CustomException.class)
+				.extracting("errorCode").isEqualTo(ErrorCode.ADMIN_SESSION_EXPIRED);
 	}
 
 	private User user(UserRole role) {

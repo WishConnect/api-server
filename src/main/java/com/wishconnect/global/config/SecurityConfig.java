@@ -1,10 +1,13 @@
 package com.wishconnect.global.config;
 
+import com.wishconnect.global.jwt.AdminSessionSlidingFilter;
+import com.wishconnect.global.jwt.AdminSessionTokens;
 import com.wishconnect.global.jwt.JwtAuthenticationEntryPoint;
 import com.wishconnect.global.jwt.JwtAuthenticationFilter;
 import com.wishconnect.global.jwt.JwtProvider;
 import com.wishconnect.global.jwt.WithdrawnTokenStore;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -90,6 +93,8 @@ public class SecurityConfig {
 	private final JwtProvider jwtProvider;
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 	private final WithdrawnTokenStore withdrawnTokenStore;
+	/** 관리자 세션 연장. 슬라이스 테스트처럼 빈이 없는 컨텍스트에서는 필터를 빼고 띄운다. */
+	private final ObjectProvider<AdminSessionTokens> adminSessionTokens;
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -113,6 +118,10 @@ public class SecurityConfig {
 				.exceptionHandling(handler -> handler.authenticationEntryPoint(authenticationEntryPoint))
 				.addFilterBefore(new JwtAuthenticationFilter(jwtProvider, withdrawnTokenStore),
 						UsernamePasswordAuthenticationFilter.class);
+		AdminSessionTokens sessionTokens = adminSessionTokens.getIfAvailable();
+		if (sessionTokens != null) {
+			http.addFilterAfter(new AdminSessionSlidingFilter(sessionTokens), JwtAuthenticationFilter.class);
+		}
 		return http.build();
 	}
 
