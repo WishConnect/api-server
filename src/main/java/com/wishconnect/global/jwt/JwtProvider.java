@@ -6,7 +6,9 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,8 @@ import org.springframework.stereotype.Component;
 public class JwtProvider {
 
 	private static final String ROLE_CLAIM = "role";
+	/** 관리자 세션 시작 시각(epoch 초). 관리자 로그인으로 받은 토큰에만 있다. 연장해도 바뀌지 않는다. */
+	private static final String ADMIN_SESSION_START_CLAIM = "ast";
 
 	private final SecretKey key;
 	private final long accessTokenValidity;
@@ -56,6 +60,49 @@ public class JwtProvider {
 			builder.claim(ROLE_CLAIM, role);
 		}
 		return builder.signWith(key, Jwts.SIG.HS256).compact();
+	}
+
+	/**
+	 * 관리자 세션 토큰. 일반 Access Token 과 같은 서명·검증을 쓰고, 세션 시작 시각만 더 담는다.
+	 *
+	 * <p>만료 시각은 호출측이 정한다(유휴 만료와 절대 수명 중 이른 쪽). 연장할 때는 같은 시작 시각으로
+	 * 새 토큰을 만든다 — 그래서 몇 번을 연장해도 최초 로그인 기준 절대 수명을 넘지 못한다.
+	 */
+	public String createAdminSessionToken(UUID userId, Instant sessionStartedAt, Instant expiresAt) {
+		return Jwts.builder()
+				.subject(userId.toString())
+				.issuedAt(new Date())
+				.expiration(Date.from(expiresAt))
+				.claim(ROLE_CLAIM, "ADMIN")
+				.claim(ADMIN_SESSION_START_CLAIM, sessionStartedAt.getEpochSecond())
+				.signWith(key, Jwts.SIG.HS256)
+				.compact();
+	}
+
+	/**
+	 * 유효한 관리자 세션 토큰이면 그 정보를, 아니면 empty.
+	 *
+	 * <p>일반 로그인으로 받은 ADMIN 토큰(세션 시작 시각 없음)은 empty 다. 그 토큰은 연장 대상이 아니다.
+	 */
+	public Optional<AdminSessionClaims> parseAdminSession(String token) {
+		try {
+			Claims claims = parseClaims(token);
+			Object start = claims.get(ADMIN_SESSION_START_CLAIM);
+			if (!(start instanceof Number number) || !"ADMIN".equals(claims.get(ROLE_CLAIM))) {
+				return Optional.empty();
+			}
+			return Optional.of(new AdminSessionClaims(
+					UUID.fromString(claims.getSubject()),
+					Instant.ofEpochSecond(number.longValue()),
+					claims.getIssuedAt().toInstant(),
+					claims.getExpiration().toInstant()));
+		} catch (JwtException | IllegalArgumentException e) {
+			return Optional.empty();
+		}
+	}
+
+	/** 관리자 세션 토큰에서 읽은 값. */
+	public record AdminSessionClaims(UUID userId, Instant sessionStartedAt, Instant issuedAt, Instant expiresAt) {
 	}
 
 	/**

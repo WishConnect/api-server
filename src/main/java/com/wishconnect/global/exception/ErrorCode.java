@@ -145,6 +145,10 @@ public enum ErrorCode {
 	/** 잠금 사유(계정·IP)와 남은 시간은 응답 data 로 내려간다. 계정 존재 여부와 무관하게 같은 응답이다. */
 	ADMIN_LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "로그인 실패가 반복되어 잠시 잠겼습니다. 남은 시간이 지난 뒤 다시 시도해주세요."),
 
+	/** 일반 로그인으로 받은 ADMIN 토큰 등 세션 시작 시각이 없는 토큰. 연장할 수 없다. */
+	ADMIN_SESSION_REQUIRED(HttpStatus.UNAUTHORIZED, "관리자 콘솔 로그인으로 받은 토큰이 아닙니다. 콘솔에서 다시 로그인해주세요."),
+	ADMIN_SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "관리자 세션의 최대 사용 시간이 지나 연장할 수 없습니다. 다시 로그인해주세요."),
+
 	// 관리자 콘솔 — 중복 판정·병합
 	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
 			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),
