@@ -14,6 +14,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -133,6 +134,17 @@ public class GlobalExceptionHandler {
 			builder.allow(supported.toArray(new HttpMethod[0]));
 		}
 		return builder.body(ApiResponse.fail(ErrorCode.METHOD_NOT_ALLOWED.getMessage()));
+	}
+
+	/**
+	 * multipart 한도 초과. 핸들러가 없으면 catch-all 로 떨어져 500 이 났다.
+	 * 업로드 크기는 사용자가 고칠 수 있는 문제이므로 413 과 한국어 안내로 내린다.
+	 */
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+		log.warn("[MaxUploadSizeExceededException] {}", e.getMessage());
+		return ResponseEntity.status(ErrorCode.UPLOAD_TOO_LARGE.getStatus())
+				.body(ApiResponse.fail(ErrorCode.UPLOAD_TOO_LARGE.getMessage()));
 	}
 
 	@ExceptionHandler(Exception.class)

@@ -41,6 +41,20 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 `swappiness` 기본값 60 은 여유가 있어도 적극적으로 스왑을 써서 평상시 응답이 느려진다.
 10 으로 낮춰 진짜 몰릴 때만 쓰이게 한다.
 
+## 📦 업로드 한도 (Nginx)
+
+앱의 업로드 한도는 `application.yml` 의 `spring.servlet.multipart` 가 정한다(파일 5MB, 요청 6MB).
+Nginx 의 `client_max_body_size` 가 이보다 작으면 **Nginx 가 먼저 413(HTML)을 낸다** — 기본값은 `1m` 이고,
+관리자 콘솔에서 1MB 넘는 포스터가 "요청 실패 HTTP 413" 으로 막힌 원인이 이것이었다.
+
+```nginx
+# server 블록(또는 API location)에. 앱 multipart 요청 한도(6MB)와 같거나 크게.
+client_max_body_size 6m;
+```
+
+`sudo nginx -T | grep client_max_body_size` 로 현재 값을 확인하고, 바꾼 뒤 `sudo nginx -t && sudo systemctl reload nginx`.
+기능별 한도(이미지 5MB, 엑셀 1MB, 문의 첨부 2MB)는 앱이 따로 검사해 한국어 문구로 거절한다.
+
 ## 🔒 관리자 콘솔 접근 (SSH 터널)
 
 관리자 화면(`/admin/`)은 **인터넷에서 열리지 않는다.** Nginx 에서 막고, 볼 때만 SSH 터널로 붙는다.

@@ -80,6 +80,15 @@ public enum ErrorCode {
 	INQUIRY_ATTACHMENT_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "PDF, PNG, JPG, JPEG 파일만 첨부할 수 있습니다."),
 	INQUIRY_ATTACHMENT_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "첨부파일 저장에 실패했습니다."),
 	ADMIN_IMAGE_SAVE_FAILED(HttpStatus.BAD_GATEWAY, "이미지를 저장하지 못했습니다. URL 또는 파일 형식을 확인해주세요."),
+	// 관리자 이미지 등록·교체: 원인별로 나눈다. 예전에는 전부 위 ADMIN_IMAGE_SAVE_FAILED 하나로 뭉개졌다.
+	ADMIN_IMAGE_EMPTY(HttpStatus.BAD_REQUEST, "빈 파일입니다. 이미지 파일을 다시 선택해주세요."),
+	ADMIN_IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "이미지가 너무 큽니다. 5MB 이하로 올려주세요."),
+	ADMIN_IMAGE_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "PNG, JPG, GIF, WEBP 이미지만 올릴 수 있습니다."),
+	ADMIN_IMAGE_URL_INVALID(HttpStatus.BAD_REQUEST, "이미지 주소가 올바르지 않습니다. http:// 또는 https:// 로 시작하는 주소인지 확인해주세요."),
+	ADMIN_IMAGE_DOWNLOAD_FAILED(HttpStatus.BAD_GATEWAY, "이미지 주소에서 파일을 내려받지 못했습니다. 주소가 열리는지 확인해주세요."),
+	ADMIN_IMAGE_STORAGE_FAILED(HttpStatus.BAD_GATEWAY, "이미지 저장소(S3)에 저장하지 못했습니다. 잠시 후 다시 시도해주세요."),
+	/** Spring multipart 한도(max-file-size 5MB / max-request-size 6MB)를 넘은 요청. */
+	UPLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일이 너무 큽니다. 한 번에 5MB 이하 파일만 올릴 수 있습니다."),
 	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
 	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
 	ONBOARDING_INCOMPLETE(HttpStatus.BAD_REQUEST, "이전 단계를 먼저 완료해주세요."),
