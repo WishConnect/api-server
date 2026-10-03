@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.dto.AdminIntakeRowResponse;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminRawDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.RecruitmentStatusCheck;
 import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
@@ -197,7 +198,9 @@ public class ScholarshipAdminOverviewService {
 						value.getFileSize(), value.getSourceUrl(), imageStorageService.publicUrl(value.getS3Key())))
 				.toList();
 
-		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images);
+		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images,
+				RecruitmentStatusCheck.of(scholarship.getRecruitmentStatus(), scholarship.getApplicationStartAt(),
+						scholarship.getApplicationEndAt(), LocalDateTime.now()));
 	}
 
 	public Page<AdminRawFailureResponse> failures(String keyword, String source, ParseStatus status,
