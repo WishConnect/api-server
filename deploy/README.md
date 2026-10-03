@@ -1,15 +1,13 @@
 # 운영 서버(EC2) 설정
 
-이 디렉터리는 **운영 EC2 에 수동으로 설치하는 설정 파일들의 원본**이다.
-배포 워크플로([.github/workflows/deploy.yml](../.github/workflows/deploy.yml))는 jar 업로드와
-EnvironmentFile 기록만 하고 **이 파일들을 서버로 복사하지 않는다.** 서버에 반영하려면 직접 설치해야 하고,
-반대로 서버에서 고친 내용은 여기에도 같이 반영해야 두 벌이 어긋나지 않는다.
+이 디렉터리는 **운영 EC2 설정 파일의 원본**이다. 서버에서 고친 내용은 반드시 여기에도 반영해 두 벌이 어긋나지 않게 한다.
 
-| 파일 | 설치 위치 |
-|---|---|
-| `wishconnect.service` | `/etc/systemd/system/wishconnect.service` |
-| `wishconnect.logrotate` | `/etc/logrotate.d/wishconnect` |
-| `wishconnect.env.example` | `/etc/wishconnect/wishconnect.env` (실제 값은 배포 워크플로가 기록, root:600) |
+| 파일 | 설치 위치 | 반영 방식 |
+|---|---|---|
+| `nginx/wishconnect.conf` | `/etc/nginx/sites-available/wishconnect` | **배포 워크플로가 자동 반영** (아래 Nginx 절) |
+| `wishconnect.service` | `/etc/systemd/system/wishconnect.service` | 수동 |
+| `wishconnect.logrotate` | `/etc/logrotate.d/wishconnect` | 수동 |
+| `wishconnect.env.example` | `/etc/wishconnect/wishconnect.env` | 실제 값은 배포 워크플로가 GitHub Secrets 로 기록 (root:600) |
 
 ## 설치
 
@@ -41,54 +39,101 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 `swappiness` 기본값 60 은 여유가 있어도 적극적으로 스왑을 써서 평상시 응답이 느려진다.
 10 으로 낮춰 진짜 몰릴 때만 쓰이게 한다.
 
-## 📦 업로드 한도 (Nginx)
+## 🌐 Nginx — 레포가 기준
 
-앱의 업로드 한도는 `application.yml` 의 `spring.servlet.multipart` 가 정한다(파일 5MB, 요청 6MB).
-Nginx 의 `client_max_body_size` 가 이보다 작으면 **Nginx 가 먼저 413(HTML)을 낸다** — 기본값은 `1m` 이고,
-관리자 콘솔에서 1MB 넘는 포스터가 "요청 실패 HTTP 413" 으로 막힌 원인이 이것이었다.
+운영 Nginx 의 WishConnect 사이트 설정은 [`nginx/wishconnect.conf`](nginx/wishconnect.conf) 가 원본이다.
+**서버에서 직접 고치면 다음 배포 때 덮어써진다.** 고칠 일이 있으면 이 파일을 고쳐 PR 로 올린다.
 
-```nginx
-# server 블록(또는 API location)에. 앱 multipart 요청 한도(6MB)와 같거나 크게.
-client_max_body_size 6m;
-```
+이 파일이 하는 일:
 
-`sudo nginx -T | grep client_max_body_size` 로 현재 값을 확인하고, 바꾼 뒤 `sudo nginx -t && sudo systemctl reload nginx`.
-기능별 한도(이미지 5MB, 엑셀 1MB, 문의 첨부 2MB)는 앱이 따로 검사해 한국어 문구로 거절한다.
+| 항목 | 값 | 이유 |
+|---|---|---|
+| `client_max_body_size` | `10m` | 기본값 1m 때문에 1MB 넘는 포스터 업로드가 413(HTML)으로 막혔다. 앱 한도(파일 5MB / 요청 6MB)보다 커야 앱이 한국어 400 문구를 낸다 |
+| `server_tokens` | `off` | 응답 헤더의 Nginx 버전(`nginx/1.24.0 (Ubuntu)`) 숨김 |
+| 예전 콘솔 차단 | `= /admin/index.html`, `= /admin/layout-preview.html` → 404 | **정확히 일치만** 막는다. `/admin/` 접두사 전체를 막으면 `/admin/console` 까지 막힌다 |
+| API 문서 차단 | `^~ /swagger-ui`, `^~ /v3/api-docs` → 404 | 앱에서도 운영은 꺼져 있다(`application-prod.yml`). 이중 차단 |
+| `X-Forwarded-For` | `$remote_addr` 로 덮어씀 | 클라이언트가 보낸 값을 이어 붙이면 위조로 관리자 로그인 IP 제한을 우회할 수 있다 |
 
-## 🔒 관리자 콘솔 접근 (SSH 터널)
+### 자동 반영 (main 배포 시)
 
-관리자 화면(`/admin/`)은 **인터넷에서 열리지 않는다.** Nginx 에서 막고, 볼 때만 SSH 터널로 붙는다.
+[deploy.yml](../.github/workflows/deploy.yml) 의 **앱 배포·헬스체크가 성공한 뒤**에 별도 단계로 실행된다.
 
-고정 IP 가 필요 없고, 새 비밀번호나 새 서비스도 없다. 서버 접속에 쓰는 `.pem` 키가 곧 열쇠다.
+1. 설정 파일을 `/home/ubuntu/app/nginx/` 에 업로드
+2. 전제 조건 확인 (비밀번호 없는 sudo, `sites-enabled/wishconnect` 심볼릭 링크) — 실패하면 **아무것도 바꾸지 않고** 실패
+3. 서버 파일과 같으면 건너뜀
+4. 기존 파일을 `/etc/nginx/wishconnect-backup/` 에 백업 (최근 10개 유지)
+5. 교체 → `sudo nginx -t` — 실패하거나 `conflicting server name` 경고가 나면 복구
+6. 통과 시에만 `sudo systemctl reload nginx`
+7. Nginx 를 거쳐 점검: health UP, `/admin/console` 302, `/admin/login.html` 200, 예전 콘솔·Swagger 404,
+   HTTP→HTTPS 301, 2MB 본문 413 아님, `Server: nginx`
+8. 5~7 중 하나라도 실패하면 백업으로 되돌리고(되돌린 설정이 `nginx -t` 를 통과할 때만 reload) **워크플로 실패**
 
-### Nginx (한 번만 설정)
+앱 배포가 실패(→ 앱 롤백)하면 Nginx 단계는 실행되지 않는다. Nginx 단계가 실패해도 **앱은 롤백되지 않는다**
+(앱 단계는 이미 끝났고 롤백 로직은 그 단계 안에만 있다).
 
-```nginx
-# 관리자 화면은 공개하지 않는다. 접근은 SSH 터널로만.
-location /admin/ { deny all; }
-```
+### 전제 조건 (서버에서 한 번만)
 
-`sudo nginx -t && sudo systemctl reload nginx`
+- `ubuntu` 사용자가 **비밀번호 없이** `sudo` 를 쓸 수 있어야 한다(`sudo -n true` 가 성공). 워크플로가 쓰는 명령:
+  `nginx -t`, `systemctl reload nginx`, `cp`, `install`, `mkdir`, `rm`(백업 정리), `cmp`.
+  EC2 Ubuntu 기본값(`/etc/sudoers.d/90-cloud-init-users` 의 `NOPASSWD:ALL`)이 남아 있으면 이미 된다.
+- 사이트 설정이 `/etc/nginx/sites-available/wishconnect` 하나에 있고, `/etc/nginx/sites-enabled/wishconnect` 가 그 파일을 가리키는 심볼릭 링크여야 한다.
+- `api.wish-connect.com` server 블록이 **다른 파일(`sites-enabled/default` 등)에 남아 있으면 안 된다.**
+  남아 있으면 nginx 는 한쪽을 경고만 내고 조용히 무시한다 — 워크플로는 이 경고를 실패로 처리한다.
+- 인증서 경로가 `/etc/letsencrypt/live/api.wish-connect.com/` 이어야 한다(다르면 이 파일의 경로를 고친다).
 
-이 블록은 **화면만** 막는다. API 경로(`/api/v1/scholarships/admin/**`)는
-`SecurityConfig.ADMIN_ENDPOINTS` + 컨트롤러의 `@PreAuthorize("hasRole('ADMIN')")` 로 이중 차단된다.
-
-### 볼 때마다
+### 최초 이전 (현재 서버 설정 → 레포 파일)
 
 ```bash
-ssh -N -L 18080:localhost:8080 -i ~/경로/wishconnect-key.pem ubuntu@15.165.86.126
+# 1) 현재 상태 확인: api.wish-connect.com 블록이 어느 파일에 있는지, 인증서 경로·renew 방식
+sudo nginx -T 2>/dev/null | grep -nE '^# configuration file|server_name|ssl_certificate|client_max_body_size|location'
+ls -l /etc/nginx/sites-enabled/
+sudo grep -h authenticator /etc/letsencrypt/renewal/*.conf
+
+# 2) 레포 파일과 비교 — 서버에만 있는 설정이 있으면 레포 파일에 먼저 옮긴다(PR)
+diff <(sudo cat /etc/nginx/sites-enabled/<현재파일>) deploy/nginx/wishconnect.conf
+
+# 3) 현재 설정을 wishconnect 이름으로 옮기고 링크 교체 (내용은 그대로 → 동작 변화 없음)
+sudo cp -a /etc/nginx/sites-enabled/<현재파일> /root/nginx-before-migration.conf
+sudo cp /etc/nginx/sites-available/<현재파일> /etc/nginx/sites-available/wishconnect
+sudo ln -s /etc/nginx/sites-available/wishconnect /etc/nginx/sites-enabled/wishconnect
+sudo rm /etc/nginx/sites-enabled/<현재파일>          # default 에 다른 사이트도 있었다면 api 블록만 지운다
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-띄워둔 채 브라우저에서 **http://localhost:18080/admin/** 접속.
-터널은 Nginx 를 거치지 않고 8080 에 직접 붙으므로 위 `deny all` 에 걸리지 않는다.
+이후 main 배포 때 레포 파일로 교체된다. 교체 후 `sudo certbot renew --dry-run` 으로 인증서 갱신이 되는지 확인한다.
 
-ADMIN accessToken 은 화면 상단에 붙여넣는다(발급: `POST /api/v1/auth/login`).
-토큰은 그 탭의 sessionStorage 에만 남고 탭을 닫으면 사라진다.
+### 수동 반영·되돌리기
 
-**아직 안 된 것 (접근 범위를 넓히기 전 필수)**
-- 관리자 계정 **2FA** — 현재 없다. 토큰만 새면 바로 뚫린다
-- **감사 로그** — 누가 언제 무엇을 수정·삭제했는지 남지 않는다
-- 폰에서도 봐야 하면 Cloudflare Tunnel + Access(무료) 를 검토할 것
+```bash
+# 레포 파일 수동 반영
+sudo cp wishconnect.conf /etc/nginx/sites-available/wishconnect && sudo nginx -t && sudo systemctl reload nginx
+
+# 직전 백업으로 되돌리기
+sudo cp "$(ls -1t /etc/nginx/wishconnect-backup/* | head -1)" /etc/nginx/sites-available/wishconnect
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+## 🔒 관리자 콘솔 접근
+
+관리자 콘솔은 **도메인으로 접속한다**: `https://api.wish-connect.com/admin/console`
+(로그인 전이면 `/admin/login.html` 로 이동, 로그인하면 다시 콘솔로 온다. `/admin`, `/admin/` 도 콘솔로 보낸다.)
+
+- 화면·관리 API 모두 ADMIN 권한 필요: `SecurityConfig` 경로 규칙 + 컨트롤러 `@PreAuthorize("hasRole('ADMIN')")` 이중 차단
+- 화면 인증은 HttpOnly 쿠키, 변경 요청(POST/PATCH/PUT/DELETE)은 쿠키만으로 인증하지 않는다
+- 로그인 실패 제한(아이디·IP), 관리자 감사 로그가 있다
+- 예전 콘솔(`/admin/index.html`, 토큰 붙여넣기 방식)은 삭제했다. 앱은 콘솔로 리다이렉트, Nginx 는 404
+
+**아직 없는 것**: 관리자 **2FA**, 접속 IP 제한. 계정 비밀번호가 새면 바로 뚫리니 접근 범위를 넓히기 전 검토할 것.
+
+### Swagger
+
+운영에서는 꺼져 있다 — `application-prod.yml` 의 기본값 `SWAGGER_ENABLED=false`, 배포 워크플로도 env 에 `false` 를 기록,
+Nginx 에서도 404. 운영 스펙을 꼭 봐야 하면 env 를 `true` 로 바꿔 재시작한 뒤 **SSH 터널로만** 본다(Nginx 를 거치지 않음):
+
+```bash
+ssh -N -L 18080:localhost:8080 -i <키 파일> ubuntu@<EC2_HOST>
+# 브라우저: http://localhost:18080/swagger-ui.html (ADMIN 로그인 필요). 확인 후 env 를 false 로 되돌릴 것
+```
 
 ## 확인
 
