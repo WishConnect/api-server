@@ -426,8 +426,9 @@ class ScholarshipDedupServiceTest {
 		service.approve(candidate.getId(), UUID.randomUUID());
 
 		// clear() 로 detach 된 엔티티에 쓰면 반영되지 않는다. 관리 상태로 다시 읽어야 한다.
-		verify(mergeCandidateRepository, org.mockito.Mockito.times(2))
-				.findById(candidate.getId());
+		// 처음은 행 잠금 조회(findForUpdate), 병합 뒤에는 다시 읽기(findById).
+		verify(mergeCandidateRepository).findForUpdate(candidate.getId());
+		verify(mergeCandidateRepository).findById(candidate.getId());
 		assertThat(candidate.getStatus()).isEqualTo(MergeCandidateStatus.MERGED);
 	}
 
@@ -452,11 +453,67 @@ class ScholarshipDedupServiceTest {
 	@DisplayName("없는 후보를 승인·반려하면 거부한다")
 	void rejectsUnknownCandidate() {
 		given(mergeCandidateRepository.findById(anyLong())).willReturn(Optional.empty());
+		given(mergeCandidateRepository.findForUpdate(anyLong())).willReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.approve(999L, UUID.randomUUID()))
 				.isInstanceOf(CustomException.class);
 		assertThatThrownBy(() -> service.reject(999L, UUID.randomUUID(), null))
 				.isInstanceOf(CustomException.class);
+	}
+
+	// --- 반려 취소 ---
+
+	@Test
+	@DisplayName("반려한 후보를 다시 승인 대기로 올리고 이전 반려 사유를 메모에 남긴다")
+	void reopensRejectedCandidate() {
+		Scholarship a = scholarship("국가장학금 신청 안내");
+		Scholarship b = scholarship("국가장학금 신청기간 안내");
+		ScholarshipMergeCandidate candidate = candidate(a, b);
+		candidate.markRejected(UUID.randomUUID(), "QA테스트 반려");
+
+		var result = service.reopen(candidate.getId(), "실수로 반려");
+
+		assertThat(result.status()).isEqualTo("PENDING");
+		assertThat(candidate.getStatus()).isEqualTo(MergeCandidateStatus.PENDING);
+		assertThat(candidate.getReviewedBy()).isNull();
+		assertThat(candidate.getNote()).contains("실수로 반려").contains("QA테스트 반려");
+	}
+
+	@Test
+	@DisplayName("반려 상태가 아니면 반려 취소를 거부한다")
+	void reopenRequiresRejected() {
+		ScholarshipMergeCandidate candidate = candidate(scholarship("가 장학금"), scholarship("나 장학금"));
+
+		assertThatThrownBy(() -> service.reopen(candidate.getId(), null))
+				.isInstanceOf(CustomException.class)
+				.extracting("errorCode").isEqualTo(com.wishconnect.global.exception.ErrorCode.MERGE_CANDIDATE_NOT_REJECTED);
+	}
+
+	@Test
+	@DisplayName("한쪽이 다른 대기 후보에 들어가 있으면 반려 취소를 거부한다 — 병합 순서에 따라 결과가 달라진다")
+	void reopenRejectsWhenScholarshipQueued() {
+		Scholarship a = scholarship("다 장학금");
+		Scholarship b = scholarship("라 장학금");
+		ScholarshipMergeCandidate candidate = candidate(a, b);
+		candidate.markRejected(UUID.randomUUID(), "반려");
+		given(mergeCandidateRepository.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING))
+				.willReturn(List.of(a.getId()));
+
+		assertThatThrownBy(() -> service.reopen(candidate.getId(), null))
+				.isInstanceOf(CustomException.class)
+				.extracting("errorCode")
+				.isEqualTo(com.wishconnect.global.exception.ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_QUEUED);
+	}
+
+	@Test
+	@DisplayName("이미 처리된 후보 승인은 409 NOT_PENDING 으로 알린다")
+	void notPendingIsConflict() {
+		ScholarshipMergeCandidate candidate = candidate(scholarship("마 장학금"), scholarship("바 장학금"));
+		candidate.markRejected(UUID.randomUUID(), "반려");
+
+		assertThatThrownBy(() -> service.approve(candidate.getId(), UUID.randomUUID()))
+				.isInstanceOf(CustomException.class)
+				.extracting("errorCode").isEqualTo(com.wishconnect.global.exception.ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 	}
 
 	// --- fixture ---
@@ -497,6 +554,8 @@ class ScholarshipDedupServiceTest {
 				.build();
 		setField(candidate, "id", nextId++);
 		given(mergeCandidateRepository.findById(candidate.getId()))
+				.willReturn(Optional.of(candidate));
+		given(mergeCandidateRepository.findForUpdate(candidate.getId()))
 				.willReturn(Optional.of(candidate));
 		return candidate;
 	}
