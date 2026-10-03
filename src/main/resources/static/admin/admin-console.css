@@ -357,6 +357,8 @@ td.check-col, th.check-col { width: 32px; }
 .raw.dark { background: #141a2b; color: #dce2f2; max-height: 480px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 details > summary { cursor: pointer; font-size: var(--fs-md); padding: 4px 0; }
 .banner { margin: 0; border-radius: 0; }
+.log-error { color: #ff9d9d; }
+.log-warn { color: #ffd27a; }
 
 /* ---------- 이미지 ---------- */
 .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--sp-3); padding: var(--sp-4); }
