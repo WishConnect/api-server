@@ -91,6 +91,7 @@ jobs:
             sudo mkdir -p "$ENV_DIR"
             sudo tee "$ENV_DIR/wishconnect.env" > /dev/null <<EOF
             SPRING_PROFILES_ACTIVE=prod
+            SWAGGER_ENABLED=false
             DB_URL=${DB_URL}
             DB_USERNAME=${DB_USERNAME}
             DB_PASSWORD=${DB_PASSWORD}
@@ -172,3 +173,125 @@ jobs:
             echo "----- rollback logs -----"
             sudo journalctl -u wishconnect -n 80 --no-pager || true
             exit 1
+
+      # ── Nginx 설정 반영 ─────────────────────────────────────────────────────
+      # 앱 배포 단계(헬스체크·롤백 포함)가 성공한 뒤에만 실행된다(기본 if: success()).
+      # 앱 롤백 로직은 위 단계 안에서만 동작하고 이미 exit 0 으로 끝났으므로,
+      # 여기서 실패해도 앱은 롤백되지 않는다. Nginx 만 백업으로 되돌리고 워크플로를 실패 처리한다.
+      # 반대로 앱 배포가 실패하면 이 단계는 건너뛴다(한 번에 두 가지를 바꾸지 않는다).
+      - name: Copy Nginx config to EC2 (SCP)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: deploy/nginx/wishconnect.conf
+          target: /home/ubuntu/app/nginx
+          strip_components: 2
+
+      - name: Apply Nginx config (backup + nginx -t + reload + smoke test + restore)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -u
+            DOMAIN=api.wish-connect.com
+            STAGED=/home/ubuntu/app/nginx/wishconnect.conf
+            TARGET=/etc/nginx/sites-available/wishconnect
+            ENABLED=/etc/nginx/sites-enabled/wishconnect
+            # sites-enabled·conf.d 밖에 둔다. 안에 두면 nginx 가 백업까지 읽어 server 가 중복된다.
+            BACKUP_DIR=/etc/nginx/wishconnect-backup
+            BACKUP="$BACKUP_DIR/wishconnect.$(date +%Y%m%d%H%M%S)"
+
+            # 0) 전제 조건. 여기서 실패하면 서버는 아무것도 바뀌지 않는다.
+            if ! sudo -n true 2>/dev/null; then
+              echo "❌ sudo 가 비밀번호를 요구한다. deploy/README.md 'Nginx 전제 조건' 참고"
+              exit 1
+            fi
+            if [ ! -f "$STAGED" ]; then
+              echo "❌ 업로드된 설정이 없다: $STAGED"
+              exit 1
+            fi
+            if [ ! -L "$ENABLED" ] || [ "$(readlink -f "$ENABLED")" != "$TARGET" ] || [ ! -f "$TARGET" ]; then
+              echo "❌ $ENABLED 가 $TARGET 을 가리키는 심볼릭 링크가 아니다."
+              echo "   최초 1회 이전 작업이 필요하다(deploy/README.md 'Nginx 최초 이전')."
+              exit 1
+            fi
+            if sudo cmp -s "$STAGED" "$TARGET"; then
+              echo "✅ Nginx 설정 변경 없음 — 건너뜀"
+              exit 0
+            fi
+
+            # 1) 백업 (최근 10개만 유지)
+            sudo mkdir -p "$BACKUP_DIR"
+            if ! sudo cp -a "$TARGET" "$BACKUP"; then
+              echo "❌ 백업 실패 — 교체하지 않음"
+              exit 1
+            fi
+            ls -1t "$BACKUP_DIR" | tail -n +11 | while read -r old; do sudo rm -f "$BACKUP_DIR/$old"; done
+            echo "백업: $BACKUP"
+
+            # 실패 시 공통 복구: 파일을 되돌리고, 되돌린 설정이 문법 검사를 통과할 때만 reload 한다.
+            # (nginx -t 단계에서 실패했다면 reload 전이라 실행 중인 Nginx 는 애초에 바뀌지 않았다)
+            restore_and_fail() {
+              echo "❌ $1 — 백업으로 복구한다"
+              sudo cp -a "$BACKUP" "$TARGET"
+              if sudo nginx -t; then
+                sudo systemctl reload nginx && echo "↩️  복구 완료(이전 설정으로 reload)"
+              else
+                echo "‼️ 백업 설정도 nginx -t 를 통과하지 못한다. reload 하지 않았다(실행 중 설정은 유지). 서버 확인 필요"
+              fi
+              exit 1
+            }
+
+            # 2) 교체
+            sudo install -m 644 -o root -g root "$STAGED" "$TARGET" || restore_and_fail "설정 파일 교체 실패"
+
+            # 3) 문법 검사. 경고 중 'conflicting server name' 은 같은 도메인 server 블록이 다른 파일에도
+            #    남아 있다는 뜻이고, 그러면 nginx 는 한쪽을 조용히 무시한다 → 실패로 본다.
+            TEST_OUT=$(sudo nginx -t 2>&1); TEST_RC=$?
+            echo "$TEST_OUT"
+            [ "$TEST_RC" -eq 0 ] || restore_and_fail "nginx -t 실패"
+            if echo "$TEST_OUT" | grep -q "conflicting server name"; then
+              restore_and_fail "server_name 충돌(같은 도메인 server 블록이 다른 파일에도 있음)"
+            fi
+
+            # 4) 통과했을 때만 reload
+            sudo systemctl reload nginx || restore_and_fail "nginx reload 실패"
+            sleep 2
+
+            # 5) Nginx 를 거쳐 실제로 확인 (인증서 검증 포함, 127.0.0.1 로 고정해 외부 DNS 영향 배제)
+            code() {
+              curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+                --resolve "$DOMAIN:443:127.0.0.1" "$@"
+            }
+            check() {
+              local want="$1"; shift
+              local got; got=$(code "$@")
+              echo "  $* → $got (기대 $want)"
+              [ "$got" = "$want" ]
+            }
+            echo "Nginx smoke test ..."
+            FAIL=0
+            curl -fsS --max-time 10 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/actuator/health" \
+              | grep -q '"status":"UP"' || { echo "  health via nginx → not UP"; FAIL=1; }
+            check 302 "https://$DOMAIN/admin/console"          || FAIL=1   # 비로그인 → 로그인 화면으로
+            check 200 "https://$DOMAIN/admin/login.html"       || FAIL=1
+            check 404 "https://$DOMAIN/admin/index.html"       || FAIL=1
+            check 404 "https://$DOMAIN/swagger-ui.html"        || FAIL=1
+            check 404 "https://$DOMAIN/swagger-ui/index.html"  || FAIL=1
+            check 404 "https://$DOMAIN/v3/api-docs"            || FAIL=1
+            check 301 "http://$DOMAIN/actuator/health" --resolve "$DOMAIN:80:127.0.0.1" || FAIL=1
+            # 2MB 본문이 Nginx 에서 413 으로 막히지 않아야 한다(앱이 받아 401/405 등으로 응답하면 정상)
+            BODY_CODE=$(head -c 2000000 /dev/zero | code -X POST --data-binary @- "https://$DOMAIN/actuator/health")
+            echo "  POST 2MB → $BODY_CODE (413 이 아니어야 함)"
+            [ "$BODY_CODE" != "413" ] && [ "$BODY_CODE" != "000" ] || FAIL=1
+            SERVER_HDR=$(curl -sI --max-time 10 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/actuator/health" \
+              | tr -d '\r' | awk -F': ' 'tolower($1)=="server"{print $2}')
+            echo "  Server 헤더 → '$SERVER_HDR'"
+            [ "$SERVER_HDR" = "nginx" ] || FAIL=1
+
+            [ "$FAIL" -eq 0 ] || restore_and_fail "Nginx 점검 실패"
+            echo "✅ Nginx 설정 반영 완료"
