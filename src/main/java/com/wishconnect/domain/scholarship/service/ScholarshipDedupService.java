@@ -248,18 +248,18 @@ public class ScholarshipDedupService {
 	@Transactional
 	public MergeCandidateResponse queueManual(ManualMergeCandidateRequest request) {
 		if (request.primaryScholarshipId().equals(request.duplicateScholarshipId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SAME_SCHOLARSHIP);
 		}
 		Scholarship primary = active(request.primaryScholarshipId());
 		Scholarship duplicate = active(request.duplicateScholarshipId());
 		if (mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(primary.getId(), duplicate.getId())
 				|| mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(duplicate.getId(), primary.getId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_PAIR_EXISTS);
 		}
 		Set<Long> pending = new HashSet<>(mergeCandidateRepository
 				.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
 		if (pending.contains(primary.getId()) || pending.contains(duplicate.getId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_QUEUED);
 		}
 		ScholarshipMergeCandidate saved = mergeCandidateRepository.save(ScholarshipMergeCandidate.builder()
 				.primary(primary).duplicate(duplicate)
@@ -281,11 +281,12 @@ public class ScholarshipDedupService {
 	 */
 	@Transactional
 	public MergeResultResponse approve(Long candidateId, UUID reviewer) {
-		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findById(candidateId)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		// 행 잠금: 같은 후보를 두 관리자가 동시에 승인하면 둘 다 PENDING 을 보고 병합이 두 번 일어날 수 있었다.
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 		if (!candidate.isPending()) {
 			// 이미 처리된 후보를 다시 승인하면 병합이 두 번 일어난다.
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 		}
 
 		Scholarship primary = candidate.getPrimary();
@@ -302,7 +303,7 @@ public class ScholarshipDedupService {
 			다시 읽어 관리 상태로 만든 뒤 기록한다.
 			 */
 			ScholarshipMergeCandidate reattached = mergeCandidateRepository.findById(candidateId)
-					.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+					.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 			reattached.markMerged(reviewer, moved.toString());
 
 			return new MergeResultResponse(candidateId, MergeCandidateStatus.MERGED.name(),
@@ -322,13 +323,40 @@ public class ScholarshipDedupService {
 	/** 후보를 반려한다. 같은 쌍이 다음 배치에서 다시 올라오지 않는다. */
 	@Transactional
 	public MergeResultResponse reject(Long candidateId, UUID reviewer, String note) {
-		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findById(candidateId)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 		if (!candidate.isPending()) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 		}
 		candidate.markRejected(reviewer, note);
 		return new MergeResultResponse(candidateId, MergeCandidateStatus.REJECTED.name(),
+				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
+	}
+
+	/**
+	 * 반려 취소. REJECTED 후보를 다시 PENDING 으로 올린다.
+	 *
+	 * <p>반려는 같은 쌍을 다시 후보로 만들 수 없게 막기 때문에(유니크 쌍), 실수로 반려하면 그 쌍은 영구히
+	 * 병합할 수 없었다(QA 6.6). 두 장학금이 아직 살아 있고 다른 대기 후보에 들어가 있지 않을 때만 허용한다 —
+	 * 한 장학금이 여러 대기 후보에 동시에 있으면 병합 순서에 따라 결과가 달라진다.
+	 */
+	@Transactional
+	public MergeResultResponse reopen(Long candidateId, String reason) {
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
+		if (!candidate.isRejected()) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_REJECTED);
+		}
+		if (candidate.getPrimary().isDeleted() || candidate.getDuplicate().isDeleted()) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_DELETED);
+		}
+		Set<Long> pending = new HashSet<>(mergeCandidateRepository
+				.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
+		if (pending.contains(candidate.getPrimary().getId()) || pending.contains(candidate.getDuplicate().getId())) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_QUEUED);
+		}
+		candidate.reopen(reason);
+		return new MergeResultResponse(candidateId, MergeCandidateStatus.PENDING.name(),
 				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
 	}
 

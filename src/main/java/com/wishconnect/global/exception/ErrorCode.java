@@ -175,6 +175,17 @@ public enum ErrorCode {
 			"병합으로 내린 장학금은 복원할 수 없습니다. 사용자 데이터는 남긴 쪽 장학금으로 옮겨졌습니다."),
 
 	// 관리자 콘솔 — 중복 판정·병합
+	MERGE_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 중복 후보입니다."),
+	MERGE_CANDIDATE_NOT_PENDING(HttpStatus.CONFLICT, "이미 처리된 중복 후보입니다. 목록을 새로고침해주세요."),
+	MERGE_CANDIDATE_NOT_REJECTED(HttpStatus.CONFLICT, "반려된 후보만 승인 대기로 되돌릴 수 있습니다."),
+	MERGE_CANDIDATE_SAME_SCHOLARSHIP(HttpStatus.BAD_REQUEST, "같은 장학금끼리는 중복 후보로 만들 수 없습니다."),
+	/** 반려된 쌍도 여기에 걸린다. 반려를 되돌리려면 반려 취소 API 를 쓴다. */
+	MERGE_CANDIDATE_PAIR_EXISTS(HttpStatus.CONFLICT,
+			"이미 등록된 중복 후보 쌍입니다. 반려한 쌍이라면 반려 취소로 다시 대기에 올려주세요."),
+	MERGE_CANDIDATE_SCHOLARSHIP_QUEUED(HttpStatus.CONFLICT, "이미 다른 승인 대기 후보에 포함된 장학금입니다."),
+	MERGE_CANDIDATE_SCHOLARSHIP_DELETED(HttpStatus.CONFLICT, "내려졌거나 병합된 장학금이 포함돼 있어 다시 대기에 올릴 수 없습니다."),
+	/** 같은 관리자가 같은 쓰기 요청을 짧은 간격으로 다시 보냈다(더블 클릭 등). */
+	DUPLICATE_REQUEST(HttpStatus.CONFLICT, "같은 요청이 방금 처리되었거나 처리 중입니다. 목록을 확인한 뒤 다시 시도해주세요."),
 	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
 			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),
 

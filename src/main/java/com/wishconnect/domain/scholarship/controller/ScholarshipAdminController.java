@@ -18,6 +18,7 @@ import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
+import com.wishconnect.domain.scholarship.dto.MergeCandidateNoteRequest;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
@@ -427,19 +428,46 @@ public class ScholarshipAdminController {
 	}
 
 	@Operation(summary = "중복 장학금 후보 반려",
-			description = "중복이 아니라고 판정한다. 같은 쌍이 다음 탐지 배치에서 다시 올라오지 않는다. (ADMIN 전용)")
+			description = """
+					중복이 아니라고 판정한다. 같은 쌍이 다음 탐지 배치에서 다시 올라오지 않는다.
+					사유는 요청 본문 {"note": "..."} 으로 보낸다. 예전 콘솔 호환을 위해 쿼리 파라미터 note 도 받지만
+					(본문이 있으면 본문 우선) 접근 로그에 사유가 남으므로 콘솔 수정 후 제거한다.
+					실수로 반려했으면 POST /merge/candidates/{candidateId}/reopen 으로 되돌린다. (ADMIN 전용)
+					""")
 	@PostMapping("/merge/candidates/{candidateId}/reject")
 	public ApiResponse<MergeResultResponse> rejectMerge(
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long candidateId,
-			@RequestParam(required = false) String note) {
+			@RequestParam(name = "note", required = false) String legacyNote,
+			@Valid @RequestBody(required = false) MergeCandidateNoteRequest request) {
 		UUID reviewer = UUID.fromString(actorId);
+		String note = request != null && request.note() != null ? request.note() : legacyNote;
 		MergeResultResponse result = scholarshipDedupService.reject(candidateId, reviewer, note);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE_REJECT,
 				"SCHOLARSHIP", result.primaryId(),
 				"중복 후보 %d 반려 (%d vs %d). %s".formatted(
 						candidateId, result.primaryId(), result.duplicateId(),
 						note == null ? "" : note));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 후보 반려 취소",
+			description = """
+					반려(REJECTED)한 후보를 다시 승인 대기(PENDING)로 올린다. 두 장학금이 살아 있고 다른 대기 후보에
+					들어가 있지 않아야 한다(아니면 409). 본문 {"note": "..."} 은 선택이며 감사 기록과 후보 메모에 남는다.
+					(ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/{candidateId}/reopen")
+	public ApiResponse<MergeResultResponse> reopenMerge(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long candidateId,
+			@Valid @RequestBody(required = false) MergeCandidateNoteRequest request) {
+		String note = request == null ? null : request.note();
+		MergeResultResponse result = scholarshipDedupService.reopen(candidateId, note);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_CANDIDATE_REOPEN,
+				"SCHOLARSHIP", result.primaryId(),
+				"중복 후보 %d 반려 취소 (%d vs %d). %s".formatted(
+						candidateId, result.primaryId(), result.duplicateId(), note == null ? "" : note));
 		return ApiResponse.ok(result);
 	}
 

@@ -99,6 +99,23 @@ public class ScholarshipMergeCandidate extends BaseEntity {
 		review(reviewer);
 	}
 
+	/**
+	 * 반려 취소. 다시 승인 대기로 올린다. 검토자·검토 시각은 지우고, 반려 사유는 이력으로 note 에 남긴다.
+	 * 누가 언제 취소했는지는 감사 기록(MERGE_CANDIDATE_REOPEN)에 남는다.
+	 */
+	public void reopen(String reason) {
+		String previous = this.note == null || this.note.isBlank() ? "(사유 없음)" : this.note;
+		this.status = MergeCandidateStatus.PENDING;
+		this.note = "[반려 취소] " + (reason == null || reason.isBlank() ? "" : reason.trim() + " ")
+				+ "/ 이전 반려 사유: " + previous;
+		this.reviewedBy = null;
+		this.reviewedAt = null;
+	}
+
+	public boolean isRejected() {
+		return status == MergeCandidateStatus.REJECTED;
+	}
+
 	private void review(UUID reviewer) {
 		this.reviewedBy = reviewer;
 		this.reviewedAt = LocalDateTime.now();
