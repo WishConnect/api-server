@@ -591,6 +591,47 @@ public class Scholarship extends BaseEntity {
 		this.alwaysOpenReviewedAt = LocalDateTime.now();
 	}
 
+	/**
+	 * 감사 로그 복구(통합 수정 기록). 화면 값을 그대로 쓰되 {@link #replaceByAdmin} 과 두 가지가 다르다.
+	 * 모집 상태를 날짜로 다시 계산하지 않고(사람이 고른 값만 되돌린다), 검수 표시를 바꾸지 않는다.
+	 */
+	public void restoreAggregateFields(
+		String title, String provider, String summary, String description,
+		ScholarshipType scholarshipType, LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt, RecruitmentStatus recruitmentStatus,
+		Integer selectionCount, Long amount, String homepageUrl, String detailUrl,
+		NoticeKind noticeKind, boolean combined, String submissionMethod,
+		SubmissionChannel submissionChannel, String submissionEvidence, String contact,
+		RequirementLevel essayRequirement, String essayEvidence,
+		RequirementLevel interviewRequirement, String interviewEvidence
+	) {
+		this.title = title;
+		this.provider = provider;
+		this.summary = summary;
+		this.description = description;
+		this.scholarshipType = scholarshipType;
+		this.applicationStartAt = applicationStartAt;
+		this.applicationEndAt = applicationEndAt;
+		this.selectionCount = selectionCount;
+		this.amount = amount;
+		this.homepageUrl = homepageUrl;
+		this.detailUrl = detailUrl;
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+		this.contact = contact;
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		if (recruitmentStatus != null && recruitmentStatus != this.recruitmentStatus) {
+			this.recruitmentStatus = recruitmentStatus;
+			this.active = this.deletedAt == null && recruitmentStatus != RecruitmentStatus.CLOSED;
+		}
+	}
+
 	/** 감사로그의 수기 변경 스냅샷으로 복구한다. 자동 파싱 전용 필드는 건드리지 않는다. */
 	public void restoreAdminSnapshot(ScholarshipAdminSnapshot snapshot) {
 		this.title = snapshot.title();

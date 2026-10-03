@@ -160,6 +160,13 @@ public enum ErrorCode {
 
 	ADMIN_JOB_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 배치 실행 기록입니다."),
 
+	// 관리자 콘솔 — 감사 로그 복구
+	AUDIT_LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 감사 기록입니다."),
+	AUDIT_RESTORE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "자동 복구를 지원하지 않는 기록입니다."),
+	AUDIT_ALREADY_RESTORED(HttpStatus.CONFLICT, "이미 복구한 기록입니다. 다시 되돌리려면 복구 기록을 이용해주세요."),
+	AUDIT_RESTORE_FIELDS_REQUIRED(HttpStatus.BAD_REQUEST, "복구할 항목을 하나 이상 선택해주세요."),
+	AUDIT_RESTORE_INVALID_FIELD(HttpStatus.BAD_REQUEST, "이 기록에서 바뀌지 않았거나 복구할 수 없는 항목이 포함되어 있습니다."),
+
 	// 관리자 콘솔 — 중복 판정·병합
 	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
 			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),

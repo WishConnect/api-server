@@ -45,16 +45,18 @@ public class AdminAuditLogService {
 		}
 	}
 
+	/** @return 저장한 기록 ID. 기록에 실패하면 null(관리자 작업은 막지 않는다) */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void recordChange(UUID actorId, AdminAction action, String targetType, Long targetId,
+	public Long recordChange(UUID actorId, AdminAction action, String targetType, Long targetId,
 			String detail, Object before, Object after) {
 		try {
-			adminAuditLogRepository.save(AdminAuditLog.builder()
+			return adminAuditLogRepository.save(AdminAuditLog.builder()
 					.actorId(actorId).action(action).targetType(targetType).targetId(targetId)
-					.detail(truncate(detail)).beforeJson(json(before)).afterJson(json(after)).build());
+					.detail(truncate(detail)).beforeJson(json(before)).afterJson(json(after)).build()).getId();
 		} catch (RuntimeException | JsonProcessingException e) {
 			log.error("[AdminAudit] 변경 스냅샷 기록 실패 actor={} action={} target={}/{}",
 					actorId, action, targetType, targetId, e);
+			return null;
 		}
 	}
 
