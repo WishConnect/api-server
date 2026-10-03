@@ -16,8 +16,10 @@ public enum AdminAction {
 	SCHOLARSHIP_AGGREGATE_UPDATE,
 	SCHOLARSHIP_IMAGE_UPDATE,
 	MERGE_CANDIDATE_MANUAL_CREATE,
-	/** 목록에서 내리기(soft delete). */
+	/** 목록에서 내리기(soft delete). detail 에 사유가 남는다. */
 	SCHOLARSHIP_DELETE,
+	/** 내린 장학금 복원. */
+	SCHOLARSHIP_RESTORE,
 
 	REPORT_RESOLVE,
 	CONTENT_INQUIRY_RESOLVE,

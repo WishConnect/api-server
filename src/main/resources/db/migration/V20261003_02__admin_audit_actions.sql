@@ -2,6 +2,7 @@
 --
 -- 추가 값
 --   AUDIT_RESTORE                 감사 로그 복구 자체를 새 기록으로 남긴다(W7)
+--   SCHOLARSHIP_RESTORE           내린 장학금 복원(W8)
 --
 -- 값 목록은 엔티티 enum(AdminAction)과 정확히 같아야 한다. 어긋나면 기동은 되고 그 작업의 감사 기록 INSERT 만
 -- 실패한다(감사 기록 실패는 삼키므로 조용히 기록이 사라진다). MigrationCheckConstraintTest 가 대조한다.
@@ -15,7 +16,7 @@ ALTER TABLE admin_audit_log ADD CONSTRAINT admin_audit_log_action_check CHECK (a
     'SCHOLARSHIP_IMAGE_UPDATE', 'SCHOLARSHIP_DELETE', 'REPORT_RESOLVE', 'CONTENT_INQUIRY_RESOLVE',
     'SYNC_TRIGGER', 'COLLECT_TRIGGER', 'CONDITION_EXTRACT_TRIGGER', 'CONDITION_REF_BACKFILL',
     'ENRICH_TRIGGER', 'MERGE_DETECT_TRIGGER', 'MERGE_CANDIDATE_MANUAL_CREATE',
-    'SCHOLARSHIP_MERGE', 'SCHOLARSHIP_MERGE_REJECT', 'AUDIT_RESTORE'
+    'SCHOLARSHIP_MERGE', 'SCHOLARSHIP_MERGE_REJECT', 'AUDIT_RESTORE', 'SCHOLARSHIP_RESTORE'
 ));
 
 COMMIT;
@@ -25,7 +26,7 @@ COMMIT;
 --
 -- 되돌리기 (새 값으로 남은 행이 있으면 CHECK 재생성이 실패한다. 행을 지우지 말고 앱을 내린 상태로 두거나,
 -- 필요하면 아래처럼 새 값 행을 확인한 뒤 진행한다)
---   SELECT action, count(*) FROM admin_audit_log WHERE action IN ('AUDIT_RESTORE') GROUP BY action;
+--   SELECT action, count(*) FROM admin_audit_log WHERE action IN ('AUDIT_RESTORE', 'SCHOLARSHIP_RESTORE') GROUP BY action;
 --   ALTER TABLE admin_audit_log DROP CONSTRAINT IF EXISTS admin_audit_log_action_check;
 --   ALTER TABLE admin_audit_log ADD CONSTRAINT admin_audit_log_action_check CHECK (action IN (
 --       'EXCEL_IMPORT', 'SCHOLARSHIP_CREATE', 'SCHOLARSHIP_UPDATE', 'SCHOLARSHIP_AGGREGATE_UPDATE',

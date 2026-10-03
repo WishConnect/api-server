@@ -46,6 +46,14 @@ public class ScholarshipMergeExecutor {
 	 * @return 테이블별 처리 건수. 감사 로그와 어드민 응답에 남긴다
 	 */
 	public Map<String, Integer> merge(Scholarship primary, Scholarship duplicate) {
+		return merge(primary, duplicate, null);
+	}
+
+	/**
+	 * @param reviewer 승인한 관리자. 중복 쪽에 "병합으로 내림" 표시와 함께 남겨, 같은 공고가 다시 수집돼도
+	 *                 동기화가 중복 쪽을 되살리지 않게 한다(null 이면 표시 없이 소프트 삭제만 한다)
+	 */
+	public Map<String, Integer> merge(Scholarship primary, Scholarship duplicate, java.util.UUID reviewer) {
 		if (primary.getId().equals(duplicate.getId())) {
 			throw new IllegalArgumentException("같은 장학금은 병합할 수 없습니다. id=" + primary.getId());
 		}
@@ -105,7 +113,11 @@ public class ScholarshipMergeExecutor {
 		moved.put("document.deleted", deleteBy("ScholarshipDocument", from));
 
 		// 7) 중복 장학금 자신을 목록에서 내린다. 행은 남겨 병합 이력을 추적할 수 있게 한다.
-		duplicate.softDelete();
+		if (reviewer != null) {
+			duplicate.markMergedInto(to, reviewer);
+		} else {
+			duplicate.softDelete();
+		}
 
 		// 벌크 연산은 영속성 컨텍스트를 우회하므로, 이후 조회가 옛 상태를 보지 않도록 비운다.
 		entityManager.flush();

@@ -72,6 +72,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260820_01__interview_prep_answer_guide.sql` | 면접 준비 자료 — `interview_prep_question` 에 `answer_tip`·`sample_answer` 추가, `interview_prep_guide_step`·`interview_prep_sample_answer` 테이블 신규 | ⬜ 미적용 |
 | `V20261003_01__admin_job_failure.sql` | 배치 `PARTIAL_FAILURE` 상태(CHECK 교체) + `admin_job_failure` 테이블(단계별 실패 상세, 유형 CHECK) | ⬜ 미적용 |
 | `V20261003_02__admin_audit_actions.sql` | 감사 로그 action CHECK 에 새 작업 추가(복구 기록 등) | ⬜ 미적용 |
+| `V20261003_03__scholarship_deleted_by.sql` | `scholarship.deleted_by`·`delete_reason` 추가 + 기존 관리자 내리기·병합 백필 (수집 배치 부활 차단) | ⬜ 미적용 |
 
 > ⚠️ **`V20260820_03` 도 배포보다 먼저** 적용해야 한다. `Scholarship.dedupScannedAt` 이 새로 생겨
 > 컬럼이 없으면 `validate` 가 실패한다. 기존 행은 전부 NULL(= 아직 검사 안 함)로 두는 것이 의도다 —

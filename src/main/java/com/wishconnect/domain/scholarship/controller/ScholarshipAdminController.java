@@ -47,6 +47,9 @@ import com.wishconnect.domain.scholarship.service.RegionConditionBackfillService
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
 import com.wishconnect.domain.scholarship.service.ScholarshipChangeSummarizer;
+import com.wishconnect.domain.scholarship.service.ScholarshipTakedownService;
+import com.wishconnect.domain.scholarship.dto.ScholarshipDeleteCheckResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipDeleteRequest;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
@@ -122,6 +125,7 @@ public class ScholarshipAdminController {
 	private final AdminScholarshipImageService adminScholarshipImageService;
 	private final AdminAuditLogService adminAuditLogService;
 	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
+	private final ScholarshipTakedownService scholarshipTakedownService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -675,16 +679,53 @@ public class ScholarshipAdminController {
 		return ApiResponse.ok(result.response());
 	}
 
+	@Operation(summary = "장학금 내리기 전 확인",
+			description = """
+					연결된 스크랩 수, 상태별 자소서 수, 이 장학금이 들어간 중복 후보, 제목이 같은 장학금으로 보이는
+					다른 공고를 보여 줍니다. mergeSuggested=true 면 내리기보다 병합을 먼저 검토하세요 — 병합은
+					스크랩·자소서를 남길 쪽으로 옮기지만 내리기는 옮기지 않습니다. (ADMIN 전용)
+					""")
+	@GetMapping("/admin/scholarships/{scholarshipId}/delete-check")
+	public ApiResponse<ScholarshipDeleteCheckResponse> deleteCheck(@PathVariable Long scholarshipId) {
+		return ApiResponse.ok(scholarshipTakedownService.check(scholarshipId));
+	}
+
 	@Operation(summary = "장학금 내리기",
-			description = "오등록으로 확인된 장학금을 목록에서 내린다(soft delete). (ADMIN 전용)")
+			description = """
+					장학금을 목록에서 내린다(soft delete). 요청 본문 {"reason": "..."} 의 사유가 필수이며, 사유와
+					관리자가 감사 기록과 장학금 행에 남는다. 관리자가 내린 장학금은 다음 날 수집 배치(공공데이터
+					동기화·대학 공지 재파싱)가 되살리지 않는다. (ADMIN 전용)
+					""")
 	@DeleteMapping("/manual/{scholarshipId}")
 	public ApiResponse<Void> deleteManual(
 			@AuthenticationPrincipal String actorId,
-			@PathVariable Long scholarshipId) {
-		ScholarshipAdminChangeResult result = scholarshipManualService.deleteWithSnapshot(scholarshipId);
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody(required = false) ScholarshipDeleteRequest request) {
+		String reason = request == null ? null : request.reason();
+		ScholarshipAdminChangeResult result = scholarshipTakedownService.delete(
+				scholarshipId, UUID.fromString(actorId), reason);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
-				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+				"SCHOLARSHIP", scholarshipId, result.response().title() + " · 사유: " + reason.trim(),
+				result.before(), result.after());
 		return ApiResponse.ok();
+	}
+
+	@Operation(summary = "내린 장학금 복원",
+			description = """
+					내린 장학금을 다시 목록에 올린다. 노출 여부는 현재 모집 상태를 따른다(마감 공고는 복원해도 마감).
+					병합으로 내린 쪽은 복원할 수 없다(409). 본문 {"reason": "..."} 은 선택. (ADMIN 전용)
+					""")
+	@PostMapping("/manual/{scholarshipId}/restore")
+	public ApiResponse<ScholarshipManualResponse> restoreManual(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody(required = false) ScholarshipDeleteRequest request) {
+		ScholarshipAdminChangeResult result = scholarshipTakedownService.restore(scholarshipId, UUID.fromString(actorId));
+		String reason = request == null || request.reason() == null || request.reason().isBlank()
+				? "" : " · 사유: " + request.reason().trim();
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_RESTORE,
+				"SCHOLARSHIP", scholarshipId, result.response().title() + reason, result.before(), result.after());
+		return ApiResponse.ok(result.response());
 	}
 
 	@Operation(summary = "오등록 신고 목록",

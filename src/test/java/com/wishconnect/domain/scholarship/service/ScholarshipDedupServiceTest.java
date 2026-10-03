@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -311,7 +312,7 @@ class ScholarshipDedupServiceTest {
 
 		service.detect(100);
 
-		verify(mergeExecutor, never()).merge(any(), any());
+		verify(mergeExecutor, never()).merge(any(), any(), any());
 	}
 
 	@Test
@@ -331,7 +332,7 @@ class ScholarshipDedupServiceTest {
 		assertThat(captor.getValue().getOrigin()).isEqualTo(MergeCandidateOrigin.MANUAL);
 		assertThat(captor.getValue().getStatus()).isEqualTo(MergeCandidateStatus.PENDING);
 		assertThat(captor.getValue().getReason()).isEqualTo("관리자 비교 완료");
-		verify(mergeExecutor, never()).merge(any(), any());
+		verify(mergeExecutor, never()).merge(any(), any(), any());
 	}
 
 	@Test
@@ -355,11 +356,11 @@ class ScholarshipDedupServiceTest {
 		Scholarship b = scholarship("국가장학금 신청기간 안내");
 		ScholarshipMergeCandidate candidate = candidate(a, b);
 		UUID reviewer = UUID.randomUUID();
-		given(mergeExecutor.merge(a, b)).willReturn(Map.of("scrap.moved", 2));
+		given(mergeExecutor.merge(eq(a), eq(b), any())).willReturn(Map.of("scrap.moved", 2));
 
 		var result = service.approve(candidate.getId(), reviewer);
 
-		verify(mergeExecutor).merge(a, b);
+		verify(mergeExecutor).merge(eq(a), eq(b), eq(reviewer));
 		assertThat(result.status()).isEqualTo("MERGED");
 		assertThat(result.primaryId()).isEqualTo(a.getId());
 		assertThat(result.duplicateId()).isEqualTo(b.getId());
@@ -379,7 +380,7 @@ class ScholarshipDedupServiceTest {
 		assertThatThrownBy(() -> service.approve(candidate.getId(), UUID.randomUUID()))
 				.isInstanceOf(CustomException.class);
 
-		verify(mergeExecutor, never()).merge(any(), any());
+		verify(mergeExecutor, never()).merge(any(), any(), any());
 	}
 
 	@Test
@@ -388,7 +389,7 @@ class ScholarshipDedupServiceTest {
 		Scholarship a = scholarship("국가장학금 신청 안내");
 		Scholarship b = scholarship("국가장학금 신청기간 안내");
 		ScholarshipMergeCandidate candidate = candidate(a, b);
-		given(mergeExecutor.merge(a, b)).willThrow(new RuntimeException("제약 위반"));
+		given(mergeExecutor.merge(eq(a), eq(b), any())).willThrow(new RuntimeException("제약 위반"));
 
 		assertThatThrownBy(() -> service.approve(candidate.getId(), UUID.randomUUID()))
 				.isInstanceOf(CustomException.class);
@@ -405,7 +406,7 @@ class ScholarshipDedupServiceTest {
 		Scholarship b = scholarship("국가장학금 신청기간 안내");
 		ScholarshipMergeCandidate candidate = candidate(a, b);
 		RuntimeException cause = new IllegalStateException("Could not resolve attribute 'scholarship'");
-		given(mergeExecutor.merge(a, b)).willThrow(cause);
+		given(mergeExecutor.merge(eq(a), eq(b), any())).willThrow(cause);
 
 		assertThatThrownBy(() -> service.approve(candidate.getId(), UUID.randomUUID()))
 				.isInstanceOf(CustomException.class)
@@ -420,7 +421,7 @@ class ScholarshipDedupServiceTest {
 		Scholarship a = scholarship("국가장학금 신청 안내");
 		Scholarship b = scholarship("국가장학금 신청기간 안내");
 		ScholarshipMergeCandidate candidate = candidate(a, b);
-		given(mergeExecutor.merge(a, b)).willReturn(Map.of());
+		given(mergeExecutor.merge(eq(a), eq(b), any())).willReturn(Map.of());
 
 		service.approve(candidate.getId(), UUID.randomUUID());
 
@@ -440,7 +441,7 @@ class ScholarshipDedupServiceTest {
 
 		var result = service.reject(candidate.getId(), reviewer, "캠퍼스가 다른 별개 모집");
 
-		verify(mergeExecutor, never()).merge(any(), any());
+		verify(mergeExecutor, never()).merge(any(), any(), any());
 		assertThat(result.status()).isEqualTo("REJECTED");
 		assertThat(candidate.getStatus()).isEqualTo(MergeCandidateStatus.REJECTED);
 		assertThat(candidate.getNote()).isEqualTo("캠퍼스가 다른 별개 모집");

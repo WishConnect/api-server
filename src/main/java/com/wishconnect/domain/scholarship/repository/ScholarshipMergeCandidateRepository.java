@@ -37,4 +37,11 @@ public interface ScholarshipMergeCandidateRepository
 			@org.springframework.data.repository.query.Param("status") MergeCandidateStatus status);
 
 	long countByStatus(MergeCandidateStatus status);
+
+	/** 이 장학금이 어느 쪽으로든 들어간 후보(최근 순). 내리기 전 "병합으로 유도" 판단에 쓴다. */
+	List<ScholarshipMergeCandidate> findTop10ByPrimary_IdOrDuplicate_IdOrderByIdDesc(Long primaryId, Long duplicateId);
+
+	/** 병합으로 내려진 쪽인지. */
+	java.util.Optional<ScholarshipMergeCandidate> findFirstByDuplicate_IdAndStatusOrderByIdDesc(
+			Long duplicateId, MergeCandidateStatus status);
 }
