@@ -293,7 +293,7 @@ public class ScholarshipDedupService {
 		Long primaryId = primary.getId();
 		Long duplicateId = duplicate.getId();
 		try {
-			Map<String, Integer> moved = mergeExecutor.merge(primary, duplicate);
+			Map<String, Integer> moved = mergeExecutor.merge(primary, duplicate, reviewer);
 
 			/*
 			merge() 는 벌크 연산 뒤 영속성 컨텍스트를 비운다(flush + clear). 그래서 위에서 읽어 둔

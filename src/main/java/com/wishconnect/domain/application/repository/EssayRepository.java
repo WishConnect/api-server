@@ -30,6 +30,9 @@ public interface EssayRepository extends JpaRepository<Essay, Long> {
 
 	long countByUser_IdAndStatus(UUID userId, EssayStatus status);
 
+	/** 관리자 내리기 전 확인: 이 장학금의 자소서를 상태별로 센다. */
+	long countByScholarship_IdAndStatus(Long scholarshipId, EssayStatus status);
+
 
 	/** Archive 진행률 계산용: 여러 Essay의 문항별 완료 개수 일괄 조회 (N+1 방지) */
 	@Query("SELECT eq.essay.id, COUNT(eq), " +

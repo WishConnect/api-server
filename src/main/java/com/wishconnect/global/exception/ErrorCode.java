@@ -167,6 +167,13 @@ public enum ErrorCode {
 	AUDIT_RESTORE_FIELDS_REQUIRED(HttpStatus.BAD_REQUEST, "복구할 항목을 하나 이상 선택해주세요."),
 	AUDIT_RESTORE_INVALID_FIELD(HttpStatus.BAD_REQUEST, "이 기록에서 바뀌지 않았거나 복구할 수 없는 항목이 포함되어 있습니다."),
 
+	// 관리자 콘솔 — 장학금 내리기·복원
+	DELETE_REASON_REQUIRED(HttpStatus.BAD_REQUEST, "내리는 사유를 입력해주세요."),
+	SCHOLARSHIP_ALREADY_DELETED(HttpStatus.CONFLICT, "이미 내린 장학금입니다."),
+	SCHOLARSHIP_NOT_DELETED(HttpStatus.CONFLICT, "내려진 장학금이 아닙니다."),
+	SCHOLARSHIP_MERGED_CANNOT_RESTORE(HttpStatus.CONFLICT,
+			"병합으로 내린 장학금은 복원할 수 없습니다. 사용자 데이터는 남긴 쪽 장학금으로 옮겨졌습니다."),
+
 	// 관리자 콘솔 — 중복 판정·병합
 	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
 			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),

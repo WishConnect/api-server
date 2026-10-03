@@ -23,6 +23,9 @@ public interface ScrapRepository extends JpaRepository<Scrap, Long> {
 
 	long countByUser_Id(UUID userId);
 
+	/** 관리자 내리기 전 확인: 이 장학금을 스크랩한 사용자 수. */
+	long countByScholarship_Id(Long scholarshipId);
+
 	@Query("SELECT s.scholarship.id FROM Scrap s " +
 			"WHERE s.user.id = :userId " +
 			"AND s.scholarship.id IN :scholarshipIds")

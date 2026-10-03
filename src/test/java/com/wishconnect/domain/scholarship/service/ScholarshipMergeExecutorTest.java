@@ -209,6 +209,18 @@ class ScholarshipMergeExecutorTest {
 	}
 
 	@Test
+	@DisplayName("승인자가 있으면 중복 쪽을 '병합으로 내림' 으로 표시한다 — 다시 수집돼도 되살아나지 않게")
+	void marksDuplicateAsMerged() {
+		java.util.UUID reviewer = java.util.UUID.randomUUID();
+
+		executor.merge(primary, duplicate, reviewer);
+
+		assertThat(duplicate.isDeletedByAdmin()).isTrue();
+		assertThat(duplicate.getDeletedBy()).isEqualTo(reviewer);
+		assertThat(duplicate.getDeleteReason()).contains("#10");
+	}
+
+	@Test
 	@DisplayName("벌크 연산 후 영속성 컨텍스트를 비운다 — 이후 조회가 옛 상태를 보지 않도록")
 	void clearsPersistenceContext() {
 		executor.merge(primary, duplicate);
