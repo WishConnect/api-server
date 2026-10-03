@@ -15,13 +15,16 @@ public record AdminAuditLogResponse(
 		String afterJson,
 		LocalDateTime restoredAt,
 		UUID restoredBy,
-		LocalDateTime createdAt
+		LocalDateTime createdAt,
+		/** 복구 미리보기·복구를 쓸 수 있는 기록인지(콘솔의 복구 버튼 표시용) */
+		boolean restorable
 ) {
 
 	public static AdminAuditLogResponse from(AdminAuditLog log) {
 		return new AdminAuditLogResponse(
 				log.getId(), log.getActorId(), log.getAction(),
 				log.getTargetType(), log.getTargetId(), log.getDetail(), log.getBeforeJson(),
-				log.getAfterJson(), log.getRestoredAt(), log.getRestoredBy(), log.getCreatedAt());
+				log.getAfterJson(), log.getRestoredAt(), log.getRestoredBy(), log.getCreatedAt(),
+				AdminAuditRestoreService.isRestorable(log));
 	}
 }

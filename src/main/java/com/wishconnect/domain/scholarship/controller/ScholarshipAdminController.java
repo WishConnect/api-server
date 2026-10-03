@@ -46,6 +46,7 @@ import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
 import com.wishconnect.domain.scholarship.service.RegionConditionBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
+import com.wishconnect.domain.scholarship.service.ScholarshipChangeSummarizer;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
@@ -120,6 +121,7 @@ public class ScholarshipAdminController {
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
 	private final AdminScholarshipImageService adminScholarshipImageService;
 	private final AdminAuditLogService adminAuditLogService;
+	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -621,7 +623,8 @@ public class ScholarshipAdminController {
 		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(
 				scholarshipAdminOverviewService.detail(scholarshipId));
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_AGGREGATE_UPDATE,
-				"SCHOLARSHIP", scholarshipId, "조건·서류·심사 분기 통합 수정", before, after);
+				"SCHOLARSHIP", scholarshipId,
+				"통합 수정 · " + scholarshipChangeSummarizer.summarize(before, after), before, after);
 		return ApiResponse.ok(result);
 	}
 
@@ -666,7 +669,9 @@ public class ScholarshipAdminController {
 			@Valid @RequestBody ScholarshipManualRequest request) {
 		ScholarshipAdminChangeResult result = scholarshipManualService.updateWithSnapshot(scholarshipId, request);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
-				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+				"SCHOLARSHIP", scholarshipId,
+				result.response().title() + " · " + scholarshipChangeSummarizer.summarize(result.before(), result.after()),
+				result.before(), result.after());
 		return ApiResponse.ok(result.response());
 	}
 

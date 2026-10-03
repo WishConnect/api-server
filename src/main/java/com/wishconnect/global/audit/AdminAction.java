@@ -40,5 +40,11 @@ public enum AdminAction {
 	SCHOLARSHIP_MERGE,
 
 	/** 중복 후보 반려("중복 아님" 판정). */
-	SCHOLARSHIP_MERGE_REJECT
+	SCHOLARSHIP_MERGE_REJECT,
+
+	/**
+	 * 감사 로그 복구 자체. before/after 에 복구 직전·직후 스냅샷이 남아, 이 기록으로 복구를 다시 되돌릴 수 있다.
+	 * detail 에 원래 기록 ID 와 되돌린 필드가 남는다.
+	 */
+	AUDIT_RESTORE
 }
