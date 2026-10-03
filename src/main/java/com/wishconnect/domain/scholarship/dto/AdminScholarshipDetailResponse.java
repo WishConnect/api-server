@@ -11,7 +11,9 @@ public record AdminScholarshipDetailResponse(
 		List<RawData> rawScholarships,
 		List<ConditionData> conditions,
 		List<DocumentData> documents,
-		List<ImageData> images
+		List<ImageData> images,
+		/** 모집 상태·기간 모순 점검. 통합 수정 화면이 저장 전 경고에 쓴다(서버는 상태를 바꾸지 않는다). */
+		RecruitmentStatusCheck statusCheck
 ) {
 	public record ScholarshipData(
 			Long id, String title, String provider, String summary, String description,

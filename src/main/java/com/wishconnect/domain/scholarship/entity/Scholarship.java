@@ -458,8 +458,8 @@ public class Scholarship extends BaseEntity {
 		if (homepageUrl != null) {
 			this.homepageUrl = homepageUrl;
 		}
-		this.recruitmentStatus = resolveStatus(this.applicationStartAt, this.applicationEndAt);
-		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+		// 모집 상태는 날짜로 다시 계산하지 않는다. 제목만 고쳐도 상태가 바뀌던 문제가 있었다
+		// (관리자가 조기 마감한 CLOSED 가 미래 마감일 때문에 OPEN 으로 되돌아감). 상태는 관리자가 직접 고른다.
 		// 사람이 확인해 고친 값이므로 검증된 것으로 표시한다.
 		this.verified = true;
 	}
@@ -527,8 +527,10 @@ public class Scholarship extends BaseEntity {
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
 		this.interviewEvidence = interviewEvidence;
-		this.recruitmentStatus = recruitmentStatus == null
-				? resolveStatus(applicationStartAt, applicationEndAt) : recruitmentStatus;
+		// 모집 상태는 화면에서 고른 값만 쓴다. 비어 있으면 날짜로 계산하지 않고 기존 상태를 둔다.
+		if (recruitmentStatus != null) {
+			this.recruitmentStatus = recruitmentStatus;
+		}
 		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
 		this.verified = true;
 	}

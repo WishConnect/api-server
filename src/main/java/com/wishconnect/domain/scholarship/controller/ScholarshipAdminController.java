@@ -615,7 +615,15 @@ public class ScholarshipAdminController {
 	}
 
 	@Operation(summary = "장학금 통합 수기 수정",
-			description = "장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는 전달된 최종 목록으로 교체합니다.")
+			description = """
+					장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는
+					전달된 최종 목록으로 교체합니다.
+
+					모집 상태는 보낸 값 그대로 저장하며 날짜로 다시 계산하지 않습니다. recruitmentStatus 를 비우면 기존
+					상태를 유지합니다. 응답 statusCheck 에 마감일과의 모순(마감 지났는데 OPEN 등)이 담기니 화면에서
+					경고하세요. 저장 전 확인은 GET /admin/scholarships/{id} 의 statusCheck 와 serverNow 를 씁니다.
+					감사 기록 detail 에 바뀐 필드 요약이, before/after 에 필드 단위 전·후 값이 남습니다.
+					""")
 	@PutMapping("/manual/{scholarshipId}/full")
 	public ApiResponse<ScholarshipManualFullResponse> updateManualFull(
 			@AuthenticationPrincipal String actorId,
@@ -624,12 +632,12 @@ public class ScholarshipAdminController {
 		AdminScholarshipEditSnapshot before = AdminScholarshipEditSnapshot.from(
 				scholarshipAdminOverviewService.detail(scholarshipId));
 		ScholarshipManualFullResponse result = scholarshipManualAggregateService.update(scholarshipId, request);
-		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(
-				scholarshipAdminOverviewService.detail(scholarshipId));
+		AdminScholarshipDetailResponse afterDetail = scholarshipAdminOverviewService.detail(scholarshipId);
+		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(afterDetail);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_AGGREGATE_UPDATE,
 				"SCHOLARSHIP", scholarshipId,
 				"통합 수정 · " + scholarshipChangeSummarizer.summarize(before, after), before, after);
-		return ApiResponse.ok(result);
+		return ApiResponse.ok(result.withStatusCheck(afterDetail.statusCheck()));
 	}
 
 	@Operation(summary = "통합 수기 등록 엑셀 양식",
