@@ -205,7 +205,9 @@
 			' · ' + sourceHtml(s.primarySource) + '</div><div class="actions">' +
 			(!deleted ? '<button type="button" class="btn btn-sm btn-primary" data-act="edit">통합 수정</button>' : '') +
 			link(s.detailUrl || s.homepageUrl) +
-			(!deleted ? '<button type="button" class="btn btn-sm" data-act="report">신고 남기기</button>' : '') + '</div></div>';
+			(!deleted ? '<button type="button" class="btn btn-sm" data-act="report">신고 남기기</button>' : '') +
+			(deleted ? '<button type="button" class="btn btn-sm btn-primary" data-act="restore">복원</button>'
+				: '<button type="button" class="btn btn-sm btn-danger-ghost" data-act="takedown">내리기</button>') + '</div></div>';
 		const deletedNotice = deleted ? '<div class="notice danger banner"><b>목록에서 내린 장학금입니다.</b> 사용자에게 보이지 않습니다. 내린 시각 ' +
 			esc(fmt.tsKst(s.deletedAt)) + '</div>' : '';
 		const checkNotice = check && !check.consistent && !deleted ? '<div class="notice warn banner"><b>모집 상태와 날짜가 맞지 않습니다.</b><ul>' +
@@ -251,6 +253,9 @@
 		const on = (act, fn) => root.querySelectorAll('[data-act="' + act + '"]').forEach(button => button.onclick = () => fn(button));
 		on('edit', () => openEdit({scholarshipId: id}));
 		on('report', () => reportScholarship(data.scholarship));
+		on('takedown', button => takedownScholarship(data.scholarship, button));
+		on('restore', () => restoreScholarship(Object.assign({scholarshipId: id, title: data.scholarship.title,
+			deletedAt: data.scholarship.deletedAt}, scholarshipRows.get(id) || {})));
 		root.querySelectorAll('[data-open-scholarship]').forEach(el => el.onclick = () => openScholarshipModal(Number(el.dataset.openScholarship)));
 	}
 
@@ -647,19 +652,30 @@
 				source: val('scholarshipSource'), status: $('scholarshipStatus').value, includeDeleted: $('includeDeleted').checked
 			}));
 			renderPager('scholarshipPager', page, 'scholarship', loadScholarships);
+			page.content.forEach(row => scholarshipRows.set(row.scholarshipId, row));
 			const selected = panels.scholarshipDetail && panels.scholarshipDetail.id;
 			return page.content.length ? page.content.map(row => '<tr class="clickable' + (row.softDeleted ? ' is-deleted' : '') +
 				(row.scholarshipId === selected ? ' selected' : '') + '" data-scholarship="' + row.scholarshipId + '">' + cells([
 				'#' + row.scholarshipId,
 				'<span class="cell-title">' + esc(row.title || '(제목 없음)') + '</span><span class="cell-sub">' + esc(row.provider || '기관 없음') + '</span>' +
 					(row.softDeleted ? deletedRowInfo(row) : ''),
-				row.softDeleted ? deletedBadge(row) : badge('recruitment', row.recruitmentStatus),
+				row.softDeleted ? deletedBadge(row) + '<div style="margin-top:4px">' + (row.deleteKind === 'MERGE'
+					? '<span class="text-muted text-sm" title="병합으로 내린 장학금은 사용자 데이터가 이미 옮겨져 복원할 수 없습니다">복원 불가</span>'
+					: '<button type="button" class="btn btn-sm" data-restore="' + row.scholarshipId + '">복원</button>') + '</div>'
+					: badge('recruitment', row.recruitmentStatus),
 				sourceHtml(row.source),
 				missingHtml(row)
 			]) + '</tr>').join('') : view.row(5, view.emptyHtml('검색 결과가 없습니다.', '검색어·모집 상태·출처 조건을 바꿔 보세요.'));
 		}, {colspan: 5, what: '장학금 목록을'});
 		bindRowSelect(body, 'scholarship', id => openScholarshipPanel('scholarshipDetail', id));
+		body.querySelectorAll('[data-restore]').forEach(button => button.onclick = event => {
+			event.stopPropagation();
+			restoreScholarship(scholarshipRows.get(Number(button.dataset.restore)));
+		});
 	}
+
+	/** 목록에서 본 행(내린 사람·사유·종류). 상세 패널의 복원 모달이 함께 보여 준다. */
+	const scholarshipRows = new Map();
 
 	function deletedRowInfo(row) {
 		return '<span class="cell-sub text-danger">' + esc(label('deleteKind', row.deleteKind, '내려짐')) + ' · ' + esc(fmt.ts(row.deletedAt)) + ' KST' +
@@ -1161,6 +1177,99 @@
 				await api('/api/v1/admin/audit-log/' + row.id + '/restore', {method: 'PATCH'});
 				ui.toast('기록 #' + row.id + ' 이전 값으로 복구했습니다.');
 				afterWrite({scholarshipId: row.targetId, reload: loadAudit});
+			}
+		});
+	}
+
+	/* ---------- 내리기·복원 */
+
+	/**
+	 * 내리기: 먼저 delete-check 로 걸려 있는 사용자 데이터와 중복 의심을 보여 준다.
+	 * 중복이면 병합이 맞다 — 병합은 스크랩·자소서를 남길 쪽으로 옮기지만 내리기는 옮기지 않는다.
+	 */
+	async function takedownScholarship(s, button) {
+		let check;
+		try {
+			check = await ui.busy(button, () => api('/api/v1/scholarships/admin/scholarships/' + s.id + '/delete-check'), '확인 중…');
+		} catch (error) {
+			ui.toast(WC.errorText(error), 'error');
+			return;
+		}
+		if (!check) return;
+		if (check.deleted) {
+			ui.toast('이미 내린 장학금입니다. 목록을 새로고침하세요.', 'warn');
+			afterWrite({scholarshipId: s.id, reload: reloadCurrentList});
+			return;
+		}
+		const essays = check.essayNotStartedCount + check.essayInProgressCount + check.essayCompletedCount;
+		const pending = (check.mergeCandidates || []).filter(c => c.status === 'PENDING');
+		const similar = check.similarScholarships || [];
+		const mergeBlock = check.mergeSuggested ? '<div class="notice warn"><b>중복이라면 내리기 대신 병합을 사용하세요.</b><br>' +
+			'병합은 스크랩·자소서를 남길 장학금으로 옮기지만, 내리기는 옮기지 않아 사용자 목록에서 그냥 사라집니다.' +
+			(pending.length ? '<p class="section-label" style="margin-top:var(--sp-2)">승인 대기 중인 중복 후보</p>' + pending.map(c =>
+				'<div class="list-row" style="padding-left:0;padding-right:0"><div class="grow">후보 #' + c.candidateId + ' · 유지 #' + c.primaryId + ' ' +
+				esc(c.primaryTitle || '') + ' ← 내릴 쪽 #' + c.duplicateId + ' ' + esc(c.duplicateTitle || '') + '</div>' +
+				'<button type="button" class="btn btn-sm" data-go-candidate="' + c.candidateId + '">이 후보 검토하기</button></div>').join('') : '') +
+			(similar.length ? '<p class="section-label" style="margin-top:var(--sp-2)">제목이 같은 다른 공고</p>' + similar.map(x =>
+				'<div class="list-row" style="padding-left:0;padding-right:0"><div class="grow">#' + x.scholarshipId + ' ' + esc(x.title || '') +
+				'<span class="cell-sub">' + esc(x.provider || '기관 없음') + ' · ' + esc(label('recruitment', x.recruitmentStatus)) + ' · 마감 ' +
+				esc(fmt.biz(x.applicationEndAt, true)) + '</span></div><button type="button" class="btn btn-sm" data-go-similar="' + x.scholarshipId +
+				'" data-title="' + esc(x.title || '') + '">이 공고로 병합 후보 만들기</button></div>').join('') : '') + '</div>' : '';
+		const warnings = (check.warnings || []).length ? '<div class="notice neutral"><ul>' + check.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '';
+		return ui.confirmAction({
+			title: '장학금 내리기', confirmLabel: '내리기',
+			targets: [{id: '장학금 #' + s.id, title: s.title, meta: s.provider}],
+			summary: ['사용자 목록·검색·추천에서 보이지 않게 됩니다.',
+				'이 장학금을 스크랩한 사용자 <b>' + fmt.num(check.scrapCount) + '명</b>의 스크랩 목록에서도 보이지 않습니다.',
+				'연결된 자소서 <b>' + fmt.num(essays) + '건</b> (시작 전 ' + fmt.num(check.essayNotStartedCount) + ' · 작성 중 ' +
+					fmt.num(check.essayInProgressCount) + ' · 완료 ' + fmt.num(check.essayCompletedCount) + ')은 지워지지 않지만 다른 장학금으로 옮겨지지도 않습니다.',
+				'다음 날 수집 배치가 다시 살리지 않습니다.'],
+			extraHtml: mergeBlock + warnings,
+			reversible: 'yes', reversibleText: '[전체 장학금]에서 "내린 장학금 포함"을 켜고 [복원]을 누르면 되돌릴 수 있습니다.',
+			reason: {label: '내리는 사유', required: true, placeholder: '예: 장학금이 아닌 행사 안내 공고, 모집 취소 공고', help: '감사 기록과 장학금에 남고, 삭제 포함 목록에 보입니다.'},
+			onOpen: (root, ctx) => {
+				root.querySelectorAll('[data-go-candidate]').forEach(b => b.onclick = () => {
+					ctx.close(null);
+					showPage('duplicate', {load: false});
+					showDupTab('review');
+					$('duplicateStatus').value = 'PENDING';
+					$('duplicateKeyword').value = s.title || '';
+					pageNo.duplicate = 0;
+					loadDuplicates();
+				});
+				root.querySelectorAll('[data-go-similar]').forEach(b => b.onclick = () => {
+					ctx.close(null);
+					showPage('duplicate', {load: false});
+					pickMergeSide('keep', b.dataset.goSimilar, b.dataset.title);
+					pickMergeSide('drop', String(s.id), s.title);
+				});
+			},
+			onConfirm: async reason => {
+				await api('/api/v1/scholarships/manual/' + s.id, {method: 'DELETE', body: {reason}});
+				ui.toast('#' + s.id + ' 장학금을 내렸습니다. "내린 장학금 포함" 목록에서 복원할 수 있습니다.');
+				afterWrite({scholarshipId: s.id, reload: reloadCurrentList});
+			}
+		});
+	}
+
+	function restoreScholarship(row) {
+		if (!row) return;
+		if (row.deleteKind === 'MERGE') {
+			ui.notify('복원할 수 없습니다', '<div class="notice danger">병합으로 내린 장학금은 스크랩·자소서가 이미 다른 장학금으로 옮겨져 복원할 수 없습니다.</div>');
+			return;
+		}
+		return ui.confirmAction({
+			title: '장학금 복원', kind: 'primary', confirmLabel: '복원',
+			targets: [{id: '장학금 #' + row.scholarshipId, title: row.title, meta: row.provider}],
+			summary: ['사용자 목록에 다시 보입니다. 노출 여부는 현재 모집 상태를 따릅니다(마감이면 마감 공고로 보임).',
+				row.deletedAt ? '내린 시각: ' + esc(fmt.tsKst(row.deletedAt)) + (row.deletedByName ? ' · ' + esc(row.deletedByName) : '') : '',
+				row.deleteReason ? '내린 사유: ' + esc(row.deleteReason) : ''].filter(Boolean),
+			reversible: 'yes', reversibleText: '복원한 뒤에도 다시 내릴 수 있습니다.',
+			reason: {label: '복원 사유', required: false, placeholder: '예: 잘못 내림, 모집 재개'},
+			onConfirm: async reason => {
+				await api('/api/v1/scholarships/manual/' + row.scholarshipId + '/restore', {method: 'POST', body: {reason: reason || null}});
+				ui.toast('#' + row.scholarshipId + ' 장학금을 복원했습니다.');
+				afterWrite({scholarshipId: row.scholarshipId, reload: reloadCurrentList});
 			}
 		});
 	}
