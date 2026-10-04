@@ -67,7 +67,7 @@ class AdminPageControllerTest {
 						.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
 				.andExpect(status().isOk())
 				.andExpect(content().contentTypeCompatibleWith("text/html"))
-				.andExpect(content().string(org.hamcrest.Matchers.containsString("WishConnect Admin")));
+				.andExpect(content().string(org.hamcrest.Matchers.containsString("/admin/admin-core.js")));
 	}
 
 	@Test
@@ -77,9 +77,12 @@ class AdminPageControllerTest {
 				.andExpect(status().isOk());
 
 		givenAdminToken();
-		mockMvc.perform(get("/admin/admin-console.js")
-						.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
-				.andExpect(status().isOk());
+		// 콘솔 HTML 이 불러오는 공통 부품·스타일까지 열려야 화면이 그려진다.
+		for (String asset : new String[] {"/admin/admin-console.js", "/admin/admin-core.js", "/admin/admin-console.css"}) {
+			mockMvc.perform(get(asset)
+							.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
+					.andExpect(status().isOk());
+		}
 	}
 
 	private void givenAdminToken() {
