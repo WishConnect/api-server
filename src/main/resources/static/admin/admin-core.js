@@ -152,6 +152,8 @@
 		jobType: {DAILY_SCHOLARSHIP_PIPELINE: '일일 수집 파이프라인'},
 		trigger: {SCHEDULED: '자동(매일)', MANUAL: '수동'},
 		targetType: {RAW_SCHOLARSHIP: '원문', SCHOLARSHIP: '장학금', SOURCE: '출처', GROUP: '묶음', STEP: '단계'},
+		failureType: {LLM_CREDIT: 'LLM 크레딧 부족', LLM_AUTH: 'LLM 인증 오류', LLM_ERROR: 'LLM 호출 실패', COLLECT: '수집 실패', PARSE: '응답 해석 실패',
+			SAVE: '저장 실패', STEP_ERROR: '단계 전체 실패', OTHER: '기타'},
 		anomaly: {
 			EMPTY_TITLE: '제목 없음', MISSING_PROVIDER: '기관 없음', DATE_REVERSED: '기간 역전',
 			OPEN_BUT_ENDED: '마감 지난 모집 중', MISSING_LINK: '링크 없음', MISSING_CONDITION: '조건 없음'

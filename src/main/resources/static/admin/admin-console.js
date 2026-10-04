@@ -14,7 +14,7 @@
 
 	const PAGE_SIZE = 20;
 	const pageNo = {intake: 0, failures: 0, anomaly: 0, scholarship: 0, always: 0, duplicate: 0, image: 0,
-		report: 0, inquiry: 0, jobs: 0};
+		report: 0, inquiry: 0, jobs: 0, jobFailures: 0};
 	let currentPage = null;
 
 	/* ================================================================== 공통 도우미 */
@@ -69,7 +69,6 @@
 
 	const settled = result => result.status === 'fulfilled' ? result.value : null;
 	const RECENT_ATTENTION_DAYS = 3;
-	const needsAttention = status => ['WARNING', 'PARTIAL_FAILURE', 'FAILED'].includes(status);
 
 	/**
 	 * 메뉴 배지에 쓰는 숫자를 한 번에 다시 센다. 쓰기 작업 뒤와 3분마다 부른다.
@@ -84,9 +83,9 @@
 			api(qs('/api/v1/scholarships/merge/candidates', {status: 'PENDING', page: 0, size: 1}), opt),
 			api(qs('/api/v1/scholarships/reports', {status: 'PENDING', page: 0, size: 1}), opt),
 			api(qs('/api/v1/admin/content-inquiries', {status: 'PENDING', page: 0, size: 1}), opt),
-			api(qs('/api/v1/admin/jobs', {page: 0, size: 20}), opt)
+			api(qs('/api/v1/admin/jobs/alerts', {limit: 10}), opt)
 		]);
-		const [overview, failures, anomalies, merges, reports, inquiries, jobs] = results.map(settled);
+		const [overview, failures, anomalies, merges, reports, inquiries, alerts] = results.map(settled);
 		if (overview) {
 			setCount('intake', overview.raw.pending);
 			setCount('always', overview.scholarship.alwaysOpen);
@@ -99,12 +98,66 @@
 			if ($('reportTabCount') && reports) $('reportTabCount').textContent = fmt.num(reports.totalElements);
 			if ($('inquiryTabCount') && inquiries) $('inquiryTabCount').textContent = fmt.num(inquiries.totalElements);
 		}
-		if (jobs) {
-			const recent = jobs.content.filter(job => needsAttention(job.status) &&
-				fmt.ageDays(job.startedAt) != null && fmt.ageDays(job.startedAt) < RECENT_ATTENTION_DAYS);
-			setCount('batches', recent.length, true);
+		if (alerts) {
+			lastAlerts = alerts;
+			const items = alertItems(alerts);
+			setCount('batches', items.length, true);
+			const button = $('alertButton');
+			if (button) {
+				$('alertCount').textContent = items.length ? fmt.num(items.length) : '';
+				$('alertCount').className = 'badge' + (items.some(item => item.level === 'critical') ? ' b-danger' : items.length ? ' b-warning' : '');
+			}
+			if (!$('alertDrawer').hidden) renderAlertDrawer();
 		}
-		return {overview, failures, anomalies, merges, reports, inquiries, jobs, error: results.find(r => r.status === 'rejected')};
+		return {overview, failures, anomalies, merges, reports, inquiries, alerts, error: results.find(r => r.status === 'rejected')};
+	}
+
+	/* ---------- 알림함(배치 부분 실패·실패, LLM 크레딧·인증 오류) */
+
+	let lastAlerts = null;
+	const stepEntries = run => Object.entries(run.failuresByStep || {}).sort((a, b) => b[1] - a[1]);
+
+	/**
+	 * 알림함 항목. 재처리로 풀리지 않는 LLM 크레딧 부족·인증 오류를 맨 위에, 그다음 최근 며칠의 부분 실패·실패 실행.
+	 * 오래된 실패 실행까지 세면 배지가 영영 안 꺼지므로 최근 RECENT_ATTENTION_DAYS 일만 센다.
+	 */
+	function alertItems(alerts) {
+		const runs = (alerts.attention || []).filter(run => fmt.ageDays(run.startedAt) != null && fmt.ageDays(run.startedAt) < RECENT_ATTENTION_DAYS);
+		const items = [];
+		runs.filter(run => run.llmCreditExhausted).slice(0, 1).forEach(run => items.push({level: 'critical', run,
+			title: 'LLM 크레딧이 부족합니다', text: '결제(크레딧 충전)가 필요합니다. 충전 전에는 재처리해도 다시 실패합니다.'}));
+		runs.filter(run => run.llmAuthFailed).slice(0, 1).forEach(run => items.push({level: 'critical', run,
+			title: 'LLM 인증 오류', text: 'API 키가 잘못됐거나 만료됐습니다. 개발 담당에게 키 확인을 요청하세요.'}));
+		runs.forEach(run => items.push({level: run.status === 'FAILED' ? 'critical' : 'warn', run,
+			title: '배치 ' + label('jobStatus', run.status) + ' · 실행 #' + run.runId,
+			text: (run.errorMessage || run.summary || '') + (run.failureCount ? ' · 실패 ' + fmt.num(run.failureCount) + '건' : '')}));
+		return items;
+	}
+
+	function renderAlertDrawer() {
+		const body = $('alertDrawerBody');
+		if (!lastAlerts) { body.innerHTML = view.loadingHtml(); return; }
+		const items = alertItems(lastAlerts);
+		const latest = lastAlerts.latest;
+		body.innerHTML = (items.length ? items.map(item => '<div class="alert-item ' + item.level + '"><h4>' + esc(item.title) + '</h4><div>' + esc(item.text) +
+			'</div><div class="text-sm text-muted">' + esc(fmt.tsKst(item.run.startedAt)) + ' · ' + esc(fmt.ago(item.run.startedAt)) + '</div>' +
+			(stepEntries(item.run).length ? '<ul class="run-steps">' + stepEntries(item.run).map(([step, count]) => '<li><button type="button" class="btn-link" data-alert-step="' +
+				esc(step) + '" data-run="' + item.run.runId + '">' + esc(step) + '</button><b>' + fmt.num(count) + '건</b></li>').join('') + '</ul>' : '') +
+			'<div class="actions"><button type="button" class="btn btn-sm" data-alert-run="' + item.run.runId + '">실패 목록 보기</button></div></div>').join('')
+			: '<div class="alert-item ok"><h4>확인할 알림이 없습니다</h4><div class="text-sm">최근 ' + RECENT_ATTENTION_DAYS + '일 동안 부분 실패·실패한 배치가 없습니다.</div></div>') +
+			(latest ? '<p class="text-sm text-muted">가장 최근 배치: 실행 #' + latest.runId + ' · ' + esc(label('jobStatus', latest.status)) + ' · ' + esc(fmt.tsKst(latest.startedAt)) + '</p>' : '');
+		body.querySelectorAll('[data-alert-run]').forEach(b => b.onclick = () => openRunFailures(Number(b.dataset.alertRun)));
+		body.querySelectorAll('[data-alert-step]').forEach(b => b.onclick = () => openRunFailures(Number(b.dataset.run), b.dataset.alertStep));
+	}
+
+	function toggleAlertDrawer(force) {
+		const drawer = $('alertDrawer');
+		drawer.hidden = force != null ? !force : !drawer.hidden;
+		$('alertButton').setAttribute('aria-expanded', String(!drawer.hidden));
+		if (!drawer.hidden) {
+			renderAlertDrawer();
+			refreshCounts().catch(() => {});
+		}
 	}
 
 	let dashboardStale = true;
@@ -132,7 +185,7 @@
 			$('dashQuality').innerHTML = view.row(6, view.errorHtml(data.error ? data.error.reason : new Error('현황을 받지 못했습니다.'), '현황을'));
 			bindRetry($('dashQuality'), loadDashboard);
 		}
-		renderDashboardRun(data.jobs);
+		renderDashboardRun(data.alerts);
 		renderRecent(recent);
 	}
 
@@ -141,21 +194,27 @@
 		if (retry) retry.onclick = () => loader();
 	}
 
-	function renderDashboardRun(jobs) {
+	function renderDashboardRun(alerts) {
 		const target = $('dashRun');
-		const running = jobs && jobs.content.find(job => job.status === 'RUNNING');
+		const latest = alerts && alerts.latest;
+		const running = latest && latest.status === 'RUNNING';
 		$('dashRunning').hidden = !running;
 		if (running) {
-			$('dashRunning').innerHTML = '<b>수집 배치가 실행 중입니다</b> (시작 ' + esc(fmt.tsKst(running.startedAt)) +
+			$('dashRunning').innerHTML = '<b>수집 배치가 실행 중입니다</b> (시작 ' + esc(fmt.tsKst(latest.startedAt)) +
 				'). 위 숫자는 배치가 끝나기 전 값일 수 있습니다. 끝난 뒤 [새로고침]하세요.';
 		}
-		if (!jobs) { target.innerHTML = view.emptyHtml('배치 이력을 불러오지 못했습니다.', '[배치 실행 이력] 화면에서 다시 확인하세요.'); return; }
-		const latest = jobs.content[0];
-		if (!latest) { target.innerHTML = view.emptyHtml('기록된 배치가 없습니다.'); return; }
-		target.innerHTML = '<div class="run-card"><div class="run-line">' + badge('jobStatus', latest.status) + '<b>' +
-			esc(label('jobType', latest.jobType)) + '</b><span class="text-muted text-sm">' + esc(fmt.tsKst(latest.startedAt)) +
-			' 시작 · ' + esc(fmt.ago(latest.startedAt)) + '</span></div><p class="text-sm" style="margin-top:var(--sp-2)">' +
-			esc(latest.errorMessage || latest.summary || '결과 요약 없음') + '</p></div>';
+		if (!alerts) { target.innerHTML = view.emptyHtml('배치 상태를 불러오지 못했습니다.', '[배치 실행 이력] 화면에서 다시 확인하세요.'); return; }
+		if (!latest) { target.innerHTML = view.emptyHtml('기록된 배치가 없습니다.', '수집 배치는 매일 11:00(KST)에 돕니다.'); return; }
+		const steps = stepEntries(latest);
+		target.innerHTML = '<div class="run-card"><div class="run-line">' + badge('jobStatus', latest.status) + '<b>실행 #' + latest.runId + ' · ' +
+			esc(label('jobType', latest.jobType)) + '</b><span class="text-muted text-sm">' + esc(fmt.tsKst(latest.startedAt)) + ' 시작 · ' + esc(fmt.ago(latest.startedAt)) + '</span></div>' +
+			(latest.llmCreditExhausted ? '<div class="notice danger" style="margin-top:var(--sp-2)"><b>LLM 크레딧 부족</b> — 결제가 필요합니다. 충전 전에는 재처리해도 실패합니다.</div>' : '') +
+			(latest.llmAuthFailed ? '<div class="notice danger" style="margin-top:var(--sp-2)"><b>LLM 인증 오류</b> — API 키 확인이 필요합니다.</div>' : '') +
+			'<p class="text-sm" style="margin-top:var(--sp-2)">' + esc(latest.errorMessage || latest.summary || '결과 요약 없음') + '</p>' +
+			(steps.length ? '<p class="section-label" style="margin-top:var(--sp-2)">단계별 실패 ' + fmt.num(latest.failureCount) + '건</p><ul class="run-steps">' +
+				steps.map(([step, count]) => '<li><button type="button" class="btn-link" data-run-step="' + esc(step) + '">' + esc(step) + '</button><b>' + fmt.num(count) + '건</b></li>').join('') + '</ul>'
+				: latest.status === 'SUCCEEDED' ? '<p class="text-sm text-success">실패 없이 끝났습니다.</p>' : '') + '</div>';
+		target.querySelectorAll('[data-run-step]').forEach(b => b.onclick = () => openRunFailures(latest.runId, b.dataset.runStep));
 	}
 
 	function renderRecent(rows) {
@@ -174,6 +233,7 @@
 			missingHtml(row),
 			'<span class="nowrap">' + esc(fmt.ts(row.createdAt)) + '</span>'
 		]) + '</tr>').join('') : view.row(5, view.emptyHtml('최근 등록된 장학금이 없습니다.'));
+		bindOpenScholarship(body);
 	}
 
 	function renderQuality(list) {
@@ -1036,7 +1096,7 @@
 		await view.load(body, async () => {
 			const page = await api(qs('/api/v1/admin/jobs', {page: pageNo.jobs, size: PAGE_SIZE}));
 			renderPager('jobPager', page, 'jobs', loadJobs);
-			return page.content.length ? page.content.map(row => '<tr data-job="' + row.id + '">' + cells([
+			return page.content.length ? page.content.map(row => '<tr class="clickable' + (failureRun.runId === row.id ? ' selected' : '') + '" data-job="' + row.id + '">' + cells([
 				'#' + row.id,
 				esc(label('jobType', row.jobType)) + '<span class="cell-sub mono">' + esc(row.jobType) + '</span>',
 				esc(label('trigger', row.trigger)),
@@ -1047,6 +1107,49 @@
 				'<span class="clamp-2" title="' + esc(row.errorMessage || row.summary || '') + '">' + esc(row.errorMessage || row.summary || '-') + '</span>'
 			]) + '</tr>').join('') : view.row(8, view.emptyHtml('기록된 배치가 없습니다.'));
 		}, {colspan: 8, what: '배치 이력을'});
+		bindRowSelect(body, 'job', id => openRunFailures(Number(id)));
+	}
+
+	/* ---------- 배치 실패 상세 */
+
+	const failureRun = {runId: null, step: '', type: '', page: 0};
+
+	/** 실행 하나의 실패 상세(단계·대상·유형·사유). 알림함·대시보드·배치 이력에서 연다. */
+	function openRunFailures(runId, step = '') {
+		Object.assign(failureRun, {runId, step: step || '', type: '', page: 0});
+		toggleAlertDrawer(false);
+		if (currentPage !== 'batches') showPage('batches');
+		$('jobFailureCard').hidden = false;
+		$('jobFailureTitle').textContent = '실행 #' + runId + ' 실패 상세';
+		const run = lastAlerts && [lastAlerts.latest, ...(lastAlerts.attention || [])].find(r => r && r.runId === runId);
+		const steps = run ? Object.keys(run.failuresByStep || {}) : [];
+		if (step && !steps.includes(step)) steps.push(step);
+		$('jobFailureStep').innerHTML = '<option value="">모든 단계</option>' + steps.map(name => '<option' + (name === step ? ' selected' : '') + '>' + esc(name) + '</option>').join('');
+		$('jobFailureType').value = '';
+		loadRunFailures();
+		$('jobFailureCard').scrollIntoView({block: 'start', behavior: 'smooth'});
+	}
+
+	async function loadRunFailures() {
+		const body = $('jobFailureRows');
+		await view.load(body, async () => {
+			const page = await api(qs('/api/v1/admin/jobs/' + failureRun.runId + '/failures', {step: failureRun.step, failureType: failureRun.type,
+				page: failureRun.page, size: PAGE_SIZE}));
+			pageNo.jobFailures = failureRun.page;
+			renderPager('jobFailurePager', page, 'jobFailures', () => { failureRun.page = pageNo.jobFailures; loadRunFailures(); });
+			return page.content.length ? page.content.map(f => '<tr>' + cells([
+				esc(f.step || '-'),
+				f.targetType === 'RAW_SCHOLARSHIP' && f.targetId ? '<button type="button" class="btn-link" data-failure-raw="' + f.targetId + '">원문 #' + f.targetId + '</button>'
+					: f.targetType === 'SCHOLARSHIP' && f.targetId ? scholarshipLink(f.targetId, '장학금 #' + f.targetId)
+					: esc(label('targetType', f.targetType)) + (f.targetId ? ' #' + f.targetId : ''),
+				'<span class="badge ' + (f.needsOperatorAction ? 'b-danger' : 'b-warning') + '" title="' + esc(f.failureType) + '">' + esc(f.failureTypeLabel || f.failureType) + '</span>' +
+					(f.needsOperatorAction ? '<span class="cell-sub text-danger">결제·키 확인 필요</span>' : ''),
+				(f.targetLabel ? '<span class="cell-title">' + esc(f.targetLabel) + '</span>' : '') + '<span class="clamp-2 cell-sub" title="' + esc(f.reason || '') + '">' + esc(f.reason || '-') + '</span>',
+				'<span class="nowrap">' + esc(fmt.ts(f.createdAt)) + '</span>'
+			]) + '</tr>').join('') : view.row(5, view.emptyHtml('기록된 실패가 없습니다.', failureRun.step || failureRun.type ? '단계·유형 필터를 풀어 보세요.' : '이 실행은 실패 상세가 없습니다(예전 실행이면 기록 전일 수 있음).'));
+		}, {colspan: 5, what: '실패 상세를'});
+		body.querySelectorAll('[data-failure-raw]').forEach(b => b.onclick = () => openRawModal(Number(b.dataset.failureRaw)));
+		bindOpenScholarship(body);
 	}
 
 	function jobDuration(row) {
@@ -1576,6 +1679,7 @@
 		$('inquiryStatus').innerHTML = options('handle', 'PENDING', '모든 처리 상태');
 		$('inquiryType').innerHTML = options('inquiryType', '', '모든 유형');
 		$('auditAction').innerHTML = options('action', '', '모든 작업');
+		$('jobFailureType').innerHTML = options('failureType', '', '모든 유형');
 	}
 
 	function bind() {
@@ -1636,7 +1740,13 @@
 		document.querySelectorAll('[data-report-tab]').forEach(button => button.onclick = () => showReportTab(button.dataset.reportTab));
 		click('refreshSystem', () => loadSystem());
 		click('refreshLogs', () => loadLogs());
-		click('refreshJobs', () => loadJobs());
+		click('refreshJobs', () => { loadJobs(); if (failureRun.runId) loadRunFailures(); });
+		$('jobFailureStep').addEventListener('change', event => { failureRun.step = event.target.value; failureRun.page = 0; loadRunFailures(); });
+		$('jobFailureType').addEventListener('change', event => { failureRun.type = event.target.value; failureRun.page = 0; loadRunFailures(); });
+		click('closeJobFailures', () => { $('jobFailureCard').hidden = true; failureRun.runId = null; });
+		click('alertButton', () => toggleAlertDrawer());
+		click('closeAlertDrawer', () => toggleAlertDrawer(false));
+		document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('alertDrawer').hidden && !document.querySelector('dialog[open]')) toggleAlertDrawer(false); });
 		click('refreshAudit', () => loadAudit());
 		click('searchAudit', () => loadAudit());
 

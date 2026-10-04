@@ -48,10 +48,15 @@
 			<div class="top-actions" id="topActions">
 				<span class="tz-note" title="화면의 모든 기록 시각은 한국 시간입니다. 모집 기간은 공고에 적힌 날짜 그대로입니다.">시각 기준: KST</span>
 				<input class="input top-search" id="globalSearch" type="search" placeholder="장학금명·기관 검색 (Enter)" aria-label="장학금명·기관 검색">
+				<button type="button" class="btn" id="alertButton" aria-controls="alertDrawer" aria-expanded="false" title="배치 부분 실패·실패, LLM 크레딧·인증 오류">알림 <span class="badge" id="alertCount"></span></button>
 				<div class="session" id="session" title="이 시간 안에 아무 작업도 하지 않으면 로그아웃됩니다. 작업(조회·저장)을 하면 자동으로 늘어납니다."><span class="session-label">세션</span><b id="sessionLeft">--:--</b><button type="button" class="btn btn-sm" id="sessionExtend">연장</button></div>
 				<button type="button" class="btn btn-ghost" id="logout">로그아웃</button>
 			</div>
 		</header>
+		<aside class="drawer" id="alertDrawer" aria-label="알림함" hidden>
+			<div class="drawer-head"><h2>알림함</h2><button type="button" class="modal-x" id="closeAlertDrawer" aria-label="닫기">×</button></div>
+			<div class="drawer-body" id="alertDrawerBody"></div>
+		</aside>
 		<div class="notice warn session-banner" id="sessionBanner" role="alert" hidden><b id="sessionBannerText"></b><button type="button" class="btn btn-sm btn-primary" id="sessionBannerExtend">지금 연장</button></div>
 
 		<main class="content">
@@ -443,7 +448,7 @@
 				<div class="page-head">
 					<div>
 						<h1>배치 실행 이력</h1>
-						<p class="page-desc">자동 수집 파이프라인이 언제 돌았고 결과가 어땠는지 봅니다. 부분 실패·실패 실행은 확인이 필요합니다.</p>
+						<p class="page-desc">자동 수집 파이프라인이 언제 돌았고 결과가 어땠는지 봅니다. 부분 실패·실패 실행은 확인이 필요합니다. 행을 누르면 아래에 단계별 실패 목록이 열립니다.</p>
 						<p class="page-desc">오류 문구의 비밀번호·토큰·키 형태는 서버에서 가려집니다.</p>
 					</div>
 					<div class="page-actions"><button type="button" class="btn" id="refreshJobs">새로고침</button></div>
@@ -456,6 +461,21 @@
 						</table>
 					</div>
 					<div class="pager" id="jobPager"></div>
+				</div>
+				<div class="card" id="jobFailureCard" hidden>
+					<div class="card-head"><h2 id="jobFailureTitle">실패 상세</h2><button type="button" class="btn btn-sm" id="closeJobFailures">닫기</button></div>
+					<div class="toolbar">
+						<select id="jobFailureStep" aria-label="단계"></select>
+						<select id="jobFailureType" aria-label="실패 유형"></select>
+						<span class="text-sm text-muted">원문을 누르면 내용을 보고 수기 정제할 수 있습니다. LLM 크레딧·인증 오류는 결제·키를 고치기 전엔 재처리해도 실패합니다.</span>
+					</div>
+					<div class="table-wrap" style="max-height:480px">
+						<table>
+							<thead><tr><th>단계</th><th>대상</th><th>유형</th><th>내용·사유</th><th class="nowrap">기록(KST)</th></tr></thead>
+							<tbody id="jobFailureRows"></tbody>
+						</table>
+					</div>
+					<div class="pager" id="jobFailurePager"></div>
 				</div>
 			</section>
 
