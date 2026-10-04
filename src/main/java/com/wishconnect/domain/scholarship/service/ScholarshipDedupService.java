@@ -3,6 +3,7 @@ package com.wishconnect.domain.scholarship.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wishconnect.domain.application.client.LlmClient;
+import com.wishconnect.domain.application.client.LlmFailureClassifier;
 import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmMessage;
 import com.wishconnect.domain.application.client.dto.LlmModel;
@@ -19,11 +20,11 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.ScholarshipTitleBlocker;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import com.wishconnect.global.operation.AdminJobFailureType;
+import com.wishconnect.domain.scholarship.dto.DedupScanRow;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
-import com.wishconnect.domain.scholarship.dto.DedupScanRow;
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -155,6 +156,7 @@ public class ScholarshipDedupService {
 		int failed = 0;
 		int scanned = 0;
 		Set<Long> scannedIds = new HashSet<>();
+		List<MergeDetectionResponse.GroupFailure> failures = new ArrayList<>();
 
 		// 3) 판정 — 여기서만 LLM 을 쓴다. 묶음에 속한 공고만 엔티티로 읽는다.
 		for (var entry : selected) {
@@ -192,6 +194,10 @@ public class ScholarshipDedupService {
 				// 한 그룹이 실패해도 나머지는 계속 본다.
 				log.warn("[Dedup] 그룹 판정 실패 key={} : {}", entry.getKey(), e.getMessage());
 				failed++;
+				AdminJobFailureType type = LlmFailureClassifier.classify(e);
+				failures.add(new MergeDetectionResponse.GroupFailure(entry.getKey(),
+						(type == null ? AdminJobFailureType.OTHER : type).name(),
+						LlmFailureClassifier.prefix(type) + e.getMessage()));
 			}
 		}
 
@@ -205,7 +211,7 @@ public class ScholarshipDedupService {
 				.count() - groupCount;
 		log.info("[Dedup] 전체={} 묶음판정={} 검사={} 신규후보={} 중복스킵={} 실패={} 남은묶음={}",
 				rows.size(), groupCount, scanned, created, skipped, failed, Math.max(remaining, 0));
-		return new MergeDetectionResponse(scanned, groupCount, created, skipped, failed);
+		return new MergeDetectionResponse(scanned, groupCount, created, skipped, failed, failures);
 	}
 
 	/** 승인 대기 목록 조회. */
@@ -242,18 +248,18 @@ public class ScholarshipDedupService {
 	@Transactional
 	public MergeCandidateResponse queueManual(ManualMergeCandidateRequest request) {
 		if (request.primaryScholarshipId().equals(request.duplicateScholarshipId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SAME_SCHOLARSHIP);
 		}
 		Scholarship primary = active(request.primaryScholarshipId());
 		Scholarship duplicate = active(request.duplicateScholarshipId());
 		if (mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(primary.getId(), duplicate.getId())
 				|| mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(duplicate.getId(), primary.getId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_PAIR_EXISTS);
 		}
 		Set<Long> pending = new HashSet<>(mergeCandidateRepository
 				.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
 		if (pending.contains(primary.getId()) || pending.contains(duplicate.getId())) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_QUEUED);
 		}
 		ScholarshipMergeCandidate saved = mergeCandidateRepository.save(ScholarshipMergeCandidate.builder()
 				.primary(primary).duplicate(duplicate)
@@ -275,11 +281,12 @@ public class ScholarshipDedupService {
 	 */
 	@Transactional
 	public MergeResultResponse approve(Long candidateId, UUID reviewer) {
-		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findById(candidateId)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		// 행 잠금: 같은 후보를 두 관리자가 동시에 승인하면 둘 다 PENDING 을 보고 병합이 두 번 일어날 수 있었다.
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 		if (!candidate.isPending()) {
 			// 이미 처리된 후보를 다시 승인하면 병합이 두 번 일어난다.
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 		}
 
 		Scholarship primary = candidate.getPrimary();
@@ -287,7 +294,7 @@ public class ScholarshipDedupService {
 		Long primaryId = primary.getId();
 		Long duplicateId = duplicate.getId();
 		try {
-			Map<String, Integer> moved = mergeExecutor.merge(primary, duplicate);
+			Map<String, Integer> moved = mergeExecutor.merge(primary, duplicate, reviewer);
 
 			/*
 			merge() 는 벌크 연산 뒤 영속성 컨텍스트를 비운다(flush + clear). 그래서 위에서 읽어 둔
@@ -296,7 +303,7 @@ public class ScholarshipDedupService {
 			다시 읽어 관리 상태로 만든 뒤 기록한다.
 			 */
 			ScholarshipMergeCandidate reattached = mergeCandidateRepository.findById(candidateId)
-					.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+					.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 			reattached.markMerged(reviewer, moved.toString());
 
 			return new MergeResultResponse(candidateId, MergeCandidateStatus.MERGED.name(),
@@ -307,23 +314,59 @@ public class ScholarshipDedupService {
 			롤백되어 남지 않기 때문에, 상태를 바꾸려는 시도를 하지 않고 로그로만 남긴다.
 			PENDING 으로 남는 것이 운영상 옳다 — 아무것도 바뀌지 않았으니 원인을 고쳐 다시 승인하면 된다.
 			 */
-			log.error("[Dedup] 병합 실패 candidateId={} primary={} duplicate={}. 후보는 PENDING 으로 남는다",
-					candidateId, primaryId, duplicateId, e);
-			throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR);
+			log.error("[Dedup] 병합 실패 candidateId={} primary={} duplicate={} cause={}. 후보는 PENDING 으로 남는다",
+					candidateId, primaryId, duplicateId, rootCause(e), e);
+			throw new CustomException(ErrorCode.MERGE_FAILED, e);
 		}
 	}
 
 	/** 후보를 반려한다. 같은 쌍이 다음 배치에서 다시 올라오지 않는다. */
 	@Transactional
 	public MergeResultResponse reject(Long candidateId, UUID reviewer, String note) {
-		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findById(candidateId)
-				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 		if (!candidate.isPending()) {
-			throw new CustomException(ErrorCode.INVALID_INPUT);
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 		}
 		candidate.markRejected(reviewer, note);
 		return new MergeResultResponse(candidateId, MergeCandidateStatus.REJECTED.name(),
 				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
+	}
+
+	/**
+	 * 반려 취소. REJECTED 후보를 다시 PENDING 으로 올린다.
+	 *
+	 * <p>반려는 같은 쌍을 다시 후보로 만들 수 없게 막기 때문에(유니크 쌍), 실수로 반려하면 그 쌍은 영구히
+	 * 병합할 수 없었다(QA 6.6). 두 장학금이 아직 살아 있고 다른 대기 후보에 들어가 있지 않을 때만 허용한다 —
+	 * 한 장학금이 여러 대기 후보에 동시에 있으면 병합 순서에 따라 결과가 달라진다.
+	 */
+	@Transactional
+	public MergeResultResponse reopen(Long candidateId, String reason) {
+		ScholarshipMergeCandidate candidate = mergeCandidateRepository.findForUpdate(candidateId)
+				.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
+		if (!candidate.isRejected()) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_REJECTED);
+		}
+		if (candidate.getPrimary().isDeleted() || candidate.getDuplicate().isDeleted()) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_DELETED);
+		}
+		Set<Long> pending = new HashSet<>(mergeCandidateRepository
+				.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
+		if (pending.contains(candidate.getPrimary().getId()) || pending.contains(candidate.getDuplicate().getId())) {
+			throw new CustomException(ErrorCode.MERGE_CANDIDATE_SCHOLARSHIP_QUEUED);
+		}
+		candidate.reopen(reason);
+		return new MergeResultResponse(candidateId, MergeCandidateStatus.PENDING.name(),
+				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
+	}
+
+	/** 로그 한 줄에서 바로 보이도록 가장 안쪽 원인을 요약한다. 스택트레이스는 별도로 남는다. */
+	private static String rootCause(Throwable e) {
+		Throwable cursor = e;
+		while (cursor.getCause() != null && cursor.getCause() != cursor) {
+			cursor = cursor.getCause();
+		}
+		return cursor.getClass().getSimpleName() + ": " + cursor.getMessage();
 	}
 
 	// --- LLM 판정 ---

@@ -80,6 +80,15 @@ public enum ErrorCode {
 	INQUIRY_ATTACHMENT_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "PDF, PNG, JPG, JPEG 파일만 첨부할 수 있습니다."),
 	INQUIRY_ATTACHMENT_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "첨부파일 저장에 실패했습니다."),
 	ADMIN_IMAGE_SAVE_FAILED(HttpStatus.BAD_GATEWAY, "이미지를 저장하지 못했습니다. URL 또는 파일 형식을 확인해주세요."),
+	// 관리자 이미지 등록·교체: 원인별로 나눈다. 예전에는 전부 위 ADMIN_IMAGE_SAVE_FAILED 하나로 뭉개졌다.
+	ADMIN_IMAGE_EMPTY(HttpStatus.BAD_REQUEST, "빈 파일입니다. 이미지 파일을 다시 선택해주세요."),
+	ADMIN_IMAGE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "이미지가 너무 큽니다. 5MB 이하로 올려주세요."),
+	ADMIN_IMAGE_INVALID_FORMAT(HttpStatus.BAD_REQUEST, "PNG, JPG, GIF, WEBP 이미지만 올릴 수 있습니다."),
+	ADMIN_IMAGE_URL_INVALID(HttpStatus.BAD_REQUEST, "이미지 주소가 올바르지 않습니다. http:// 또는 https:// 로 시작하는 주소인지 확인해주세요."),
+	ADMIN_IMAGE_DOWNLOAD_FAILED(HttpStatus.BAD_GATEWAY, "이미지 주소에서 파일을 내려받지 못했습니다. 주소가 열리는지 확인해주세요."),
+	ADMIN_IMAGE_STORAGE_FAILED(HttpStatus.BAD_GATEWAY, "이미지 저장소(S3)에 저장하지 못했습니다. 잠시 후 다시 시도해주세요."),
+	/** Spring multipart 한도(max-file-size 5MB / max-request-size 6MB)를 넘은 요청. */
+	UPLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "파일이 너무 큽니다. 한 번에 5MB 이하 파일만 올릴 수 있습니다."),
 	APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 지원서입니다."),
 	APPLICATION_ALREADY_EXISTS(HttpStatus.CONFLICT, "해당 장학금에 대한 지원서가 이미 존재합니다."),
 	ONBOARDING_INCOMPLETE(HttpStatus.BAD_REQUEST, "이전 단계를 먼저 완료해주세요."),
@@ -140,6 +149,45 @@ public enum ErrorCode {
 	EXCEL_ROW_ID_REQUIRED(HttpStatus.BAD_REQUEST, "ID 가 비어 있습니다. 신규 등록은 수기 등록 기능을 이용해주세요."),
 	EXCEL_INVALID_NUMBER(HttpStatus.BAD_REQUEST, "숫자 칸에 숫자가 아닌 값이 있습니다."),
 	EXCEL_INVALID_DATE(HttpStatus.BAD_REQUEST, "날짜 형식이 올바르지 않습니다. (yyyy-MM-dd HH:mm)"),
+
+	// 관리자 콘솔 — 인증
+	/** 잠금 사유(계정·IP)와 남은 시간은 응답 data 로 내려간다. 계정 존재 여부와 무관하게 같은 응답이다. */
+	ADMIN_LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "로그인 실패가 반복되어 잠시 잠겼습니다. 남은 시간이 지난 뒤 다시 시도해주세요."),
+
+	/** 일반 로그인으로 받은 ADMIN 토큰 등 세션 시작 시각이 없는 토큰. 연장할 수 없다. */
+	ADMIN_SESSION_REQUIRED(HttpStatus.UNAUTHORIZED, "관리자 콘솔 로그인으로 받은 토큰이 아닙니다. 콘솔에서 다시 로그인해주세요."),
+	ADMIN_SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "관리자 세션의 최대 사용 시간이 지나 연장할 수 없습니다. 다시 로그인해주세요."),
+
+	ADMIN_JOB_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 배치 실행 기록입니다."),
+
+	// 관리자 콘솔 — 감사 로그 복구
+	AUDIT_LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 감사 기록입니다."),
+	AUDIT_RESTORE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "자동 복구를 지원하지 않는 기록입니다."),
+	AUDIT_ALREADY_RESTORED(HttpStatus.CONFLICT, "이미 복구한 기록입니다. 다시 되돌리려면 복구 기록을 이용해주세요."),
+	AUDIT_RESTORE_FIELDS_REQUIRED(HttpStatus.BAD_REQUEST, "복구할 항목을 하나 이상 선택해주세요."),
+	AUDIT_RESTORE_INVALID_FIELD(HttpStatus.BAD_REQUEST, "이 기록에서 바뀌지 않았거나 복구할 수 없는 항목이 포함되어 있습니다."),
+
+	// 관리자 콘솔 — 장학금 내리기·복원
+	DELETE_REASON_REQUIRED(HttpStatus.BAD_REQUEST, "내리는 사유를 입력해주세요."),
+	SCHOLARSHIP_ALREADY_DELETED(HttpStatus.CONFLICT, "이미 내린 장학금입니다."),
+	SCHOLARSHIP_NOT_DELETED(HttpStatus.CONFLICT, "내려진 장학금이 아닙니다."),
+	SCHOLARSHIP_MERGED_CANNOT_RESTORE(HttpStatus.CONFLICT,
+			"병합으로 내린 장학금은 복원할 수 없습니다. 사용자 데이터는 남긴 쪽 장학금으로 옮겨졌습니다."),
+
+	// 관리자 콘솔 — 중복 판정·병합
+	MERGE_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 중복 후보입니다."),
+	MERGE_CANDIDATE_NOT_PENDING(HttpStatus.CONFLICT, "이미 처리된 중복 후보입니다. 목록을 새로고침해주세요."),
+	MERGE_CANDIDATE_NOT_REJECTED(HttpStatus.CONFLICT, "반려된 후보만 승인 대기로 되돌릴 수 있습니다."),
+	MERGE_CANDIDATE_SAME_SCHOLARSHIP(HttpStatus.BAD_REQUEST, "같은 장학금끼리는 중복 후보로 만들 수 없습니다."),
+	/** 반려된 쌍도 여기에 걸린다. 반려를 되돌리려면 반려 취소 API 를 쓴다. */
+	MERGE_CANDIDATE_PAIR_EXISTS(HttpStatus.CONFLICT,
+			"이미 등록된 중복 후보 쌍입니다. 반려한 쌍이라면 반려 취소로 다시 대기에 올려주세요."),
+	MERGE_CANDIDATE_SCHOLARSHIP_QUEUED(HttpStatus.CONFLICT, "이미 다른 승인 대기 후보에 포함된 장학금입니다."),
+	MERGE_CANDIDATE_SCHOLARSHIP_DELETED(HttpStatus.CONFLICT, "내려졌거나 병합된 장학금이 포함돼 있어 다시 대기에 올릴 수 없습니다."),
+	/** 같은 관리자가 같은 쓰기 요청을 짧은 간격으로 다시 보냈다(더블 클릭 등). */
+	DUPLICATE_REQUEST(HttpStatus.CONFLICT, "같은 요청이 방금 처리되었거나 처리 중입니다. 목록을 확인한 뒤 다시 시도해주세요."),
+	MERGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR,
+			"병합에 실패했습니다. 아무것도 바뀌지 않았고 후보는 승인 대기로 남아 있습니다."),
 
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),

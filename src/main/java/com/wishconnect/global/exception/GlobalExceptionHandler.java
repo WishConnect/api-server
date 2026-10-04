@@ -5,6 +5,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -23,10 +25,29 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+	/** 실패 응답에 화면이 쓸 데이터를 함께 싣는 예외(예: 관리자 로그인 실패 횟수). */
+	@ExceptionHandler(CustomDetailException.class)
+	public ResponseEntity<ApiResponse<Object>> handleCustomDetailException(CustomDetailException e) {
+		ErrorCode errorCode = e.getErrorCode();
+		log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		return ResponseEntity.status(errorCode.getStatus())
+				.body(ApiResponse.fail(errorCode.getMessage(), e.getDetail()));
+	}
+
 	@ExceptionHandler(CustomException.class)
 	public ResponseEntity<ApiResponse<Void>> handleCustomException(CustomException e) {
 		ErrorCode errorCode = e.getErrorCode();
-		log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		if (e.getCause() != null && errorCode.getStatus() == HttpStatus.INTERNAL_SERVER_ERROR) {
+			// 원인이 있는 500 은 스택트레이스까지 남긴다. WARN 한 줄로는 무엇이 터졌는지 알 수 없다.
+			log.error("[CustomException] {} - {} (cause: {})", errorCode.name(), errorCode.getMessage(),
+					e.getCause().toString(), e);
+		} else if (e.getCause() != null) {
+			// 502 등 외부 의존 실패는 원인 요약만 남긴다(스택은 호출한 쪽이 이미 남긴다).
+			log.warn("[CustomException] {} - {} (cause: {})", errorCode.name(), errorCode.getMessage(),
+					e.getCause().toString());
+		} else {
+			log.warn("[CustomException] {} - {}", errorCode.name(), errorCode.getMessage());
+		}
 		return ResponseEntity.status(errorCode.getStatus())
 				.body(ApiResponse.fail(errorCode.getMessage()));
 	}
@@ -118,6 +139,17 @@ public class GlobalExceptionHandler {
 			builder.allow(supported.toArray(new HttpMethod[0]));
 		}
 		return builder.body(ApiResponse.fail(ErrorCode.METHOD_NOT_ALLOWED.getMessage()));
+	}
+
+	/**
+	 * multipart 한도 초과. 핸들러가 없으면 catch-all 로 떨어져 500 이 났다.
+	 * 업로드 크기는 사용자가 고칠 수 있는 문제이므로 413 과 한국어 안내로 내린다.
+	 */
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+		log.warn("[MaxUploadSizeExceededException] {}", e.getMessage());
+		return ResponseEntity.status(ErrorCode.UPLOAD_TOO_LARGE.getStatus())
+				.body(ApiResponse.fail(ErrorCode.UPLOAD_TOO_LARGE.getMessage()));
 	}
 
 	@ExceptionHandler(Exception.class)

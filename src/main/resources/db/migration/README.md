@@ -60,16 +60,19 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20260818_13__parse_log_body_from_image_alt.sql` | 본문을 이미지 alt 로 대체했는지 파싱 이력에 기록 (OCR 대상 선별용) | ✅ 2026-08-18 |
 | `V20260818_14__active_user_email_unique.sql` | `users.email` 전역 UNIQUE를 활성 계정의 `(email, login_type)` 부분 UNIQUE로 교체 | ✅ 2026-08-18 |
 | `V20260819_08__create_content_inquiry.sql` | `content_inquiry` 테이블 추가 (콘텐츠 이용 문의) + 상태 조회 인덱스 | ✅ 2026-08-19 |
-| `V20260819_09__create_interview_prep_question.sql` | `interview_prep_question` 테이블 추가 (면접 예상 질문 캐시) + `(scholarship_id, display_order)` UNIQUE | ⬜ 미적용 |
-| `V20260819_20__essay_question_source.sql` | `essay.question_source` 추가 (맞춤 문항 생성 여부 — 재호출 멱등성) + CHECK 제약 | ⬜ 미적용 |
+| `V20260819_09__create_interview_prep_question.sql` | `interview_prep_question` 테이블 추가 (면접 예상 질문 캐시) + `(scholarship_id, display_order)` UNIQUE | ✅ 적용돼 있음(2026-10-04 운영 스키마로 확인, 적용일 미기록) |
+| `V20260819_20__essay_question_source.sql` | `essay.question_source` 추가 (맞춤 문항 생성 여부 — 재호출 멱등성) + CHECK 제약 | ✅ 적용돼 있음(2026-10-04 운영 스키마로 확인, 적용일 미기록) |
 | `V20260819_10__always_open_reviewed_at.sql` | 상시모집 장학금의 관리자 마지막 원문 확인 시각 추가 | ✅ 2026-08-19 |
 | `V20260819_11__create_admin_job_run.sql` | 관리자 배치 실행 이력·부분 실패 알림 테이블 추가 | ✅ 2026-08-19 |
 | `V20260819_12__admin_audit_snapshots.sql` | 수기 수정·내리기 변경 전후 스냅샷과 1회 복구 이력 추가 | ✅ 2026-08-19 |
 | `V20260819_13__merge_candidate_origin.sql` | 중복 후보 생성 경로(LLM/관리자 수기) 구분 | ✅ 2026-08-19 |
 | `V20260819_14__add_admin_console_actions.sql` | 통합 수정·이미지·수기 중복 후보 감사 액션 추가 | ✅ 2026-08-19 |
-| `V20260820_03__scholarship_dedup_scanned_at.sql` | `scholarship.dedup_scanned_at` 추가 (중복 탐지를 "최신 30건 다시 보기"에서 "안 본 것부터 한 바퀴"로) | ⬜ 미적용 |
-| `V20260820_02__scholarship_school_id.sql` | `scholarship.school_id` 추가 + provider 기준 백필 (교내 공고를 다른 학교 학생에게 보여주지 않기 위함) | ⬜ 미적용 |
-| `V20260820_01__interview_prep_answer_guide.sql` | 면접 준비 자료 — `interview_prep_question` 에 `answer_tip`·`sample_answer` 추가, `interview_prep_guide_step`·`interview_prep_sample_answer` 테이블 신규 | ⬜ 미적용 |
+| `V20260820_03__scholarship_dedup_scanned_at.sql` | `scholarship.dedup_scanned_at` 추가 (중복 탐지를 "최신 30건 다시 보기"에서 "안 본 것부터 한 바퀴"로) | ✅ 적용돼 있음(2026-10-04 운영 스키마로 확인, 적용일 미기록) |
+| `V20260820_02__scholarship_school_id.sql` | `scholarship.school_id` 추가 + provider 기준 백필 (교내 공고를 다른 학교 학생에게 보여주지 않기 위함) | ✅ 적용돼 있음(2026-10-04 운영 스키마로 확인, 적용일 미기록) |
+| `V20260820_01__interview_prep_answer_guide.sql` | 면접 준비 자료 — `interview_prep_question` 에 `answer_tip`·`sample_answer` 추가, `interview_prep_guide_step`·`interview_prep_sample_answer` 테이블 신규 | ✅ 적용돼 있음(2026-10-04 운영 스키마로 확인, 적용일 미기록) |
+| `V20261003_01__admin_job_failure.sql` | 배치 `PARTIAL_FAILURE` 상태(CHECK 교체) + `admin_job_failure` 테이블(단계별 실패 상세, 유형 CHECK) | ✅ 2026-10-04 |
+| `V20261003_02__admin_audit_actions.sql` | 감사 로그 action CHECK 에 새 작업 추가(복구 기록 등) | ✅ 2026-10-04 |
+| `V20261003_03__scholarship_deleted_by.sql` | `scholarship.deleted_by`·`delete_reason` 추가 + 기존 관리자 내리기·병합 백필 (수집 배치 부활 차단) | ✅ 2026-10-04 |
 
 > ⚠️ **`V20260820_03` 도 배포보다 먼저** 적용해야 한다. `Scholarship.dedupScannedAt` 이 새로 생겨
 > 컬럼이 없으면 `validate` 가 실패한다. 기존 행은 전부 NULL(= 아직 검사 안 함)로 두는 것이 의도다 —

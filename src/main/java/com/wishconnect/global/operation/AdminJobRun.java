@@ -60,9 +60,17 @@ public class AdminJobRun extends BaseCreatedEntity {
 		this.startedAt = LocalDateTime.now();
 	}
 
+	/** 단계 하나가 통째로 실패했다. 실행은 계속되며 끝나면 부분 실패로 남는다. */
 	public void warn(String warning) {
-		this.status = AdminJobStatus.WARNING;
+		this.status = AdminJobStatus.PARTIAL_FAILURE;
 		this.errorMessage = append(this.errorMessage, warning);
+	}
+
+	/** 단계 안의 일부 항목(출처·원문·장학금)이 실패했다. 상세는 admin_job_failure 에 있다. */
+	public void markPartialFailure() {
+		if (this.status == AdminJobStatus.RUNNING) {
+			this.status = AdminJobStatus.PARTIAL_FAILURE;
+		}
 	}
 
 	public void succeed(String summary) {
@@ -80,6 +88,8 @@ public class AdminJobRun extends BaseCreatedEntity {
 	}
 
 	private String append(String current, String value) {
-		return current == null ? value : current + "\n" + value;
+		String joined = current == null ? value : current + "\n" + value;
+		// 컬럼이 2000자다. 단계 실패가 여러 번 붙으면 넘칠 수 있어 앞부분을 남기고 자른다.
+		return joined.length() <= 2000 ? joined : joined.substring(0, 1997) + "...";
 	}
 }

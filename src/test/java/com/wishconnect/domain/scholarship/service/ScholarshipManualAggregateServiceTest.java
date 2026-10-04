@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verify;
 import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse;
+import com.wishconnect.global.exception.CustomException;
+import com.wishconnect.global.exception.ErrorCode;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +36,7 @@ class ScholarshipManualAggregateServiceTest {
 		ScholarshipManualFullRequest request = minimal("https://example.com/poster.jpg");
 		given(aggregateStore.create(request)).willReturn(
 				new ScholarshipManualAggregateStore.SavedAggregate(1L, 2L, 1, 1, 1, "장학금"));
-		given(imageStorageService.storeFromUrl(
+		given(imageStorageService.replaceFromUrl(
 				"https://example.com/poster.jpg", "scholarships/manual", "SCHOLARSHIP", 1L, "장학금"))
 				.willReturn("https://signed.example.com/poster.jpg");
 
@@ -59,6 +61,23 @@ class ScholarshipManualAggregateServiceTest {
 		assertThat(response.imageSaved()).isTrue();
 		verify(imageStorageService).replaceFromUrl(
 				"https://example.com/new.jpg", "scholarships/admin", "SCHOLARSHIP", 9L, "장학금");
+	}
+
+	@Test
+	@DisplayName("이미지 저장이 실패해도 장학금은 저장되고, 실패 이유를 응답에 싣는다")
+	void reportsImageFailureReason() {
+		ScholarshipManualFullRequest request = minimal("https://example.com/huge.png");
+		given(aggregateStore.create(request)).willReturn(
+				new ScholarshipManualAggregateStore.SavedAggregate(3L, 4L, 0, 0, 0, "장학금"));
+		given(imageStorageService.replaceFromUrl(
+				"https://example.com/huge.png", "scholarships/manual", "SCHOLARSHIP", 3L, "장학금"))
+				.willThrow(new CustomException(ErrorCode.ADMIN_IMAGE_TOO_LARGE));
+
+		ScholarshipManualFullResponse response = service.create(request);
+
+		assertThat(response.scholarshipId()).isEqualTo(3L);
+		assertThat(response.imageSaved()).isFalse();
+		assertThat(response.imageError()).isEqualTo(ErrorCode.ADMIN_IMAGE_TOO_LARGE.getMessage());
 	}
 
 	private ScholarshipManualFullRequest minimal(String imageUrl) {

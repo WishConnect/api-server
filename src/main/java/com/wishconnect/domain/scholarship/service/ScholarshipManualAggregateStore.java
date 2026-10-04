@@ -2,7 +2,11 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipManualFullRequest;
+import com.wishconnect.domain.scholarship.entity.ConditionNecessity;
+import com.wishconnect.domain.scholarship.entity.ConditionOperator;
+import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.ConditionRef;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RawScholarship;
@@ -96,6 +100,62 @@ public class ScholarshipManualAggregateStore {
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
 		return saved(request, scholarship, null, refCount, documentCount);
+	}
+
+	/**
+	 * 감사 로그 복구: 조건 목록을 기록 시점 값으로 바꾼다. 참조는 화면 라벨이 아니라 기록된 ID·코드 그대로 되살리고,
+	 * 자동 추출 여부도 기록 값을 쓴다(라벨 재해석으로 값이 달라지는 것을 막는다).
+	 */
+	@Transactional
+	public int replaceConditionsFromSnapshot(Long scholarshipId,
+			List<AdminScholarshipDetailResponse.ConditionData> conditions) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		scholarshipConditionRepository.deleteByScholarship(scholarship);
+		scholarshipConditionRepository.flush();
+		for (AdminScholarshipDetailResponse.ConditionData data : safe(conditions)) {
+			ScholarshipCondition condition = ScholarshipCondition.builder()
+					.scholarship(scholarship)
+					.conditionType(ConditionType.valueOf(data.conditionType()))
+					.operator(data.operator() == null ? null : ConditionOperator.valueOf(data.operator()))
+					.necessity(data.necessity() == null ? null : ConditionNecessity.valueOf(data.necessity()))
+					.valueInt(data.valueInt())
+					.valueIntMax(data.valueIntMax())
+					.valueString(data.valueString())
+					.autoExtracted(data.autoExtracted())
+					.build();
+			Set<ConditionRef> refs = new java.util.LinkedHashSet<>();
+			for (AdminScholarshipDetailResponse.RefData ref : safe(data.refs())) {
+				if (ref.refId() != null) {
+					refs.add(ConditionRef.ofId(ref.refId()));
+				} else if (ref.refCode() != null) {
+					refs.add(ConditionRef.ofCode(ref.refCode()));
+				}
+			}
+			condition.applyRefs(refs);
+			scholarshipConditionRepository.save(condition);
+		}
+		return safe(conditions).size();
+	}
+
+	/** 감사 로그 복구: 제출 서류 목록을 기록 시점 값으로 바꾼다. */
+	@Transactional
+	public int replaceDocumentsFromSnapshot(Long scholarshipId,
+			List<AdminScholarshipDetailResponse.DocumentData> documents) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		scholarshipDocumentRepository.deleteByScholarship(scholarship);
+		scholarshipDocumentRepository.flush();
+		for (AdminScholarshipDetailResponse.DocumentData data : safe(documents)) {
+			scholarshipDocumentRepository.save(ScholarshipDocument.builder()
+					.scholarship(scholarship)
+					.name(data.name())
+					.essay(data.essay())
+					.displayOrder(data.displayOrder())
+					.downloadUrl(data.downloadUrl())
+					.build());
+		}
+		return safe(documents).size();
 	}
 
 	private Scholarship createScholarship(ScholarshipManualFullRequest request, String dedupKey) {

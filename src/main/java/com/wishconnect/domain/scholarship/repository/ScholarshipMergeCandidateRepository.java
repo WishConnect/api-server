@@ -37,4 +37,20 @@ public interface ScholarshipMergeCandidateRepository
 			@org.springframework.data.repository.query.Param("status") MergeCandidateStatus status);
 
 	long countByStatus(MergeCandidateStatus status);
+
+	/**
+	 * 승인·반려·반려 취소용 조회. 행을 잠가(SELECT ... FOR UPDATE) 같은 후보를 두 관리자가 동시에 처리하지 못하게 한다.
+	 * 두 번째 요청은 첫 요청이 끝날 때까지 기다린 뒤 바뀐 상태를 보고 거절된다.
+	 */
+	@org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@org.springframework.data.jpa.repository.Query("select c from ScholarshipMergeCandidate c where c.id = :id")
+	java.util.Optional<ScholarshipMergeCandidate> findForUpdate(
+			@org.springframework.data.repository.query.Param("id") Long id);
+
+	/** 이 장학금이 어느 쪽으로든 들어간 후보(최근 순). 내리기 전 "병합으로 유도" 판단에 쓴다. */
+	List<ScholarshipMergeCandidate> findTop10ByPrimary_IdOrDuplicate_IdOrderByIdDesc(Long primaryId, Long duplicateId);
+
+	/** 병합으로 내려진 쪽인지. */
+	java.util.Optional<ScholarshipMergeCandidate> findFirstByDuplicate_IdAndStatusOrderByIdDesc(
+			Long duplicateId, MergeCandidateStatus status);
 }

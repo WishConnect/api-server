@@ -29,10 +29,13 @@ spring:
       accept-case-insensitive-enums: true
   servlet:
     multipart:
-      # 관리자 엑셀 업로드용. POI 가 파일을 메모리에 올리는데 t3.small(-Xmx1g)에 OOM 이력이 있어
-      # 톰캣 단계에서 먼저 막는다. 서비스에서도 1MB 로 한 번 더 검사한다.
-      max-file-size: 2MB
-      max-request-size: 2MB
+      # 업로드 전체 상한. 가장 큰 것이 관리자 포스터 이미지(5MB)라 거기에 맞춘다.
+      # 기능별 한도는 서비스에서 따로 검사한다: 이미지 5MB(ImageStorageService),
+      # 엑셀 1MB(POI 가 메모리에 올려 t3.small OOM 이력), 문의 첨부 2MB.
+      # 요청 한도는 multipart 경계·필드 여유로 1MB 더 준다.
+      # ⚠️ Nginx client_max_body_size 가 이보다 작으면 Nginx 가 먼저 413(HTML)을 낸다(기본 1m).
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 # nginx 리버스 프록시가 붙인 X-Forwarded-* 를 반영해 요청의 scheme/host/port 를 복원한다.
 # 없으면 Spring 이 자기 주소를 http://localhost:8080 으로 인식해, Swagger UI(https://api.wish-connect.com)에서

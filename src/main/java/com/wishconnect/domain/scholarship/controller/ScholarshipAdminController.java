@@ -18,6 +18,7 @@ import com.wishconnect.domain.scholarship.dto.MergeCandidateResponse;
 import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
+import com.wishconnect.domain.scholarship.dto.MergeCandidateNoteRequest;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
@@ -46,6 +47,10 @@ import com.wishconnect.domain.scholarship.service.ConditionRefBackfillService;
 import com.wishconnect.domain.scholarship.service.RegionConditionBackfillService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.service.ScholarshipAdminOverviewService;
+import com.wishconnect.domain.scholarship.service.ScholarshipChangeSummarizer;
+import com.wishconnect.domain.scholarship.service.ScholarshipTakedownService;
+import com.wishconnect.domain.scholarship.dto.ScholarshipDeleteCheckResponse;
+import com.wishconnect.domain.scholarship.dto.ScholarshipDeleteRequest;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
@@ -120,6 +125,8 @@ public class ScholarshipAdminController {
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
 	private final AdminScholarshipImageService adminScholarshipImageService;
 	private final AdminAuditLogService adminAuditLogService;
+	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
+	private final ScholarshipTakedownService scholarshipTakedownService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -421,19 +428,46 @@ public class ScholarshipAdminController {
 	}
 
 	@Operation(summary = "중복 장학금 후보 반려",
-			description = "중복이 아니라고 판정한다. 같은 쌍이 다음 탐지 배치에서 다시 올라오지 않는다. (ADMIN 전용)")
+			description = """
+					중복이 아니라고 판정한다. 같은 쌍이 다음 탐지 배치에서 다시 올라오지 않는다.
+					사유는 요청 본문 {"note": "..."} 으로 보낸다. 예전 콘솔 호환을 위해 쿼리 파라미터 note 도 받지만
+					(본문이 있으면 본문 우선) 접근 로그에 사유가 남으므로 콘솔 수정 후 제거한다.
+					실수로 반려했으면 POST /merge/candidates/{candidateId}/reopen 으로 되돌린다. (ADMIN 전용)
+					""")
 	@PostMapping("/merge/candidates/{candidateId}/reject")
 	public ApiResponse<MergeResultResponse> rejectMerge(
 			@AuthenticationPrincipal String actorId,
 			@PathVariable Long candidateId,
-			@RequestParam(required = false) String note) {
+			@RequestParam(name = "note", required = false) String legacyNote,
+			@Valid @RequestBody(required = false) MergeCandidateNoteRequest request) {
 		UUID reviewer = UUID.fromString(actorId);
+		String note = request != null && request.note() != null ? request.note() : legacyNote;
 		MergeResultResponse result = scholarshipDedupService.reject(candidateId, reviewer, note);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE_REJECT,
 				"SCHOLARSHIP", result.primaryId(),
 				"중복 후보 %d 반려 (%d vs %d). %s".formatted(
 						candidateId, result.primaryId(), result.duplicateId(),
 						note == null ? "" : note));
+		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 후보 반려 취소",
+			description = """
+					반려(REJECTED)한 후보를 다시 승인 대기(PENDING)로 올린다. 두 장학금이 살아 있고 다른 대기 후보에
+					들어가 있지 않아야 한다(아니면 409). 본문 {"note": "..."} 은 선택이며 감사 기록과 후보 메모에 남는다.
+					(ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/{candidateId}/reopen")
+	public ApiResponse<MergeResultResponse> reopenMerge(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long candidateId,
+			@Valid @RequestBody(required = false) MergeCandidateNoteRequest request) {
+		String note = request == null ? null : request.note();
+		MergeResultResponse result = scholarshipDedupService.reopen(candidateId, note);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.MERGE_CANDIDATE_REOPEN,
+				"SCHOLARSHIP", result.primaryId(),
+				"중복 후보 %d 반려 취소 (%d vs %d). %s".formatted(
+						candidateId, result.primaryId(), result.duplicateId(), note == null ? "" : note));
 		return ApiResponse.ok(result);
 	}
 
@@ -609,7 +643,15 @@ public class ScholarshipAdminController {
 	}
 
 	@Operation(summary = "장학금 통합 수기 수정",
-			description = "장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는 전달된 최종 목록으로 교체합니다.")
+			description = """
+					장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는
+					전달된 최종 목록으로 교체합니다.
+
+					모집 상태는 보낸 값 그대로 저장하며 날짜로 다시 계산하지 않습니다. recruitmentStatus 를 비우면 기존
+					상태를 유지합니다. 응답 statusCheck 에 마감일과의 모순(마감 지났는데 OPEN 등)이 담기니 화면에서
+					경고하세요. 저장 전 확인은 GET /admin/scholarships/{id} 의 statusCheck 와 serverNow 를 씁니다.
+					감사 기록 detail 에 바뀐 필드 요약이, before/after 에 필드 단위 전·후 값이 남습니다.
+					""")
 	@PutMapping("/manual/{scholarshipId}/full")
 	public ApiResponse<ScholarshipManualFullResponse> updateManualFull(
 			@AuthenticationPrincipal String actorId,
@@ -618,11 +660,12 @@ public class ScholarshipAdminController {
 		AdminScholarshipEditSnapshot before = AdminScholarshipEditSnapshot.from(
 				scholarshipAdminOverviewService.detail(scholarshipId));
 		ScholarshipManualFullResponse result = scholarshipManualAggregateService.update(scholarshipId, request);
-		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(
-				scholarshipAdminOverviewService.detail(scholarshipId));
+		AdminScholarshipDetailResponse afterDetail = scholarshipAdminOverviewService.detail(scholarshipId);
+		AdminScholarshipEditSnapshot after = AdminScholarshipEditSnapshot.from(afterDetail);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_AGGREGATE_UPDATE,
-				"SCHOLARSHIP", scholarshipId, "조건·서류·심사 분기 통합 수정", before, after);
-		return ApiResponse.ok(result);
+				"SCHOLARSHIP", scholarshipId,
+				"통합 수정 · " + scholarshipChangeSummarizer.summarize(before, after), before, after);
+		return ApiResponse.ok(result.withStatusCheck(afterDetail.statusCheck()));
 	}
 
 	@Operation(summary = "통합 수기 등록 엑셀 양식",
@@ -666,20 +709,59 @@ public class ScholarshipAdminController {
 			@Valid @RequestBody ScholarshipManualRequest request) {
 		ScholarshipAdminChangeResult result = scholarshipManualService.updateWithSnapshot(scholarshipId, request);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_UPDATE,
-				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+				"SCHOLARSHIP", scholarshipId,
+				result.response().title() + " · " + scholarshipChangeSummarizer.summarize(result.before(), result.after()),
+				result.before(), result.after());
 		return ApiResponse.ok(result.response());
 	}
 
+	@Operation(summary = "장학금 내리기 전 확인",
+			description = """
+					연결된 스크랩 수, 상태별 자소서 수, 이 장학금이 들어간 중복 후보, 제목이 같은 장학금으로 보이는
+					다른 공고를 보여 줍니다. mergeSuggested=true 면 내리기보다 병합을 먼저 검토하세요 — 병합은
+					스크랩·자소서를 남길 쪽으로 옮기지만 내리기는 옮기지 않습니다. (ADMIN 전용)
+					""")
+	@GetMapping("/admin/scholarships/{scholarshipId}/delete-check")
+	public ApiResponse<ScholarshipDeleteCheckResponse> deleteCheck(@PathVariable Long scholarshipId) {
+		return ApiResponse.ok(scholarshipTakedownService.check(scholarshipId));
+	}
+
 	@Operation(summary = "장학금 내리기",
-			description = "오등록으로 확인된 장학금을 목록에서 내린다(soft delete). (ADMIN 전용)")
+			description = """
+					장학금을 목록에서 내린다(soft delete). 요청 본문 {"reason": "..."} 의 사유가 필수이며, 사유와
+					관리자가 감사 기록과 장학금 행에 남는다. 관리자가 내린 장학금은 다음 날 수집 배치(공공데이터
+					동기화·대학 공지 재파싱)가 되살리지 않는다. (ADMIN 전용)
+					""")
 	@DeleteMapping("/manual/{scholarshipId}")
 	public ApiResponse<Void> deleteManual(
 			@AuthenticationPrincipal String actorId,
-			@PathVariable Long scholarshipId) {
-		ScholarshipAdminChangeResult result = scholarshipManualService.deleteWithSnapshot(scholarshipId);
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody(required = false) ScholarshipDeleteRequest request) {
+		String reason = request == null ? null : request.reason();
+		ScholarshipAdminChangeResult result = scholarshipTakedownService.delete(
+				scholarshipId, UUID.fromString(actorId), reason);
 		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_DELETE,
-				"SCHOLARSHIP", scholarshipId, result.response().title(), result.before(), result.after());
+				"SCHOLARSHIP", scholarshipId, result.response().title() + " · 사유: " + reason.trim(),
+				result.before(), result.after());
 		return ApiResponse.ok();
+	}
+
+	@Operation(summary = "내린 장학금 복원",
+			description = """
+					내린 장학금을 다시 목록에 올린다. 노출 여부는 현재 모집 상태를 따른다(마감 공고는 복원해도 마감).
+					병합으로 내린 쪽은 복원할 수 없다(409). 본문 {"reason": "..."} 은 선택. (ADMIN 전용)
+					""")
+	@PostMapping("/manual/{scholarshipId}/restore")
+	public ApiResponse<ScholarshipManualResponse> restoreManual(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId,
+			@Valid @RequestBody(required = false) ScholarshipDeleteRequest request) {
+		ScholarshipAdminChangeResult result = scholarshipTakedownService.restore(scholarshipId, UUID.fromString(actorId));
+		String reason = request == null || request.reason() == null || request.reason().isBlank()
+				? "" : " · 사유: " + request.reason().trim();
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_RESTORE,
+				"SCHOLARSHIP", scholarshipId, result.response().title() + reason, result.before(), result.after());
+		return ApiResponse.ok(result.response());
 	}
 
 	@Operation(summary = "오등록 신고 목록",

@@ -4,58 +4,157 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="robots" content="noindex, nofollow">
-	<title>WishConnect 관리자 로그인</title>
+	<title>로그인 · WishConnect 관리자</title>
 	<style>
-		:root{--navy:#17213c;--brand:#536dfe;--bg:#f5f6f8;--line:#e4e7ee;--text:#1d2433;--muted:#7b8498;--red:#e34d59}
-		*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 15% 15%,#eef0ff 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",sans-serif}
-		.login{width:min(420px,calc(100% - 32px));padding:34px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 45px rgba(23,33,60,.09)}
-		.logo{display:flex;align-items:center;gap:11px;margin-bottom:30px;font-size:18px;font-weight:800}.mark{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#7285ff,#9169ec);color:#fff}
-		h1{font-size:24px;margin:0 0 6px}.sub{color:var(--muted);margin-bottom:24px}.field{margin-bottom:15px}.field label{display:block;margin-bottom:6px;font-size:12px;font-weight:700}.field input{width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;font:inherit;outline:none}.field input:focus{border-color:var(--brand);box-shadow:0 0 0 3px #eef0ff}
-		button{width:100%;border:0;border-radius:9px;padding:12px;background:var(--brand);color:#fff;font:inherit;font-weight:750;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.error{display:none;margin-bottom:14px;padding:10px 12px;border-radius:8px;background:#fff0f1;color:var(--red)}.error.show{display:block}.notice{margin-top:18px;color:var(--muted);font-size:11px;text-align:center}
+		/* 인증 전에 열리는 화면이라 admin-console.css 를 받을 수 없다. 같은 토큰 값을 여기 따로 둔다. */
+		:root {
+			--c-bg: #f3f4f7; --c-surface: #fff; --c-border: #e2e5ec; --c-border-strong: #cbd0db;
+			--c-text: #1b2232; --c-text-2: #485166; --c-muted: #737c91;
+			--c-brand: #4c5fe0; --c-brand-hover: #3d4fcc; --c-focus: rgba(76, 95, 224, .35);
+			--c-danger: #c42f3c; --c-danger-soft: #fdebed; --c-warning-soft: #fff3d6;
+			--sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-8: 32px;
+			--fs-sm: 12px; --fs-md: 13px; --fs-base: 14px; --fs-2xl: 22px;
+			--radius: 7px; --radius-lg: 12px;
+			--font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif;
+		}
+		* { box-sizing: border-box; }
+		body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: var(--sp-4); background: var(--c-bg); color: var(--c-text); font: var(--fs-base)/1.5 var(--font); }
+		.login { width: min(400px, 100%); padding: var(--sp-8); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-lg); box-shadow: 0 18px 45px rgba(20, 28, 50, .08); }
+		.brand { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-6); font-weight: 800; }
+		.mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius); background: linear-gradient(135deg, #6f82ff, #9a6cf6); color: #fff; }
+		h1 { font-size: var(--fs-2xl); margin: 0 0 4px; }
+		.sub { color: var(--c-muted); font-size: var(--fs-md); margin-bottom: var(--sp-6); }
+		.field { margin-bottom: var(--sp-4); }
+		.field label { display: block; margin-bottom: 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--c-text-2); }
+		.field input { width: 100%; height: 40px; padding: 0 var(--sp-3); border: 1px solid var(--c-border-strong); border-radius: var(--radius); font: inherit; }
+		.field input:focus { outline: none; border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-focus); }
+		button { width: 100%; height: 42px; border: 0; border-radius: var(--radius); background: var(--c-brand); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+		button:hover:not(:disabled) { background: var(--c-brand-hover); }
+		button:disabled { opacity: .55; cursor: not-allowed; }
+		.alert { margin-bottom: var(--sp-4); padding: var(--sp-3); border-radius: var(--radius); background: var(--c-danger-soft); color: #8c1f2a; font-size: var(--fs-md); }
+		.alert.lock { background: var(--c-warning-soft); color: #6f4700; }
+		.alert b { display: block; margin-bottom: 2px; }
+		.notice { margin-top: var(--sp-4); color: var(--c-muted); font-size: var(--fs-sm); line-height: 1.6; }
+		.spinner { display: inline-block; width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+		@keyframes spin { to { transform: rotate(360deg); } }
 	</style>
 </head>
 <body>
 <main class="login">
-	<div class="logo"><span class="mark">W</span>WishConnect Admin</div>
+	<div class="brand"><span class="mark">W</span>WishConnect 관리자</div>
 	<h1>관리자 로그인</h1>
-	<div class="sub">ADMIN 권한이 있는 LOCAL 계정만 접근할 수 있습니다.</div>
-	<div id="error" class="error"></div>
-	<form id="loginForm">
+	<p class="sub">관리자(ADMIN) 권한이 있는 아이디로만 들어갈 수 있습니다.</p>
+	<div id="alert" class="alert" role="alert" hidden></div>
+	<form id="loginForm" novalidate>
 		<div class="field"><label for="loginId">아이디</label><input id="loginId" name="loginId" autocomplete="username" required autofocus></div>
 		<div class="field"><label for="password">비밀번호</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
 		<button id="submit" type="submit">로그인</button>
 	</form>
-	<div class="notice">로그인 정보와 Access Token은 로그에 기록하지 않습니다.</div>
+	<p class="notice">같은 아이디로 5번 틀리면 15분간 로그인이 잠깁니다.<br>로그인하면 작업이 없을 때 30분 뒤 로그아웃되고, 최대 8시간까지 쓸 수 있습니다.</p>
 </main>
 <script>
-	const form = document.getElementById('loginForm');
-	const error = document.getElementById('error');
-	const submit = document.getElementById('submit');
-	form.addEventListener('submit', async (event) => {
-		event.preventDefault();
-		error.className = 'error';
-		submit.disabled = true;
-		try {
-			const response = await fetch('/api/v1/admin/auth/login', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({loginId: form.loginId.value.trim(), password: form.password.value})
-			});
-			const body = await response.json().catch(() => null);
-			if (!response.ok || !body || body.success === false) {
-				throw new Error((body && body.message) || '로그인하지 못했습니다.');
+	(() => {
+		'use strict';
+		const form = document.getElementById('loginForm');
+		const alertBox = document.getElementById('alert');
+		const submit = document.getElementById('submit');
+		let lock = null; // {until, scope, loginId}
+		let timer = null;
+
+		const duration = seconds => {
+			const s = Math.max(0, Math.ceil(seconds));
+			return Math.floor(s / 60) + '분 ' + String(s % 60).padStart(2, '0') + '초';
+		};
+		const show = (title, detail, kind) => {
+			alertBox.className = 'alert' + (kind === 'lock' ? ' lock' : '');
+			alertBox.innerHTML = '';
+			const b = document.createElement('b');
+			b.textContent = title;
+			alertBox.appendChild(b);
+			if (detail) alertBox.appendChild(document.createTextNode(detail));
+			alertBox.hidden = false;
+		};
+
+		function renderLock() {
+			if (!lock) return;
+			const left = (lock.until - Date.now()) / 1000;
+			const sameTarget = lock.scope === 'IP' || form.loginId.value.trim() === lock.loginId;
+			if (left <= 0) {
+				lock = null;
+				clearInterval(timer);
+				show('잠김이 풀렸습니다.', ' 다시 로그인할 수 있습니다.');
+				submit.disabled = false;
+				return;
 			}
-			sessionStorage.setItem('wc_admin_token', body.data.accessToken);
-			sessionStorage.setItem('wc_admin_name', body.data.name);
-			location.replace('/admin/console');
-		} catch (e) {
-			error.textContent = e.message;
-			error.className = 'error show';
-		} finally {
-			form.password.value = '';
-			submit.disabled = false;
+			submit.disabled = sameTarget;
+			show('로그인이 잠겼습니다.', (lock.scope === 'IP' ? ' 이 네트워크(IP)에서 실패가 너무 많았습니다. ' : ' 이 아이디로 5번 틀렸습니다. ') +
+				duration(left) + ' 뒤에 다시 시도하세요.', 'lock');
 		}
-	});
+
+		function handleFailure(status, message, data) {
+			const d = data || {};
+			if (d.locked || status === 429) {
+				lock = {until: Date.now() + (d.lockRemainingSeconds || (d.lockMinutes || 15) * 60) * 1000, scope: d.lockScope || 'ACCOUNT',
+					loginId: form.loginId.value.trim()};
+				clearInterval(timer);
+				timer = setInterval(renderLock, 1000);
+				renderLock();
+				return;
+			}
+			if (d.failedCount != null) {
+				const max = d.maxFailures || 5, minutes = d.lockMinutes || 15;
+				show('아이디 또는 비밀번호가 맞지 않습니다.', ' ' + d.failedCount + '회 실패했습니다. ' + max + '회 실패하면 ' + minutes +
+					'분간 로그인이 잠깁니다' + (d.remainingAttempts != null ? ' (남은 시도 ' + d.remainingAttempts + '회).' : '.'));
+				return;
+			}
+			show('로그인하지 못했습니다.', ' ' + (message || ('서버 응답 HTTP ' + status + '. 잠시 후 다시 시도하세요.')));
+		}
+
+		form.loginId.addEventListener('input', () => { if (lock) renderLock(); });
+		form.addEventListener('submit', async event => {
+			event.preventDefault();
+			const loginId = form.loginId.value.trim();
+			if (!loginId || !form.password.value) {
+				show('아이디와 비밀번호를 모두 입력하세요.');
+				(loginId ? form.password : form.loginId).focus();
+				return;
+			}
+			if (submit.disabled) return;
+			submit.disabled = true;
+			submit.innerHTML = '<span class="spinner" aria-hidden="true"></span>로그인 중…';
+			try {
+				let response;
+				try {
+					response = await fetch('/api/v1/admin/auth/login', {
+						method: 'POST', headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({loginId, password: form.password.value})
+					});
+				} catch (error) {
+					show('서버에 연결하지 못했습니다.', ' 인터넷 연결을 확인하고 다시 시도하세요.');
+					return;
+				}
+				const body = await response.json().catch(() => null);
+				if (!response.ok || !body || body.success === false) {
+					handleFailure(response.status, body && body.message, body && body.data);
+					return;
+				}
+				const data = body.data;
+				sessionStorage.setItem('wc_admin_token', data.accessToken);
+				sessionStorage.setItem('wc_admin_name', data.name || '');
+				sessionStorage.setItem('wc_admin_login_id', loginId);
+				if (data.sessionMaxExpiresAt) {
+					const max = typeof data.sessionMaxExpiresAt === 'number' ? data.sessionMaxExpiresAt * (data.sessionMaxExpiresAt < 1e12 ? 1000 : 1)
+						: Date.parse(data.sessionMaxExpiresAt);
+					if (!Number.isNaN(max)) sessionStorage.setItem('wc_admin_session_max', String(max));
+				}
+				location.replace('/admin/console');
+			} finally {
+				form.password.value = '';
+				submit.innerHTML = '로그인';
+				if (!lock) submit.disabled = false; else renderLock();
+			}
+		});
+	})();
 </script>
 </body>
 </html>

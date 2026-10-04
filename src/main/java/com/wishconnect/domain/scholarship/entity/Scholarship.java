@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -190,6 +191,20 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	/**
+	 * 관리자가 내렸거나(사유 필수) 병합으로 내린 경우의 관리자 ID. 수집 배치가 스스로 내린 경우는 null 이다.
+	 *
+	 * <p><b>수집 배치가 되살리면 안 되는 삭제인지</b>를 이 값으로 가른다. 동기화는 같은 공고가 다시 들어오면
+	 * {@code deletedAt} 을 풀어 주는데(원본에서 잠시 빠졌다 돌아온 공고를 살리기 위해), 그 경로가 관리자가 내린
+	 * 공고까지 다음 날 되살리고 있었다.
+	 */
+	@Column(name = "deleted_by")
+	private UUID deletedBy;
+
+	/** 내린 사유. 관리자 내리기는 필수, 병합은 "병합: #N 로 합쳐짐". */
+	@Column(name = "delete_reason", length = 500)
+	private String deleteReason;
+
 	@Column(name = "homepage_url", length = 1000)
 	private String homepageUrl;
 
@@ -305,6 +320,10 @@ public class Scholarship extends BaseEntity {
 		String dedupKey,
 		String homepageUrl
 	) {
+		// 관리자가 내린 공고는 같은 공고가 다시 수집돼도 되살리지 않고 내용도 덮지 않는다.
+		if (isDeletedByAdmin()) {
+			return;
+		}
 		this.title = title;
 		this.provider = provider;
 		this.summary = summary;
@@ -345,6 +364,9 @@ public class Scholarship extends BaseEntity {
 	}
 
 	public void updateActive(boolean active) {
+		if (isDeletedByAdmin()) {
+			return;
+		}
 		this.active = active;
 	}
 
@@ -436,8 +458,8 @@ public class Scholarship extends BaseEntity {
 		if (homepageUrl != null) {
 			this.homepageUrl = homepageUrl;
 		}
-		this.recruitmentStatus = resolveStatus(this.applicationStartAt, this.applicationEndAt);
-		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+		// 모집 상태는 날짜로 다시 계산하지 않는다. 제목만 고쳐도 상태가 바뀌던 문제가 있었다
+		// (관리자가 조기 마감한 CLOSED 가 미래 마감일 때문에 OPEN 으로 되돌아감). 상태는 관리자가 직접 고른다.
 		// 사람이 확인해 고친 값이므로 검증된 것으로 표시한다.
 		this.verified = true;
 	}
@@ -505,8 +527,10 @@ public class Scholarship extends BaseEntity {
 		this.essayEvidence = essayEvidence;
 		this.interviewRequirement = interviewRequirement;
 		this.interviewEvidence = interviewEvidence;
-		this.recruitmentStatus = recruitmentStatus == null
-				? resolveStatus(applicationStartAt, applicationEndAt) : recruitmentStatus;
+		// 모집 상태는 화면에서 고른 값만 쓴다. 비어 있으면 날짜로 계산하지 않고 기존 상태를 둔다.
+		if (recruitmentStatus != null) {
+			this.recruitmentStatus = recruitmentStatus;
+		}
 		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
 		this.verified = true;
 	}
@@ -543,6 +567,10 @@ public class Scholarship extends BaseEntity {
 		String submissionEvidence,
 		String contact
 	) {
+		// 관리자가 내린 공고는 재파싱이 되살리지 않는다(아래에서 deletedAt 을 풀기 때문).
+		if (isDeletedByAdmin()) {
+			return;
+		}
 		this.contact = contact;
 		this.noticeKind = noticeKind;
 		this.combined = combined;
@@ -579,6 +607,33 @@ public class Scholarship extends BaseEntity {
 		this.active = false;
 	}
 
+	/** 관리자 내리기. 수집 배치가 되살리지 않도록 누가·왜 내렸는지 남긴다. */
+	public void deleteByAdmin(UUID actorId, String reason) {
+		softDelete();
+		this.deletedBy = actorId;
+		this.deleteReason = reason;
+	}
+
+	/** 병합으로 내린 중복 쪽. 같은 공고가 다시 수집돼도 되살아나 중복이 다시 보이지 않게 한다. */
+	public void markMergedInto(Long primaryId, UUID reviewer) {
+		softDelete();
+		this.deletedBy = reviewer;
+		this.deleteReason = "병합: #" + primaryId + " 로 합쳐짐";
+	}
+
+	/** 관리자 복원. 노출 여부는 현재 모집 상태를 따른다(복원했다고 마감 공고가 다시 열리지 않는다). */
+	public void restoreByAdmin() {
+		this.deletedAt = null;
+		this.deletedBy = null;
+		this.deleteReason = null;
+		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
+	}
+
+	/** 관리자가 내렸거나 병합으로 내린 장학금. 수집·재파싱이 내용·노출을 바꾸지 않는다. */
+	public boolean isDeletedByAdmin() {
+		return deletedAt != null && deletedBy != null;
+	}
+
 	public void updateRecruitmentStatusByAdmin(RecruitmentStatus recruitmentStatus) {
 		this.recruitmentStatus = recruitmentStatus;
 		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
@@ -589,6 +644,47 @@ public class Scholarship extends BaseEntity {
 			throw new IllegalStateException("상시모집 중인 장학금만 확인 처리할 수 있습니다.");
 		}
 		this.alwaysOpenReviewedAt = LocalDateTime.now();
+	}
+
+	/**
+	 * 감사 로그 복구(통합 수정 기록). 화면 값을 그대로 쓰되 {@link #replaceByAdmin} 과 두 가지가 다르다.
+	 * 모집 상태를 날짜로 다시 계산하지 않고(사람이 고른 값만 되돌린다), 검수 표시를 바꾸지 않는다.
+	 */
+	public void restoreAggregateFields(
+		String title, String provider, String summary, String description,
+		ScholarshipType scholarshipType, LocalDateTime applicationStartAt,
+		LocalDateTime applicationEndAt, RecruitmentStatus recruitmentStatus,
+		Integer selectionCount, Long amount, String homepageUrl, String detailUrl,
+		NoticeKind noticeKind, boolean combined, String submissionMethod,
+		SubmissionChannel submissionChannel, String submissionEvidence, String contact,
+		RequirementLevel essayRequirement, String essayEvidence,
+		RequirementLevel interviewRequirement, String interviewEvidence
+	) {
+		this.title = title;
+		this.provider = provider;
+		this.summary = summary;
+		this.description = description;
+		this.scholarshipType = scholarshipType;
+		this.applicationStartAt = applicationStartAt;
+		this.applicationEndAt = applicationEndAt;
+		this.selectionCount = selectionCount;
+		this.amount = amount;
+		this.homepageUrl = homepageUrl;
+		this.detailUrl = detailUrl;
+		this.noticeKind = noticeKind;
+		this.combined = combined;
+		this.submissionMethod = submissionMethod;
+		this.submissionChannel = submissionChannel;
+		this.submissionEvidence = submissionEvidence;
+		this.contact = contact;
+		this.essayRequirement = essayRequirement;
+		this.essayEvidence = essayEvidence;
+		this.interviewRequirement = interviewRequirement;
+		this.interviewEvidence = interviewEvidence;
+		if (recruitmentStatus != null && recruitmentStatus != this.recruitmentStatus) {
+			this.recruitmentStatus = recruitmentStatus;
+			this.active = this.deletedAt == null && recruitmentStatus != RecruitmentStatus.CLOSED;
+		}
 	}
 
 	/** 감사로그의 수기 변경 스냅샷으로 복구한다. 자동 파싱 전용 필드는 건드리지 않는다. */
@@ -607,6 +703,11 @@ public class Scholarship extends BaseEntity {
 		this.active = snapshot.active();
 		this.verified = snapshot.verified();
 		this.deletedAt = snapshot.deletedAt();
+		if (this.deletedAt == null) {
+			// 내리기를 되돌렸으면 내린 사람·사유도 지운다. 남기면 수집 배치가 계속 "관리자 삭제" 로 본다.
+			this.deletedBy = null;
+			this.deleteReason = null;
+		}
 	}
 
 	public boolean isDeleted() {

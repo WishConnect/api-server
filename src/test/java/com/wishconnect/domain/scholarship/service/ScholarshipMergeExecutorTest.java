@@ -64,6 +64,8 @@ class ScholarshipMergeExecutorTest {
 		});
 		given(query.setParameter(anyString(), org.mockito.ArgumentMatchers.any())).willReturn(query);
 		given(query.executeUpdate()).willReturn(0);
+		// 남길 쪽에 이미지·면접 질문이 없는 상태가 기본값이다.
+		given(query.getSingleResult()).willReturn(0L);
 	}
 
 	private Scholarship scholarship(Long id, String title) {
@@ -102,18 +104,34 @@ class ScholarshipMergeExecutorTest {
 				"essay.moved", "report.moved", "dispatchLog.moved",
 				"recommendation.moved", "timeline.moved", "event.moved",
 				"rawScholarship.moved",
+				"image.moved", "image.keptOnDuplicate",
+				"interviewPrep.moved", "interviewPrep.keptOnDuplicate",
 				"conditionRef.deleted", "condition.deleted", "document.deleted");
 	}
 
 	@Test
-	@DisplayName("사용자 데이터 8종은 재지정(update)하고 파생 데이터 2종은 삭제(delete)한다")
+	@DisplayName("추천 이벤트는 scholarshipId 필드로 한 번만 옮긴다 — e.scholarship.id 경로는 존재하지 않는다")
+	void repointsEventsByScholarshipIdOnlyOnce() {
+		executor.merge(primary, duplicate);
+		List<String> eventQueries = executedQueries().stream()
+				.filter(q -> q.contains("ScholarshipEvent"))
+				.toList();
+
+		// ScholarshipEvent 에는 scholarship 연관이 없고 Long scholarshipId 만 있다.
+		// 2026-08-20 에 두 갈래 수정이 머지되며 잘못된 쿼리가 함께 남아 모든 병합 승인이 500 이었다.
+		assertThat(eventQueries).containsExactly(
+				"update ScholarshipEvent e set e.scholarshipId = :to where e.scholarshipId = :from");
+	}
+
+	@Test
+	@DisplayName("사용자 데이터는 재지정(update)하고 파생 데이터 2종은 삭제(delete)한다")
 	void repointsUserDataAndDeletesDerived() {
 		executor.merge(primary, duplicate);
 		List<String> queries = executedQueries();
 
 		for (String entity : List.of("Scrap", "Essay", "ScholarshipReport",
 				"NotificationDispatchLog", "ScholarshipRecommendation",
-				"ScholarshipTimeline", "ScholarshipEvent", "RawScholarship")) {
+				"ScholarshipTimeline", "RawScholarship", "InterviewPrepQuestion")) {
 			assertThat(queries)
 					.as(entity + " 재지정")
 					.anyMatch(q -> q.startsWith("update " + entity + " e set e.scholarship.id"));
@@ -191,6 +209,18 @@ class ScholarshipMergeExecutorTest {
 	}
 
 	@Test
+	@DisplayName("승인자가 있으면 중복 쪽을 '병합으로 내림' 으로 표시한다 — 다시 수집돼도 되살아나지 않게")
+	void marksDuplicateAsMerged() {
+		java.util.UUID reviewer = java.util.UUID.randomUUID();
+
+		executor.merge(primary, duplicate, reviewer);
+
+		assertThat(duplicate.isDeletedByAdmin()).isTrue();
+		assertThat(duplicate.getDeletedBy()).isEqualTo(reviewer);
+		assertThat(duplicate.getDeleteReason()).contains("#10");
+	}
+
+	@Test
 	@DisplayName("벌크 연산 후 영속성 컨텍스트를 비운다 — 이후 조회가 옛 상태를 보지 않도록")
 	void clearsPersistenceContext() {
 		executor.merge(primary, duplicate);
@@ -219,7 +249,13 @@ class ScholarshipMergeExecutorTest {
 
 		Map<String, Integer> moved = executor.merge(primary, duplicate);
 
-		assertThat(moved.values()).allMatch(count -> count == 3);
+		moved.forEach((key, count) -> {
+			if (key.endsWith("keptOnDuplicate")) {
+				assertThat(count).as(key).isZero();
+			} else {
+				assertThat(count).as(key).isEqualTo(3);
+			}
+		});
 	}
 
 	// --- Reflection helper (엔티티 ID 는 setter 가 없어 리플렉션으로 주입) ---

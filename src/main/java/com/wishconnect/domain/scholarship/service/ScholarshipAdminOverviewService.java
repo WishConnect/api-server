@@ -8,6 +8,7 @@ import com.wishconnect.domain.scholarship.dto.AdminIntakeRowResponse;
 import com.wishconnect.domain.scholarship.dto.AdminOverviewResponse;
 import com.wishconnect.domain.scholarship.dto.AdminRawDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.RecruitmentStatusCheck;
 import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
@@ -66,6 +67,7 @@ public class ScholarshipAdminOverviewService {
 	private final ImageRepository imageRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final ImageStorageService imageStorageService;
+	private final com.wishconnect.domain.user.repository.UserRepository userRepository;
 
 	public AdminOverviewResponse overview() {
 		Map<String, Long> posterCountBySource = posterCountBySource();
@@ -90,7 +92,7 @@ public class ScholarshipAdminOverviewService {
 		return scholarshipRepository
 				.findRecentForAdmin(StringUtils.hasText(source) ? source : null, PageRequest.of(0, limit))
 				.stream()
-				.map(scholarship -> toRow(scholarship, posterIds))
+				.map(scholarship -> toRow(scholarship, posterIds, Map.of()))
 				.toList();
 	}
 
@@ -119,8 +121,17 @@ public class ScholarshipAdminOverviewService {
 	public Page<AdminScholarshipRow> search(
 			String keyword, String source, RecruitmentStatus status, boolean includeDeleted, Pageable pageable) {
 		Set<Long> posterIds = posterScholarshipIds();
-		return scholarshipRepository.findAll(scholarshipSpec(keyword, source, status, includeDeleted), pageable)
-				.map(scholarship -> toRow(scholarship, posterIds));
+		Page<Scholarship> page = scholarshipRepository.findAll(
+				scholarshipSpec(keyword, source, status, includeDeleted), pageable);
+		// "삭제 포함" 목록에서 누가 내렸는지 이름으로 보이게 한다. 한 페이지 분량만 조회한다.
+		Set<java.util.UUID> deleters = page.getContent().stream()
+				.map(Scholarship::getDeletedBy).filter(java.util.Objects::nonNull)
+				.collect(java.util.stream.Collectors.toSet());
+		Map<java.util.UUID, String> names = deleters.isEmpty() ? Map.of()
+				: userRepository.findAllById(deleters).stream().collect(java.util.stream.Collectors.toMap(
+						com.wishconnect.domain.user.entity.User::getId,
+						com.wishconnect.domain.user.entity.User::getName, (a, b) -> a));
+		return page.map(scholarship -> toRow(scholarship, posterIds, names));
 	}
 
 	public Page<AdminIntakeRowResponse> intake(LocalDate date, String keyword, String source,
@@ -187,7 +198,9 @@ public class ScholarshipAdminOverviewService {
 						value.getFileSize(), value.getSourceUrl(), imageStorageService.publicUrl(value.getS3Key())))
 				.toList();
 
-		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images);
+		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images,
+				RecruitmentStatusCheck.of(scholarship.getRecruitmentStatus(), scholarship.getApplicationStartAt(),
+						scholarship.getApplicationEndAt(), LocalDateTime.now()));
 	}
 
 	public Page<AdminRawFailureResponse> failures(String keyword, String source, ParseStatus status,
@@ -418,7 +431,19 @@ public class ScholarshipAdminOverviewService {
 				posterCountBySource.getOrDefault(aggregate.getSource(), 0L));
 	}
 
-	private AdminScholarshipRow toRow(Scholarship scholarship, Set<Long> posterIds) {
+	private static String deleteKind(Scholarship scholarship) {
+		if (!scholarship.isDeleted()) {
+			return null;
+		}
+		if (scholarship.getDeletedBy() == null) {
+			return "SYSTEM";
+		}
+		String reason = scholarship.getDeleteReason();
+		return reason != null && reason.startsWith("병합:") ? "MERGE" : "ADMIN";
+	}
+
+	private AdminScholarshipRow toRow(Scholarship scholarship, Set<Long> posterIds,
+			Map<java.util.UUID, String> deleterNames) {
 		return new AdminScholarshipRow(
 				scholarship.getId(),
 				scholarship.getTitle(),
@@ -431,6 +456,11 @@ public class ScholarshipAdminOverviewService {
 				scholarship.getAmount() != null,
 				StringUtils.hasText(scholarship.getHomepageUrl()),
 				posterIds.contains(scholarship.getId()),
-				scholarship.isDeleted());
+				scholarship.isDeleted(),
+				scholarship.getDeletedAt(),
+				scholarship.getDeletedBy(),
+				scholarship.getDeletedBy() == null ? null : deleterNames.get(scholarship.getDeletedBy()),
+				scholarship.getDeleteReason(),
+				deleteKind(scholarship));
 	}
 }
