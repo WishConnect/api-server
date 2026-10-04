@@ -1073,11 +1073,11 @@
 				'<div class="actions">' + (row.beforeJson || row.afterJson
 					? '<button type="button" class="btn btn-sm" data-audit-diff="' + row.id + '">전후 비교</button>'
 					: '<span class="text-muted text-sm" title="이 작업은 바뀐 값을 저장하지 않습니다">비교 기록 없음</span>') +
-					(row.restorable && !row.restoredAt ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-audit-restore="' + row.id + '">복구</button>' : '') + '</div>'
+					(row.restorable && !row.restoredAt ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-audit-restore="' + row.id + '">복구…</button>' : '') + '</div>'
 			]) + '</tr>').join('') : view.row(6, view.emptyHtml('기록이 없습니다.'));
 		}, {colspan: 6, what: '감사 기록을'});
 		body.querySelectorAll('[data-audit-diff]').forEach(b => b.onclick = () => showAuditDiff(auditRows.get(Number(b.dataset.auditDiff))));
-		body.querySelectorAll('[data-audit-restore]').forEach(b => b.onclick = () => restoreAudit(auditRows.get(Number(b.dataset.auditRestore))));
+		body.querySelectorAll('[data-audit-restore]').forEach(b => b.onclick = () => restoreAudit(auditRows.get(Number(b.dataset.auditRestore)), b));
 		bindOpenScholarship(body);
 	}
 
@@ -1273,16 +1273,68 @@
 		});
 	}
 
-	function restoreAudit(row) {
-		return ui.confirmAction({
-			title: '변경 이전으로 복구', confirmLabel: '복구',
-			targets: [{id: label('targetType', row.targetType, '대상') + ' #' + row.targetId, title: label('action', row.action) + ' · ' + fmt.tsKst(row.createdAt)}],
-			summary: ['이 기록 직전 값으로 되돌립니다. 모집 상태와 기록 이후 다시 바뀐 필드는 제외됩니다.'],
-			reversible: 'yes', reversibleText: '복구도 감사 기록으로 남아 다시 되돌릴 수 있습니다.',
-			onConfirm: async () => {
-				await api('/api/v1/admin/audit-log/' + row.id + '/restore', {method: 'PATCH'});
-				ui.toast('기록 #' + row.id + ' 이전 값으로 복구했습니다.');
+	/** 복구 미리보기 값 표시. 조건·서류처럼 목록이면 개수와 앞부분만 보여 주고 전체는 마우스를 올리면 보인다. */
+	function previewValue(value) {
+		if (value == null || value === '') return {text: '(비어 있음)', full: ''};
+		if (typeof value !== 'object') return {text: label('recruitment', String(value), String(value)), full: String(value)};
+		const json = JSON.stringify(value);
+		const text = Array.isArray(value) ? value.length + '개 · ' + json.slice(0, 120) + (json.length > 120 ? '…' : '') : json.slice(0, 160) + (json.length > 160 ? '…' : '');
+		return {text, full: JSON.stringify(value, null, 1)};
+	}
+
+	/**
+	 * 감사 기록 복구: 먼저 미리보기(필드별 기록 직전 값·기록 직후 값·현재 값)를 보여 주고, 체크한 필드만 되돌린다.
+	 * 모집 상태와 기록 이후 다시 바뀐 필드는 기본 해제(서버 defaultSelected). 복구도 감사 기록으로 남는다.
+	 */
+	async function restoreAudit(row, button) {
+		let preview;
+		try {
+			preview = await ui.busy(button, () => api('/api/v1/admin/audit-log/' + row.id + '/restore-preview'), '불러오는 중…');
+		} catch (error) {
+			ui.toast(WC.errorText(error), 'error');
+			return;
+		}
+		if (!preview) return;
+		if (!preview.restorable || preview.restoredAt) {
+			ui.notify('복구할 수 없는 기록입니다', '<div class="notice danger">' + esc(preview.restoredAt ? '이미 ' + fmt.tsKst(preview.restoredAt) + '에 복구한 기록입니다. 한 기록은 한 번만 복구할 수 있습니다.'
+				: preview.notRestorableReason || '이 작업은 복구를 지원하지 않습니다.') + '</div>');
+			return;
+		}
+		const fields = preview.fields || [];
+		const later = preview.laterChanges || [];
+		const body = '<div class="target-box"><span class="target-id">' + esc(label('targetType', preview.targetType, '대상')) + ' #' + esc(preview.targetId) + ' · 기록 #' +
+			preview.logId + ' · ' + esc(fmt.tsKst(preview.recordedAt)) + ' · 관리자 ' + esc(String(preview.recordedBy || '-').slice(0, 8)) + '</span><span class="target-title">' +
+			esc(label('action', preview.action)) + (row.detail ? ' — ' + esc(row.detail) : '') + '</span></div>' +
+			(preview.changedSinceRecord ? '<div class="notice warn"><b>이 기록 이후 같은 장학금에 다른 변경이 있었습니다.</b> 노란 줄의 필드를 복구하면 그 뒤의 변경(다른 관리자 수정, 배치 마감 처리 등)을 덮어씁니다.' +
+				(later.length ? '<ul>' + later.map(c => '<li>' + esc(fmt.ts(c.createdAt)) + ' KST · ' + esc(label('action', c.action)) + (c.detail ? ' · ' + esc(c.detail) : '') + '</li>').join('') + '</ul>' : '') + '</div>' : '') +
+			'<p class="section-label">되돌릴 필드를 고르세요</p><div class="table-wrap" style="max-height:340px"><table class="diff-table"><thead><tr><th class="check-col"></th><th>필드</th>' +
+			'<th>되돌릴 값 <span class="text-muted">(기록 직전)</span></th><th>기록 직후 값</th><th>현재 값</th></tr></thead><tbody>' +
+			(fields.length ? fields.map((f, index) => {
+				const recorded = previewValue(f.recordedValue), logged = previewValue(f.loggedValue), current = previewValue(f.currentValue);
+				const same = !f.differsFromCurrent;
+				return '<tr' + (f.changedSinceRecord ? ' class="warn-row"' : '') + '><td class="check-col"><input type="checkbox" data-field="' + esc(f.field) + '" id="rf' + index + '"' +
+					(f.defaultSelected && !same ? ' checked' : '') + (same ? ' disabled' : '') + '></td><td><label for="rf' + index + '"><b>' + esc(f.label || f.field) + '</b></label>' +
+					(f.warning ? '<span class="cell-sub text-warning">' + esc(f.warning) + '</span>' : '') + (same ? '<span class="cell-sub">현재 값과 같아 되돌릴 필요 없음</span>' : '') +
+					'</td><td class="val after" title="' + esc(recorded.full) + '">' + esc(recorded.text) + '</td><td class="val" title="' + esc(logged.full) + '">' + esc(logged.text) +
+					'</td><td class="val' + (f.changedSinceRecord ? ' text-warning' : '') + '" title="' + esc(current.full) + '">' + esc(current.text) + '</td></tr>';
+			}).join('') : '<tr><td colspan="5">' + view.emptyHtml('이 기록에 되돌릴 필드가 없습니다.') + '</td></tr>') + '</tbody></table></div>' +
+			'<div class="revert yes" style="margin-top:var(--sp-3)"><b>되돌릴 수 있습니다.</b> 복구도 감사 기록으로 남아, 그 기록으로 복구를 다시 되돌릴 수 있습니다.</div>' +
+			'<div class="form-field"><label for="restoreReason">복구 사유 <span class="text-muted">(선택)</span></label><textarea id="restoreReason" class="textarea" maxlength="300" placeholder="예: 잘못 바꾼 제목 되돌림"></textarea></div>';
+		const checked = root => [...root.querySelectorAll('[data-field]:checked')].map(box => box.dataset.field);
+		return ui.modal({
+			title: '복구 미리보기', subtitle: '체크한 필드만 기록 직전 값으로 되돌립니다. 모집 상태는 기본으로 선택하지 않습니다.', size: 'xl', body,
+			kind: 'danger', confirmLabel: '선택한 필드 복구',
+			valid: root => {
+				const count = checked(root).length;
+				root.closest('dialog').querySelector('[data-ok]').textContent = count ? '선택한 ' + count + '개 필드 복구' : '복구할 필드를 고르세요';
+				return count > 0;
+			},
+			onConfirm: async root => {
+				const result = await api('/api/v1/admin/audit-log/' + row.id + '/restore', {method: 'POST',
+					body: {fields: checked(root), reason: textOrNull(root.querySelector('#restoreReason').value)}});
+				ui.toast('복구했습니다 · ' + result.restoredFields.length + '개 필드 · 복구 기록 #' + result.restoreLogId + '(이 기록으로 다시 되돌릴 수 있음)');
 				afterWrite({scholarshipId: row.targetId, reload: loadAudit});
+				return result;
 			}
 		});
 	}
