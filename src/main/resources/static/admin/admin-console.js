@@ -1484,8 +1484,7 @@
 
 		click('logout', button => ui.busy(button, async () => {
 			try { await fetch('/api/v1/admin/auth/logout', {method: 'POST'}); } finally {
-				sessionStorage.removeItem('wc_admin_token');
-				sessionStorage.removeItem('wc_admin_name');
+				['wc_admin_token', 'wc_admin_name', 'wc_admin_session_max'].forEach(key => sessionStorage.removeItem(key));
 				location.replace('/admin/login.html');
 			}
 		}, '로그아웃 중…'));
@@ -1493,6 +1492,7 @@
 
 	async function start() {
 		$('adminName').textContent = sessionStorage.getItem('wc_admin_name') || '관리자';
+		WC.session.mount();
 		$('intakeDate').value = fmt.todayKst();
 		fillSelects();
 		bind();
