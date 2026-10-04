@@ -80,6 +80,13 @@ sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
 - `api.wish-connect.com` server 블록이 **다른 파일(`sites-enabled/default` 등)에 남아 있으면 안 된다.**
   남아 있으면 nginx 는 한쪽을 경고만 내고 조용히 무시한다 — 워크플로는 이 경고를 실패로 처리한다.
 - 인증서 경로가 `/etc/letsencrypt/live/api.wish-connect.com/` 이어야 한다(다르면 이 파일의 경로를 고친다).
+- `/etc/nginx/conf.d/ratelimit.conf` 에 로그인 속도 제한 zone 이 있어야 한다(레포 설정의 `/api/v1/auth/login` 이 쓴다).
+  `limit_req_zone` 은 http 블록 지시어라 사이트 파일에 두지 않는다. 없으면 `nginx -t` 가
+  `zero size shared memory zone "login"` 으로 실패하고 워크플로가 이전 설정으로 복구한다.
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+  limit_req_status 429;
+  ```
 
 ### 최초 이전 (현재 서버 설정 → 레포 파일)
 
