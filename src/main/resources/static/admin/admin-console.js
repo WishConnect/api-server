@@ -1190,8 +1190,19 @@
 	const showValue = value => value == null || value === '' ? '(비어 있음)' : typeof value === 'object' ? JSON.stringify(value, null, 1) : String(value);
 
 	/** 전후 비교: 바뀐 필드만 표로. 스냅샷이 객체가 아니면 원문 그대로 보여 준다. */
+	/** 스냅샷이 {scholarship: {...}, conditions: [...]} 처럼 한 단계 묶여 있으면 "scholarship.title" 로 펼친다. */
+	function flatten(value) {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+		const out = {};
+		Object.entries(value).forEach(([key, inner]) => {
+			if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.entries(inner).forEach(([k, v]) => out[key + '.' + k] = v);
+			else out[key] = inner;
+		});
+		return out;
+	}
+
 	function showAuditDiff(row) {
-		const before = parseJson(row.beforeJson), after = parseJson(row.afterJson);
+		const before = flatten(parseJson(row.beforeJson)), after = flatten(parseJson(row.afterJson));
 		let html;
 		if (before && after && typeof before === 'object' && typeof after === 'object') {
 			const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
