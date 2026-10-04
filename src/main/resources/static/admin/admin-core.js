@@ -491,4 +491,204 @@
 		}
 	};
 	WC.view = view;
+
+	/* ------------------------------------------------------------------ 세션 */
+
+	/*
+	 * 관리자 세션: 활동하면 서버가 새 토큰(X-Admin-Access-Token)을 내려 30분씩 늘어나고, 로그인 후 8시간이 최대다.
+	 * 우측 상단에 남은 시간과 [연장]을 보여 주고, 5분 전부터 경고한다. 401 이 나면 페이지를 옮기지 않고
+	 * 재로그인 모달을 띄운 뒤 원래 요청을 다시 보낸다(열려 있던 모달·입력은 그대로 남는다).
+	 */
+	const SESSION_MAX_KEY = 'wc_admin_session_max';
+	const LOGIN_ID_KEY = 'wc_admin_login_id';
+	const NAME_KEY = 'wc_admin_name';
+	const WARN_SECONDS = 5 * 60;
+	const session = {expiresAt: null, maxExpiresAt: null, expiredPrompted: false};
+
+	const epochMs = value => {
+		if (value == null || value === '') return null;
+		if (typeof value === 'number') return value < 1e12 ? value * 1000 : value;
+		if (/^\d+(\.\d+)?$/.test(String(value))) return epochMs(Number(value));
+		const parsed = Date.parse(value);
+		return Number.isNaN(parsed) ? null : parsed;
+	};
+
+	function decodeToken(token) {
+		try {
+			const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+			return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));
+		} catch (ignored) {
+			return null;
+		}
+	}
+
+	function readToken(token) {
+		const claims = token ? decodeToken(token) : null;
+		if (claims && claims.exp) session.expiresAt = claims.exp * 1000;
+		const storedMax = epochMs(sessionStorage.getItem(SESSION_MAX_KEY));
+		if (storedMax) session.maxExpiresAt = storedMax;
+		else if (claims && claims.ast != null && epochMs(claims.ast)) session.maxExpiresAt = epochMs(claims.ast) + 8 * 3600 * 1000;
+		session.expiredPrompted = false;
+		renderSession();
+	}
+
+	/** 로그인·연장·남은 시간 응답(accessToken, expiresAt, remainingSeconds, sessionMaxExpiresAt)을 반영한다. */
+	function applySession(data) {
+		if (!data) return;
+		if (data.accessToken) auth.setToken(data.accessToken);
+		if (data.expiresAt) session.expiresAt = epochMs(data.expiresAt);
+		else if (data.remainingSeconds != null) session.expiresAt = Date.now() + data.remainingSeconds * 1000;
+		else if (data.expiresInSeconds != null) session.expiresAt = Date.now() + data.expiresInSeconds * 1000;
+		if (data.sessionMaxExpiresAt) {
+			session.maxExpiresAt = epochMs(data.sessionMaxExpiresAt);
+			try { sessionStorage.setItem(SESSION_MAX_KEY, String(session.maxExpiresAt)); } catch (ignored) { /* 메모리 값으로 계속 */ }
+		}
+		session.expiredPrompted = false;
+		renderSession();
+	}
+
+	const secondsLeft = () => session.expiresAt ? (session.expiresAt - Date.now()) / 1000 : null;
+	/** 최대 사용 시간에 닿아 더 늘릴 수 없는지. */
+	const atMaxLifetime = () => Boolean(session.maxExpiresAt && session.expiresAt && session.maxExpiresAt - session.expiresAt < 60 * 1000);
+
+	function renderSession() {
+		const box = $('session');
+		if (!box) return;
+		const left = secondsLeft();
+		const button = $('sessionExtend'), banner = $('sessionBanner');
+		if (left == null) { $('sessionLeft').textContent = '--:--'; return; }
+		const capped = atMaxLifetime();
+		$('sessionLeft').textContent = left > 0 ? fmt.duration(left) : '만료됨';
+		box.className = 'session' + (left <= 0 ? ' danger' : left <= WARN_SECONDS ? ' warn' : '');
+		if (button.getAttribute('aria-busy') !== 'true') {
+			button.disabled = left <= 0 || capped;
+			button.title = capped ? '로그인 후 최대 사용 시간(8시간)에 닿아 더 연장할 수 없습니다. 작업을 저장하고 다시 로그인하세요.'
+				: '세션을 지금부터 30분으로 늘립니다.';
+		}
+		if (banner) {
+			const show = left > 0 && left <= WARN_SECONDS;
+			banner.hidden = !show;
+			if (show) {
+				$('sessionBannerText').textContent = capped
+					? '로그인 후 최대 사용 시간이 ' + fmt.duration(left) + ' 뒤 끝납니다. 더 연장할 수 없으니 작업을 저장한 뒤 다시 로그인하세요.'
+					: '세션이 ' + fmt.duration(left) + ' 뒤 만료됩니다. 계속 작업하려면 연장하세요.';
+				$('sessionBannerExtend').hidden = capped;
+			}
+		}
+		if (left <= 0 && !session.expiredPrompted) {
+			session.expiredPrompted = true;
+			relogin('세션이 만료되었습니다.').catch(() => {});
+		}
+	}
+
+	async function extendSession(button) {
+		await busy(button, async () => {
+			try {
+				applySession(await api('/api/v1/admin/auth/extend', {method: 'POST'}));
+				toast('세션을 연장했습니다. 남은 시간 ' + fmt.duration(secondsLeft()));
+			} catch (error) {
+				toast(errorText(error), 'error');
+			}
+		}, '연장 중…');
+	}
+
+	function syncSession() {
+		return api('/api/v1/admin/auth/session', {background: true}).then(applySession).catch(() => {});
+	}
+
+	/** 로그인 실패 응답(data: failedCount, maxFailures, remainingAttempts, lockMinutes, locked, lockScope, lockRemainingSeconds)을 문장으로. */
+	function loginFailureText(status, message, data) {
+		const d = data || {};
+		if (d.locked || status === 429) {
+			const wait = d.lockRemainingSeconds != null ? fmt.duration(d.lockRemainingSeconds) + ' 뒤에' : '잠시 뒤에';
+			return (d.lockScope === 'IP' ? '이 네트워크(IP)에서 로그인 실패가 너무 많아' : '로그인에 ' + (d.maxFailures || 5) + '회 실패해') +
+				' 로그인이 잠겼습니다. ' + wait + ' 다시 시도하세요.';
+		}
+		if (d.failedCount != null) {
+			return '아이디 또는 비밀번호가 맞지 않습니다. ' + d.failedCount + '회 실패했습니다. ' + (d.maxFailures || 5) + '회 실패하면 ' +
+				(d.lockMinutes || 15) + '분간 로그인이 잠깁니다' + (d.remainingAttempts != null ? ' (남은 시도 ' + d.remainingAttempts + '회).' : '.');
+		}
+		return message || '로그인하지 못했습니다(HTTP ' + status + ').';
+	}
+
+	async function loginRequest(loginId, password) {
+		let response;
+		try {
+			response = await fetch('/api/v1/admin/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({loginId, password})});
+		} catch (error) {
+			throw new ApiError({network: true});
+		}
+		const json = await response.json().catch(() => null);
+		if (!response.ok || !json || json.success === false) {
+			throw new Error(loginFailureText(response.status, json && json.message, json && json.data));
+		}
+		return json.data;
+	}
+
+	function rememberLogin(loginId, data) {
+		try {
+			sessionStorage.setItem(LOGIN_ID_KEY, loginId);
+			if (data.name) sessionStorage.setItem(NAME_KEY, data.name);
+		} catch (ignored) { /* 저장 못 해도 진행 */ }
+		applySession(data);
+	}
+
+	let reloginPromise = null;
+	/** 재로그인 모달. 여러 요청이 동시에 401 을 받아도 모달은 하나만 띄우고 모두 결과를 기다린다. */
+	function relogin(reason) {
+		if (reloginPromise) return reloginPromise;
+		reloginPromise = (async () => {
+			const savedId = sessionStorage.getItem(LOGIN_ID_KEY) || '';
+			const body = '<div class="notice warn"><b>' + esc(reason) + '</b> 다시 로그인하면 하던 작업을 이어서 합니다. 입력 중인 내용은 지워지지 않습니다.</div>' +
+				'<div class="form-field"><label for="reloginId">아이디</label><input id="reloginId" class="input" autocomplete="username" value="' + esc(savedId) + '"></div>' +
+				'<div class="form-field" style="margin-top:var(--sp-3)"><label for="reloginPw">비밀번호</label>' +
+				'<input id="reloginPw" class="input" type="password" autocomplete="current-password"' + (savedId ? ' autofocus' : '') + '></div>' +
+				'<p class="field-help" style="margin-top:var(--sp-3)">[나중에]를 누르면 방금 작업은 보내지지 않습니다. 화면은 그대로 남습니다.</p>';
+			const result = await modal({
+				title: '다시 로그인', body, confirmLabel: '로그인하고 계속', cancelLabel: '나중에',
+				valid: root => Boolean(root.querySelector('#reloginId').value.trim() && root.querySelector('#reloginPw').value),
+				onOpen: (root, ctx) => root.querySelector('#reloginPw').addEventListener('keydown', event => {
+					if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); ctx.okButton.click(); }
+				}),
+				onConfirm: async root => {
+					const loginId = root.querySelector('#reloginId').value.trim();
+					const password = root.querySelector('#reloginPw');
+					try {
+						rememberLogin(loginId, await loginRequest(loginId, password.value));
+					} finally {
+						password.value = '';
+					}
+					return true;
+				}
+			});
+			if (!result) throw new ApiError({status: 401, message: '로그인하지 않아 요청을 보내지 못했습니다.'});
+			const name = $('adminName');
+			if (name) name.textContent = sessionStorage.getItem(NAME_KEY) || name.textContent;
+			toast('다시 로그인했습니다. 하던 작업을 이어서 보냅니다.');
+		})().finally(() => { reloginPromise = null; });
+		return reloginPromise;
+	}
+
+	auth.handleUnauthorized = () => relogin('로그인 세션이 만료되었습니다.');
+	auth.onToken(readToken);
+
+	WC.session = {
+		/** 콘솔 화면이 시작할 때 부른다. */
+		mount() {
+			readToken(auth.token);
+			const button = $('sessionExtend');
+			if (button) button.onclick = () => extendSession(button);
+			const bannerButton = $('sessionBannerExtend');
+			if (bannerButton) bannerButton.onclick = () => extendSession(bannerButton);
+			setInterval(renderSession, 1000);
+			syncSession();
+			setInterval(() => { if (!document.hidden) syncSession(); }, 5 * 60 * 1000);
+			document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSession(); });
+		},
+		extend: extendSession,
+		relogin,
+		loginFailureText,
+		state: session
+	};
 })();

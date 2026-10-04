@@ -48,9 +48,11 @@
 			<div class="top-actions" id="topActions">
 				<span class="tz-note" title="화면의 모든 기록 시각은 한국 시간입니다. 모집 기간은 공고에 적힌 날짜 그대로입니다.">시각 기준: KST</span>
 				<input class="input top-search" id="globalSearch" type="search" placeholder="장학금명·기관 검색 (Enter)" aria-label="장학금명·기관 검색">
+				<div class="session" id="session" title="이 시간 안에 아무 작업도 하지 않으면 로그아웃됩니다. 작업(조회·저장)을 하면 자동으로 늘어납니다."><span class="session-label">세션</span><b id="sessionLeft">--:--</b><button type="button" class="btn btn-sm" id="sessionExtend">연장</button></div>
 				<button type="button" class="btn btn-ghost" id="logout">로그아웃</button>
 			</div>
 		</header>
+		<div class="notice warn session-banner" id="sessionBanner" role="alert" hidden><b id="sessionBannerText"></b><button type="button" class="btn btn-sm btn-primary" id="sessionBannerExtend">지금 연장</button></div>
 
 		<main class="content">
 			<!-- ============================== 대시보드 ============================== -->
