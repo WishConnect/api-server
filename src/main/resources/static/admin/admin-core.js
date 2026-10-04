@@ -402,7 +402,8 @@
 			dialog.showModal();
 			if (opts.onOpen) opts.onOpen(content, ctx);
 			ctx.validate();
-			const first = content.querySelector('[autofocus], textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio]), select');
+			const first = content.querySelector('[autofocus]') ||
+				content.querySelector('textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio]), select');
 			(first || cancelButton).focus();
 		});
 	}
