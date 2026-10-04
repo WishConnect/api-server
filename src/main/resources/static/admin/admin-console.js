@@ -849,7 +849,8 @@
 				'<button type="button" class="btn" data-merge-reject="' + item.candidateId + '">중복 아님</button>' +
 				'<button type="button" class="btn btn-primary" data-merge-approve="' + item.candidateId + '">확인 후 병합</button></div>'
 				: '<span class="meta">' + esc(label('mergeStatus', item.status)) + ' · ' + esc(fmt.tsKst(item.reviewedAt)) +
-				(item.note ? ' · 메모: ' + esc(item.note) : '') + '</span><div class="actions" data-closed-actions></div>') + '</div></div>';
+				(item.note ? ' · 메모: ' + esc(item.note) : '') + '</span><div class="actions">' + (item.status === 'REJECTED'
+				? '<button type="button" class="btn" data-merge-reopen="' + item.candidateId + '">반려 취소</button>' : '') + '</div>') + '</div></div>';
 	}
 
 	let duplicateItems = new Map();
@@ -866,6 +867,7 @@
 		}, {what: '중복 후보를'});
 		target.querySelectorAll('[data-merge-approve]').forEach(button => button.onclick = () => approveMerge(duplicateItems.get(Number(button.dataset.mergeApprove))));
 		target.querySelectorAll('[data-merge-reject]').forEach(button => button.onclick = () => rejectMerge(duplicateItems.get(Number(button.dataset.mergeReject))));
+		target.querySelectorAll('[data-merge-reopen]').forEach(button => button.onclick = () => reopenMerge(duplicateItems.get(Number(button.dataset.mergeReopen))));
 		bindOpenScholarship(target);
 	}
 
@@ -1178,6 +1180,22 @@
 			onConfirm: async note => {
 				await api('/api/v1/scholarships/merge/candidates/' + item.candidateId + '/reject', {method: 'POST', body: {note}});
 				ui.toast('후보 #' + item.candidateId + '을(를) 반려했습니다.');
+				afterWrite({reload: loadDuplicates});
+			}
+		});
+	}
+
+	/** 실수로 반려한 후보를 승인 대기로 되돌린다. 두 장학금이 살아 있고 다른 대기 후보에 없을 때만 된다(아니면 409 안내). */
+	function reopenMerge(item) {
+		return ui.confirmAction({
+			title: '반려 취소', subtitle: '후보 #' + item.candidateId, kind: 'primary', confirmLabel: '승인 대기로 되돌리기',
+			targets: [{id: '#' + item.primary.scholarshipId, title: item.primary.title}, {id: '#' + item.duplicate.scholarshipId, title: item.duplicate.title}],
+			summary: ['이 후보를 다시 [승인 대기]로 올립니다. 병합은 하지 않습니다.', item.note ? '이전 반려 메모: ' + esc(item.note) + ' (이력으로 남음)' : ''].filter(Boolean),
+			reversible: 'yes', reversibleText: '다시 [중복 아님]으로 반려할 수 있습니다.',
+			reason: {label: '반려 취소 메모', required: false, placeholder: '예: 같은 공고로 확인됨'},
+			onConfirm: async note => {
+				await api('/api/v1/scholarships/merge/candidates/' + item.candidateId + '/reopen', {method: 'POST', body: {note: note || null}});
+				ui.toast('후보 #' + item.candidateId + '을(를) 승인 대기로 되돌렸습니다.');
 				afterWrite({reload: loadDuplicates});
 			}
 		});
