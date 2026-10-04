@@ -1369,16 +1369,45 @@
 		});
 	}
 
+	const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+	const EXCEL_MAX_BYTES = 1024 * 1024;
+	const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+	/** 고른 파일을 업로드 전에 검사한다. 문제가 있으면 안내 문장, 없으면 null. */
+	function fileProblem(file, kind) {
+		if (!file) return null;
+		const size = fmt.bytes(file.size);
+		if (kind === 'image') {
+			if (!file.size) return '빈 파일입니다. 다른 파일을 고르세요.';
+			if (!IMAGE_TYPES.includes(file.type)) return 'PNG·JPG·GIF·WEBP 이미지만 올릴 수 있습니다(고른 파일: ' + (file.type || '알 수 없는 형식') + ').';
+			if (file.size > IMAGE_MAX_BYTES) return '파일이 ' + size + '로 5MB를 넘습니다. 이미지 크기를 줄이거나 압축한 뒤 다시 고르세요.';
+		} else {
+			if (!/\.xlsx$/i.test(file.name)) return '.xlsx 파일만 올릴 수 있습니다.';
+			if (file.size > EXCEL_MAX_BYTES) return '파일이 ' + size + '로 1MB를 넘습니다. 행을 나눠 여러 파일로 올리세요.';
+		}
+		return null;
+	}
+
 	function openImageDialog(id, title, hasImage) {
 		const body = '<div class="target-box"><span class="target-id">장학금 #' + id + '</span><span class="target-title">' + esc(title) + '</span></div>' +
 			'<div class="form-field"><label for="imageUrl">이미지 주소(URL)</label><input id="imageUrl" class="input" type="url" placeholder="https://…">' +
 			'<span class="field-help">공고 원문의 포스터 주소를 붙여 넣거나, 아래에서 파일을 고르세요(둘 중 하나).</span></div>' +
 			'<div class="form-field" style="margin-top:var(--sp-3)"><label for="imageFile">이미지 파일</label><input id="imageFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp">' +
-			'<span class="field-help">5MB 이하 PNG·JPG·GIF·WEBP</span><span class="field-error" data-file-error></span></div>' +
+			'<span class="field-help">5MB 이하 PNG·JPG·GIF·WEBP. 파일을 고르면 주소보다 파일이 우선합니다.</span><span class="field-error" data-file-error></span></div>' +
 			(hasImage ? '<div class="revert no" style="margin-top:var(--sp-3)"><b>기존 이미지를 바꿉니다.</b> 이전 이미지로 되돌리는 기능은 없습니다.</div>' : '');
 		return ui.modal({
 			title: hasImage ? '이미지 교체' : '이미지 등록', body, confirmLabel: hasImage ? '교체' : '등록', kind: hasImage ? 'danger' : 'primary',
-			valid: root => Boolean(root.querySelector('#imageUrl').value.trim() || root.querySelector('#imageFile').files[0]),
+			onOpen: (root, ctx) => root.querySelector('#imageFile').addEventListener('change', event => {
+				const problem = fileProblem(event.target.files[0], 'image');
+				root.querySelector('[data-file-error]').textContent = problem || '';
+				event.target.classList.toggle('is-invalid', Boolean(problem));
+				ctx.validate();
+			}),
+			valid: root => {
+				const file = root.querySelector('#imageFile').files[0];
+				if (file) return !fileProblem(file, 'image');
+				return Boolean(root.querySelector('#imageUrl').value.trim());
+			},
 			onConfirm: async root => {
 				const file = root.querySelector('#imageFile').files[0], url = root.querySelector('#imageUrl').value.trim();
 				if (file) {
@@ -1603,6 +1632,7 @@
 		const run = async dryRun => {
 			const file = $(fileId).files[0];
 			if (!file) { ui.toast('.xlsx 파일을 먼저 고르세요.', 'error'); return null; }
+			if (fileProblem(file, 'excel')) { ui.toast(fileProblem(file, 'excel'), 'error'); return null; }
 			const form = new FormData();
 			form.append('file', file);
 			const data = await api(path + '?dryRun=' + dryRun, {method: 'POST', form});
@@ -1610,7 +1640,12 @@
 			apply.disabled = !(dryRun && data[appliedKey] > 0 && data.errorCount === 0);
 			return data;
 		};
-		$(fileId).addEventListener('change', () => { apply.disabled = true; result.innerHTML = ''; });
+		$(fileId).addEventListener('change', () => {
+			apply.disabled = true;
+			const problem = fileProblem($(fileId).files[0], 'excel');
+			result.innerHTML = problem ? '<div class="notice danger"><b>올릴 수 없는 파일입니다.</b> ' + esc(problem) + '</div>' : '';
+			$(dryRunId).disabled = Boolean(problem);
+		});
 		$(dryRunId).onclick = () => ui.busy($(dryRunId), () => run(true).catch(error => { result.innerHTML = WC.errorNotice(error); }), '검사 중…');
 		apply.onclick = () => ui.confirmAction({
 			title: applyTitle, confirmLabel: '실제 반영',
