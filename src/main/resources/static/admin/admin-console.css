@@ -286,10 +286,10 @@ td.check-col, th.check-col { width: 32px; }
 	width: max-content; max-width: 280px; padding: var(--sp-2) var(--sp-3);
 	border-radius: var(--radius); background: #1c2438; color: #f1f3f9;
 	font-size: var(--fs-sm); font-weight: 400; line-height: 1.5; white-space: normal; text-align: left;
-	box-shadow: var(--shadow-md); opacity: 0; visibility: hidden; pointer-events: none; z-index: 50;
-	transition: opacity .12s;
+	box-shadow: var(--shadow-md); pointer-events: none; z-index: 50;
+	display: none; /* 숨김 상태에서도 그려 두면 화면 오른쪽 끝의 툴팁이 가로 스크롤을 만든다 */
 }
-.tip:hover::after, .tip:focus::after { opacity: 1; visibility: visible; }
+.tip:hover::after, .tip:focus::after { display: block; }
 .tip.tip-left::after { left: auto; right: -6px; transform: none; }
 
 /* ---------- 상태 표시(로딩·빈 상태·에러) ---------- */
