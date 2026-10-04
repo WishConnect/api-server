@@ -413,7 +413,7 @@
 	}
 
 	/** 폼 값을 서버 요청 형태로 모은다. 비어 있는 필수값은 빨갛게 표시하고 오류를 던진다. */
-	function collectForm(root, mode, extra = {}) {
+	function collectForm(root, mode, extra = {}, {validate = true} = {}) {
 		const field = name => root.querySelector('[name="' + name + '"]');
 		const value = name => field(name) ? field(name).value : '';
 		const number = name => value(name) === '' ? null : Number(value(name));
@@ -441,7 +441,8 @@
 			if (!get('name').value.trim()) mark(get('name'), (index + 1) + '번째 서류의 이름을 입력하세요.');
 			return {name: get('name').value.trim(), essay: get('essay').checked, displayOrder: index, downloadUrl: textOrNull(get('downloadUrl').value)};
 		});
-		if (problems.length) {
+		if (!validate) root.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+		if (validate && problems.length) {
 			const first = root.querySelector('.is-invalid');
 			if (first) first.focus();
 			throw new Error(problems.join(' '));
@@ -480,6 +481,84 @@
 		return body;
 	}
 
+	/**
+	 * 모집 상태와 날짜가 서로 맞는지(서버 RecruitmentStatusCheck 와 같은 규칙). 상태를 고쳐 주지 않고 경고만 한다.
+	 * 공고 날짜는 한국 날짜라 KST 현재 시각과 비교한다.
+	 */
+	function statusWarnings(status, start, end) {
+		const now = fmt.nowKstWall();
+		const passed = Boolean(end) && end < now, beforeStart = Boolean(start) && start > now;
+		const warnings = [];
+		if (start && end && end < start) warnings.push('마감일이 시작일보다 빠릅니다.');
+		if (status === 'OPEN') {
+			if (passed) warnings.push('마감일이 지났는데 모집 중입니다. 사용자에게 마감 공고가 모집 중으로 보입니다.');
+			if (beforeStart) warnings.push('시작일 전인데 모집 중입니다. 모집 예정이 맞는지 확인하세요.');
+		} else if (status === 'ALWAYS_OPEN') {
+			if (passed) warnings.push('마감일이 지났는데 상시모집입니다.');
+			else if (end) warnings.push('마감일이 있는데 상시모집입니다. 모집 중이 맞는지 확인하세요.');
+		} else if (status === 'UPCOMING') {
+			if (passed) warnings.push('마감일이 지났는데 모집 예정입니다.');
+			else if (start && !beforeStart) warnings.push('시작일이 지났는데 모집 예정입니다.');
+		} else if (status === 'CLOSED') {
+			if (end && !passed) warnings.push('마감일 전인데 마감입니다. 조기 마감이 아니라면 확인하세요.');
+		}
+		return warnings;
+	}
+
+	/** 폼의 모집 상태·날짜가 바뀔 때마다 모순 경고를 상태 칸 아래에 보여 준다(저장은 막지 않음). */
+	function bindStatusWarning(root) {
+		const box = root.querySelector('[data-status-warn]');
+		if (!box) return () => [];
+		const read = () => {
+			const get = name => (root.querySelector('[name="' + name + '"]') || {}).value || '';
+			const warnings = get('recruitmentStatus') ? statusWarnings(get('recruitmentStatus'), get('applicationStartAt'), get('applicationEndAt')) : [];
+			box.textContent = warnings.length ? '⚠ ' + warnings.join(' ') + ' (저장은 할 수 있습니다)' : '';
+			return warnings;
+		};
+		['recruitmentStatus', 'applicationStartAt', 'applicationEndAt'].forEach(name => {
+			const el = root.querySelector('[name="' + name + '"]');
+			if (el) { el.addEventListener('change', read); el.addEventListener('input', read); }
+		});
+		read();
+		return read;
+	}
+
+	const FIELD_BY_NAME = Object.fromEntries(FIELDS.map(f => [f.name, f]));
+	function displayValue(name, value) {
+		const f = FIELD_BY_NAME[name] || {};
+		if (value == null || value === '') return '(비어 있음)';
+		if (f.type === 'select') return label(f.group, value);
+		if (f.type === 'datetime-local') return fmt.biz(value);
+		if (f.type === 'checkbox') return value ? '예' : '아니오';
+		if (f.type === 'number') return fmt.num(value);
+		return String(value);
+	}
+	const conditionText = c => label('conditionType', c.conditionType, '유형 없음') + ' · ' + label('necessity', c.necessity) + ' · ' +
+		label('operator', c.operator) + ' · ' + (c.valueString || '') + ([c.valueInt, c.valueIntMax].some(v => v != null) ? ' (' + [c.valueInt, c.valueIntMax].filter(v => v != null).join('~') + ')' : '');
+	const documentText = d => d.name + (d.essay ? ' (자기소개서)' : '') + (d.downloadUrl ? ' · 양식 링크' : '');
+
+	/** 저장 전 비교: 바뀐 필드만 [이름, 이전, 이후] 로. 조건·서류는 추가·삭제된 항목으로. */
+	function diffPayload(before, after) {
+		const rows = [];
+		Object.keys(after).forEach(key => {
+			if (['conditions', 'documents', 'source', 'imageSourceUrl'].includes(key)) return;
+			const a = before[key] == null || before[key] === '' ? null : before[key], b = after[key] == null || after[key] === '' ? null : after[key];
+			if (JSON.stringify(a) !== JSON.stringify(b)) rows.push([FIELD_BY_NAME[key] ? FIELD_BY_NAME[key].label : key, displayValue(key, a), displayValue(key, b), key]);
+		});
+		if (after.imageSourceUrl) rows.push(['포스터 이미지', '(현재 이미지)', '새 이미지: ' + after.imageSourceUrl, 'imageSourceUrl']);
+		const listDiff = (name, oldList, newList, text) => {
+			const oldTexts = oldList.map(text), newTexts = newList.map(text);
+			if (JSON.stringify(oldTexts) === JSON.stringify(newTexts)) return;
+			const removed = oldTexts.filter(t => !newTexts.includes(t)), added = newTexts.filter(t => !oldTexts.includes(t));
+			rows.push([name + ' (' + oldList.length + '개 → ' + newList.length + '개)',
+				removed.length ? removed.map(t => '− ' + t).join('\n') : (added.length ? '' : '순서만 바뀜'),
+				added.length ? added.map(t => '+ ' + t).join('\n') : (removed.length ? '' : '순서만 바뀜'), name]);
+		};
+		listDiff('지원 조건', before.conditions || [], after.conditions || [], conditionText);
+		listDiff('제출서류', before.documents || [], after.documents || [], documentText);
+		return rows;
+	}
+
 	/** 통합 수정({scholarshipId}) 또는 원문 수기 정제({rawId}). */
 	async function openEdit({scholarshipId, rawId}) {
 		let detail = null, raw = null;
@@ -495,17 +574,44 @@
 		const s = detail ? detail.scholarship : {title: '', scholarshipType: 'EXTERNAL', homepageUrl: raw.sourceUrl, detailUrl: raw.sourceUrl};
 		const rawText = raw ? (raw.rawHtml || (raw.rawJson ? JSON.stringify(raw.rawJson, null, 2) : '')) : null;
 		const body = editBody(s, mode, mode === 'refine' ? rawText : null, detail);
+		const sourceExtra = raw && mode === 'refine' ? {source: {sourceUrl: raw.sourceUrl, rawHtml: raw.rawHtml}} : {source: null};
+		const baseline = collectForm(body, mode, sourceExtra, {validate: false});
+		const readWarnings = bindStatusWarning(body);
 		await ui.modal({
 			title: mode === 'edit' ? '#' + scholarshipId + ' 통합 수정' : '원문 #' + raw.rawId + ' 수기 정제',
 			subtitle: mode === 'edit' ? '장학금 본문·조건·서류·자소서/면접 분기를 함께 저장합니다.' : '이 원문으로 새 장학금을 만듭니다.',
 			size: 'xl', body, confirmLabel: mode === 'edit' ? '저장' : '장학금 만들기',
 			footNote: mode === 'edit' ? '저장 기록은 [감사·복구]에 남아 되돌릴 수 있습니다.' : '',
 			onConfirm: async () => {
-				const payload = collectForm(body, mode, raw && mode === 'refine' ? {source: {sourceUrl: raw.sourceUrl, rawHtml: raw.rawHtml}} : {source: null});
+				const payload = collectForm(body, mode, sourceExtra);
 				const path = mode === 'edit' ? '/api/v1/scholarships/manual/' + scholarshipId + '/full' : '/api/v1/scholarships/admin/raw/' + raw.rawId + '/manual';
-				const result = await api(path, {method: mode === 'edit' ? 'PUT' : 'POST', body: payload});
+				const save = () => api(path, {method: mode === 'edit' ? 'PUT' : 'POST', body: payload});
+				let result;
+				if (mode === 'edit') {
+					const rows = diffPayload(baseline, payload);
+					if (!rows.length) { ui.toast('바뀐 내용이 없습니다.', 'info'); return false; }
+					const warnings = readWarnings();
+					result = await ui.confirmAction({
+						title: '변경 내용 확인', subtitle: '#' + scholarshipId + ' ' + (s.title || ''), kind: 'primary', size: 'lg',
+						confirmLabel: rows.length + '개 항목 저장',
+						extraHtml: (warnings.length ? '<div class="notice warn"><b>모집 상태와 날짜가 맞지 않습니다.</b> 이대로 저장할 수 있지만 사용자 화면에 그대로 보입니다.<ul>' +
+							warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '') +
+							'<table class="diff-table"><thead><tr><th>항목</th><th>이전</th><th>이후</th></tr></thead><tbody>' + rows.map(r =>
+								'<tr' + (r[3] === 'recruitmentStatus' ? ' class="warn-row"' : '') + '><td class="nowrap"><b>' + esc(r[0]) + '</b></td><td class="val before">' +
+								esc(r[1]) + '</td><td class="val after">' + esc(r[2]) + '</td></tr>').join('') + '</tbody></table>' +
+							'<p class="field-help" style="margin:var(--sp-2) 0 var(--sp-3)">모집 상태는 날짜로 자동 계산되지 않습니다. 고른 값 그대로 저장됩니다.</p>',
+						reversible: 'yes', reversibleText: '[감사·복구]에서 이 저장 기록을 열어 필드별로 되돌릴 수 있습니다.',
+						onConfirm: () => save()
+					});
+					if (!result) return false;
+				} else {
+					result = await save();
+				}
 				ui.toast(mode === 'edit' ? '#' + scholarshipId + ' 장학금을 저장했습니다.' : '원문 #' + raw.rawId + '을(를) 장학금으로 만들었습니다.');
 				if (result && result.imageError) ui.toast('장학금은 저장했지만 이미지는 저장하지 못했습니다: ' + result.imageError, 'warn');
+				if (result && result.statusCheck && !result.statusCheck.consistent) {
+					ui.toast('저장했지만 모집 상태와 날짜가 맞지 않습니다: ' + result.statusCheck.warnings.join(' '), 'warn');
+				}
 				afterWrite({scholarshipId, reload: reloadCurrentList});
 				return result;
 			}
@@ -1278,6 +1384,7 @@
 
 	function resetManualForm() {
 		$('manualFields').innerHTML = fieldsHtml({scholarshipType: 'EXTERNAL'}, 'create');
+		bindStatusWarning($('manualFields'));
 		$('manualConditions').innerHTML = '';
 		$('manualDocuments').innerHTML = '';
 	}
