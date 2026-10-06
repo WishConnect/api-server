@@ -82,9 +82,4 @@ public class ScholarshipTimeline extends BaseEntity {
 
 	@Column(nullable = false)
 	private int displayOrder;
-
-	/** 병합으로 다른 장학금에서 옮겨 온 일정의 순서를 다시 매길 때 쓴다. */
-	public void changeDisplayOrder(int displayOrder) {
-		this.displayOrder = displayOrder;
-	}
 }

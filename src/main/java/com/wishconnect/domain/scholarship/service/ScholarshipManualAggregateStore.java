@@ -15,7 +15,9 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
+import com.wishconnect.domain.scholarship.entity.TimelineDateType;
 import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
+import com.wishconnect.domain.scholarship.entity.TimelineStageCode;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
@@ -185,6 +187,37 @@ public class ScholarshipManualAggregateStore {
 					.build());
 		}
 		return safe(documents).size();
+	}
+
+	/**
+	 * 감사 로그 복구: 선발 일정을 기록 시점 값으로 바꾼다. 출처(origin)도 기록 값을 쓰고, 순서는 기록 순서대로 0부터 매긴다.
+	 * 호출부가 "기록에 일정 키가 있을 때만" 부른다 — 옛 기록으로 일정을 비우지 않기 위해서다.
+	 */
+	@Transactional
+	public int replaceTimelineFromSnapshot(Long scholarshipId,
+			List<AdminScholarshipDetailResponse.TimelineData> timeline) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		scholarshipTimelineRepository.deleteByScholarship(scholarship);
+		scholarshipTimelineRepository.flush();
+		List<AdminScholarshipDetailResponse.TimelineData> rows = safe(timeline);
+		for (int i = 0; i < rows.size(); i++) {
+			AdminScholarshipDetailResponse.TimelineData data = rows.get(i);
+			scholarshipTimelineRepository.save(ScholarshipTimeline.builder()
+					.scholarship(scholarship)
+					.stageCode(TimelineStageCode.valueOf(data.stageCode()))
+					.title(data.title())
+					.dateType(TimelineDateType.valueOf(data.dateType()))
+					.startDate(data.startDate())
+					.endDate(data.endDate())
+					.dateText(data.dateText())
+					.note(data.note())
+					.evidence(data.evidence())
+					.origin(data.origin() == null ? TimelineOrigin.MANUAL : TimelineOrigin.valueOf(data.origin()))
+					.displayOrder(i)
+					.build());
+		}
+		return rows.size();
 	}
 
 	private Scholarship createScholarship(ScholarshipManualFullRequest request, String dedupKey) {
