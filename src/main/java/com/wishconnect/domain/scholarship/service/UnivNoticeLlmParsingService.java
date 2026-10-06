@@ -445,6 +445,9 @@ public class UnivNoticeLlmParsingService {
 
 		Scholarship existing = shareableTarget(raw);
 		if (existing != null) {
+			if (existing.isPeriodLocked() && !existing.isDeletedByAdmin()) {
+				log.info("[UnivLlmParsing] 모집기간 수기 고정 — 기간 갱신 건너뜀 scholarshipId={}", existing.getId());
+			}
 			existing.applyLlmParsed(cleanTitle(title), provider, notice.summary(), description,
 					type, startAt, endAt,
 					parser.resolveSelectionCount(notice.selectionCount()),

@@ -52,6 +52,8 @@ class ScholarshipAdminOverviewServiceTest {
 	@Mock
 	private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock
+	private com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository scholarshipTimelineRepository;
+	@Mock
 	private ImageStorageService imageStorageService;
 
 	@Mock
@@ -233,6 +235,36 @@ class ScholarshipAdminOverviewServiceTest {
 
 		assertThat(result.getContent()).hasSize(1);
 		assertThat(result.getContent().get(0).hasPoster()).isTrue();
+	}
+
+	@Test
+	@DisplayName("관리자 상세는 선발 일정 전체 필드(표시 순서대로)와 모집기간 수기 고정 여부를 준다")
+	void detailIncludesTimelineAndPeriodLock() {
+		Scholarship target = Scholarship.builder().title("일정 장학금").recruitmentStatus(RecruitmentStatus.OPEN).build();
+		ReflectionTestUtils.setField(target, "id", 88L);
+		target.changePeriodLocked(true);
+		given(scholarshipRepository.findById(88L)).willReturn(Optional.of(target));
+		com.wishconnect.domain.scholarship.entity.ScholarshipTimeline row =
+				com.wishconnect.domain.scholarship.entity.ScholarshipTimeline.builder()
+						.scholarship(target)
+						.stageCode(com.wishconnect.domain.scholarship.entity.TimelineStageCode.FINAL_RESULT)
+						.title("최종 발표")
+						.dateType(com.wishconnect.domain.scholarship.entity.TimelineDateType.TBD)
+						.dateText("12월 중 예정")
+						.note("개별 통보")
+						.evidence("원문 문장")
+						.origin(com.wishconnect.domain.scholarship.entity.TimelineOrigin.MANUAL)
+						.displayOrder(0)
+						.build();
+		ReflectionTestUtils.setField(row, "id", 5L);
+		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(88L)).willReturn(List.of(row));
+
+		com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse detail = service.detail(88L);
+
+		assertThat(detail.scholarship().periodLocked()).isTrue();
+		assertThat(detail.timeline()).containsExactly(new com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse
+				.TimelineData(5L, "FINAL_RESULT", "최종 발표", "TBD", null, null, "12월 중 예정", "개별 통보", "원문 문장",
+				"MANUAL", 0));
 	}
 
 	@Test

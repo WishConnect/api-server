@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -28,6 +29,7 @@ import org.springframework.util.StringUtils;
 공공데이터 원본 JSON을 서비스용 장학금 엔티티 구조로 변환하는 매퍼입니다.
 날짜, 금액, 제출서류, 매칭 조건 파싱을 담당해 SyncService가 저장 흐름에만 집중하도록 분리합니다.
  */
+@Slf4j
 @Component
 public class ScholarshipMapper {
 
@@ -76,6 +78,13 @@ public class ScholarshipMapper {
 			return scholarship;
 		}
 
+		if (existingScholarship.isPeriodLocked() && !existingScholarship.isDeletedByAdmin()) {
+			// 관리자가 고친 모집기간을 지킨다. 모집 상태·노출 여부도 응답 날짜가 아니라 고정된 기간으로 정한다.
+			log.info("[ScholarshipSync] 모집기간 수기 고정 — 기간 갱신 건너뜀 scholarshipId={}", existingScholarship.getId());
+			recruitmentStatus = resolveRecruitmentStatus(
+				existingScholarship.getApplicationStartAt(), existingScholarship.getApplicationEndAt());
+			active = recruitmentStatus != RecruitmentStatus.CLOSED;
+		}
 		existingScholarship.updateFromApi(
 			title,
 			provider,

@@ -70,6 +70,9 @@ class ScholarshipManualExcelServiceTest {
 		assertThat(request.conditions().get(0).refLabels()).containsExactly("서울 광진구");
 		assertThat(request.documents()).hasSize(1);
 		assertThat(request.imageSourceUrl()).isEqualTo("https://example.com/poster.jpg");
+		// 엑셀은 일정 시트가 없다. timeline=null 이라 서버는 일정을 건드리지 않는다(빈 목록이면 지운다).
+		assertThat(request.timeline()).isNull();
+		assertThat(request.periodLocked()).isNull();
 	}
 
 	private MockMultipartFile workbook() throws Exception {

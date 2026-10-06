@@ -63,4 +63,71 @@ class ScholarshipChangeFieldsTest {
 		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, before, after))
 				.isEqualTo("변경: 제목, 모집 상태(OPEN→CLOSED), 자격·우대 조건(2→1건)");
 	}
+
+	private static final String ROW_A = "{\"id\":1,\"stageCode\":\"DOC_RESULT\",\"title\":\"서류 발표\",\"dateType\":\"SINGLE\","
+			+ "\"startDate\":\"2026-11-01\",\"endDate\":\"2026-11-01\",\"origin\":\"MANUAL\",\"displayOrder\":0}";
+	private static final String ROW_B = "{\"id\":2,\"stageCode\":\"INTERVIEW\",\"title\":\"면접\",\"dateType\":\"SINGLE\","
+			+ "\"startDate\":\"2026-11-10\",\"endDate\":\"2026-11-10\",\"origin\":\"MANUAL\",\"displayOrder\":1}";
+	private static final String ROW_C = "{\"id\":3,\"stageCode\":\"FINAL_RESULT\",\"title\":\"최종 발표\",\"dateType\":\"TBD\","
+			+ "\"dateText\":\"12월 중\",\"origin\":\"MANUAL\",\"displayOrder\":2}";
+
+	private JsonNode aggregate(boolean periodLocked, String... rows) throws Exception {
+		return json("{\"scholarship\":{\"title\":\"A\",\"periodLocked\":" + periodLocked + "},\"conditions\":[],"
+				+ "\"documents\":[],\"timeline\":[" + String.join(",", rows) + "]}");
+	}
+
+	@Test
+	@DisplayName("일정은 행 ID 가 바뀌어도(저장마다 새로 만듦) 내용이 같으면 변경이 아니다")
+	void ignoresTimelineIds() throws Exception {
+		JsonNode before = aggregate(false, ROW_A);
+		JsonNode after = aggregate(false, ROW_A.replace("\"id\":1", "\"id\":99"));
+
+		assertThat(ScholarshipChangeFields.changed(Kind.AGGREGATE, before, after)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("일정 변경은 \"선발 일정 N건 변경\"으로 요약한다 — 고침 1건, 하나 빼고 둘 넣으면 2건")
+	void summarizesTimelineRows() throws Exception {
+		JsonNode before = aggregate(false, ROW_A, ROW_B);
+
+		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, before,
+				aggregate(false, ROW_A, ROW_B.replace("2026-11-10", "2026-11-12"))))
+				.isEqualTo("변경: 선발 일정 1건 변경");
+		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, before,
+				aggregate(false, ROW_A, ROW_C, ROW_C.replace("최종 발표", "장학금 지급"))))
+				.isEqualTo("변경: 선발 일정 2건 변경");
+		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, before, aggregate(false)))
+				.isEqualTo("변경: 선발 일정 2건 변경");
+	}
+
+	@Test
+	@DisplayName("순서만 바뀌면 \"선발 일정 순서 변경\"")
+	void summarizesTimelineReorder() throws Exception {
+		JsonNode before = aggregate(false, ROW_A, ROW_B);
+		JsonNode after = aggregate(false, ROW_B.replace("\"displayOrder\":1", "\"displayOrder\":0"),
+				ROW_A.replace("\"displayOrder\":0", "\"displayOrder\":1"));
+
+		assertThat(ScholarshipChangeFields.changed(Kind.AGGREGATE, before, after)).containsExactly("timeline");
+		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, before, after))
+				.isEqualTo("변경: 선발 일정 순서 변경");
+	}
+
+	@Test
+	@DisplayName("모집기간 수기 고정은 전후 값을 보여 준다")
+	void summarizesPeriodLocked() throws Exception {
+		assertThat(ScholarshipChangeFields.summarize(Kind.AGGREGATE, aggregate(false), aggregate(true)))
+				.isEqualTo("변경: 모집기간 수기 고정(false→true)");
+	}
+
+	@Test
+	@DisplayName("옛 스냅샷(일정·고정 키 없음)과 비교하면 일정·고정은 바뀐 필드로 치지 않는다")
+	void oldSnapshotDoesNotReportTimeline() throws Exception {
+		JsonNode old = json("{\"scholarship\":{\"title\":\"A\"},\"conditions\":[],\"documents\":[]}");
+		JsonNode current = aggregate(true, ROW_A);
+
+		assertThat(ScholarshipChangeFields.recorded(Kind.AGGREGATE, old, "timeline")).isFalse();
+		assertThat(ScholarshipChangeFields.recorded(Kind.AGGREGATE, old, "periodLocked")).isFalse();
+		assertThat(ScholarshipChangeFields.changed(Kind.AGGREGATE, old, current)).isEmpty();
+		assertThat(ScholarshipChangeFields.changed(Kind.AGGREGATE, current, old)).isEmpty();
+	}
 }

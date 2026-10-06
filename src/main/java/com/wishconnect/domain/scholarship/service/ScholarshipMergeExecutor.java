@@ -4,6 +4,7 @@ import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import jakarta.persistence.EntityManager;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +21,9 @@ import org.springframework.stereotype.Component;
  * <p>처리 방식은 셋으로 나뉜다.
  * <ul>
  *   <li><b>재지정</b> — 사용자 데이터. scrap / essay / report / dispatch_log / recommendation
- *       / raw_scholarship / timeline / event</li>
- *   <li><b>조건부 재지정</b> — 남길 쪽에 없을 때만 옮긴다. image(포스터) / interview_prep_question</li>
+ *       / raw_scholarship / event</li>
+ *   <li><b>조건부 재지정</b> — 남길 쪽에 없을 때만 옮긴다. image(포스터) / interview_prep_question
+ *       / timeline(남길 쪽에 있으면 중복 쪽 일정은 지운다)</li>
  *   <li><b>삭제</b> — 파싱으로 다시 만들어지는 파생 데이터. condition / document</li>
  *   <li><b>소프트 삭제</b> — 중복 장학금 자신</li>
  * </ul>
@@ -79,7 +81,6 @@ public class ScholarshipMergeExecutor {
 		moved.put("report.moved", repoint("ScholarshipReport", from, to));
 		moved.put("dispatchLog.moved", repoint("NotificationDispatchLog", from, to));
 		moved.put("recommendation.moved", repoint("ScholarshipRecommendation", from, to));
-		moved.put("timeline.moved", repoint("ScholarshipTimeline", from, to));
 		// 추천 노출·클릭 기록. 옮기지 않으면 사라진 장학금을 가리킨 채 남아 랭킹 학습 데이터가 샌다.
 		// ScholarshipEvent 는 @ManyToOne 이 아니라 Long scholarshipId 필드만 있어 repoint() 를 쓰면 안 된다.
 		// (repoint 가 만드는 e.scholarship.id 경로는 Hibernate 가 해석하지 못해 2026-08-20 이후 모든 병합 승인이
@@ -96,6 +97,7 @@ public class ScholarshipMergeExecutor {
 		// 5) 포스터 이미지와 면접 예상 질문. 남길 쪽에 이미 있으면 옮기지 않는다(아래 설명).
 		moveImages(from, to, moved);
 		moveInterviewPrepQuestions(from, to, moved);
+		moveTimeline(from, to, moved);
 
 		// 6) 파생 데이터는 옮기지 않고 지운다. primary 쪽 값이 이미 있고,
 		//    합치면 같은 조건·서류가 중복으로 쌓인다. 재파싱하면 다시 만들어진다.
@@ -171,6 +173,35 @@ public class ScholarshipMergeExecutor {
 		}
 		moved.put("interviewPrep.moved", repoint("InterviewPrepQuestion", from, to));
 		moved.put("interviewPrep.keptOnDuplicate", 0);
+	}
+
+	/**
+	 * 선발 일정. 둘 다 옮기면 같은 공고의 일정이 두 벌 쌓인다(서류 발표가 두 줄).
+	 *
+	 * <p>남길 쪽에 일정이 <b>1건이라도 있으면</b> 그쪽을 정본으로 보고 중복 쪽 일정은 지운다. 사람이 넣은 값이지만
+	 * 남길 쪽에서 다시 확인해 고칠 수 있고, 섞어 두면 어느 줄이 맞는지 가릴 수 없다.
+	 * 없으면 통째로 옮기고 순서를 0부터 다시 매긴다(옮겨 온 행의 순서가 중간부터 시작하지 않게).
+	 */
+	private void moveTimeline(Long from, Long to, Map<String, Integer> moved) {
+		if (countByScholarship("ScholarshipTimeline", to) > 0) {
+			moved.put("timeline.moved", 0);
+			moved.put("timeline.deletedOnDuplicate", deleteBy("ScholarshipTimeline", from));
+			return;
+		}
+		moved.put("timeline.moved", repoint("ScholarshipTimeline", from, to));
+		moved.put("timeline.deletedOnDuplicate", 0);
+		// 벌크 갱신으로 순서를 매긴다. 엔티티를 읽어 고치면 영속성 컨텍스트에 남은 옛 상태(scholarship_id)가
+		// 함께 flush 될 수 있다.
+		List<?> ids = entityManager.createQuery(
+						"select t.id from ScholarshipTimeline t where t.scholarship.id = :id order by t.displayOrder, t.id")
+				.setParameter("id", to)
+				.getResultList();
+		for (int i = 0; i < ids.size(); i++) {
+			entityManager.createQuery("update ScholarshipTimeline t set t.displayOrder = :order where t.id = :id")
+					.setParameter("order", i)
+					.setParameter("id", ids.get(i))
+					.executeUpdate();
+		}
 	}
 
 	private long count(String jpql, Long entityId) {

@@ -136,6 +136,11 @@
 		operator: {EQ: '같음', IN: '다음 중 하나', GTE: '이상', LTE: '이하', BETWEEN: '범위'},
 		channel: {ONLINE: '온라인', EMAIL: '이메일', POST: '우편', VISIT: '방문', FAX: '팩스', MIXED: '여러 방법', THIRD_PARTY: '외부 기관 경유'},
 		requirement: {REQUIRED: '필수', CONDITIONAL: '조건부', NOT_REQUIRED: '없음'},
+		/** 선발 일정 단계. CUSTOM 이 아닌 단계는 표시명을 비우면 이 이름이 들어간다(서버 TimelineStageCode 와 같음). */
+		stage: {APPLICATION: '서류접수', DOC_REVIEW: '서류심사', DOC_RESULT: '서류 발표', INTERVIEW: '면접', FINAL_RESULT: '최종 발표',
+			PAYMENT: '장학금 지급', CUSTOM: '기타(직접 입력)'},
+		timelineOrigin: {MANUAL: '수기', LLM: 'LLM 추출', KOSAF: '공공데이터'},
+		scheduleStatus: {CLOSED: '지남', CURRENT: '진행 중', UPCOMING: '예정', TBD: '일정 미정'},
 		noticeKind: {RECRUITMENT: '모집 공고', RESULT: '선발 결과 안내', GUIDE: '일반 안내', NOT_SCHOLARSHIP: '장학금 아님'},
 		reportReason: {
 			ALREADY_CLOSED: '이미 마감', WRONG_INFO: '정보 오류', WRONG_CONDITION: '조건 오류', DUPLICATE: '중복', OTHER: '기타',
@@ -176,7 +181,8 @@
 		handle: {PENDING: 'b-warning', RESOLVED: 'b-success', REJECTED: ''},
 		mergeStatus: {PENDING: 'b-warning', REJECTED: '', MERGED: 'b-success'},
 		mergeOrigin: {LLM: 'b-info', MANUAL: 'b-brand'},
-		jobStatus: {RUNNING: 'b-info', SUCCEEDED: 'b-success', WARNING: 'b-warning', PARTIAL_FAILURE: 'b-warning', FAILED: 'b-danger'}
+		jobStatus: {RUNNING: 'b-info', SUCCEEDED: 'b-success', WARNING: 'b-warning', PARTIAL_FAILURE: 'b-warning', FAILED: 'b-danger'},
+		scheduleStatus: {CLOSED: '', CURRENT: 'b-success', UPCOMING: 'b-info', TBD: 'b-warning'}
 	};
 	/** 코드 배지. 한글 라벨을 보여 주고 원래 코드는 마우스를 올리면 보인다. */
 	const badge = (group, code, tone) => code == null || code === '' ? '<span class="text-muted">-</span>'

@@ -127,6 +127,31 @@ class ScholarshipDetailServiceTest {
 	}
 
 	@Test
+	@DisplayName("상세: 입력된 선발 일정은 모집기간 대체 줄 뒤에 붙고, 미정은 문구·UPCOMING 으로 나간다")
+	void returnsTimelineAfterFallback() {
+		Scholarship scholarship = scholarship(2L);
+		given(scholarshipRepository.findById(2L)).willReturn(Optional.of(scholarship));
+		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(2L)).willReturn(List.of(
+				com.wishconnect.domain.scholarship.entity.ScholarshipTimeline.builder()
+						.stageCode(com.wishconnect.domain.scholarship.entity.TimelineStageCode.FINAL_RESULT)
+						.title("최종 발표")
+						.dateType(com.wishconnect.domain.scholarship.entity.TimelineDateType.TBD)
+						.dateText("12월 중 예정")
+						.origin(com.wishconnect.domain.scholarship.entity.TimelineOrigin.MANUAL)
+						.build()));
+		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
+				.willReturn(Optional.empty());
+
+		ScholarshipDetailResponse detail = scholarshipDetailService.getDetail(null, 2L);
+
+		assertThat(detail.selectionSchedule()).extracting(ScholarshipDetailResponse.ScheduleStep::step)
+				.containsExactly("서류접수", "최종 발표");
+		assertThat(detail.selectionSchedule().get(1).date()).isEqualTo("12월 중 예정");
+		assertThat(detail.selectionSchedule().get(1).status()).isEqualTo("UPCOMING");
+	}
+
+	@Test
 	@DisplayName("비로그인 상세는 스크랩·추천 사유 조회 없이 공개 정보를 반환한다")
 	void guestReturnsPublicDetailWithoutPersonalDataLookup() {
 		Scholarship scholarship = scholarship(1L);

@@ -250,6 +250,16 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "dedup_scanned_at")
 	private LocalDateTime dedupScannedAt;
 
+	/**
+	 * 관리자가 모집기간을 직접 고쳤는지. true 면 공공데이터 동기화({@link #updateFromApi})와 대학 공지
+	 * 재파싱({@link #applyLlmParsed})이 <b>기간만</b> 건너뛰고 나머지는 평소처럼 갱신한다.
+	 *
+	 * <p>없을 때는 관리자가 통합 수정으로 고친 마감일을 다음 날 동기화가 원래 값으로 되돌렸다.
+	 * 통합 수정에서 기간이 바뀌면 자동으로 켜지고, 콘솔의 "자동 수집 값으로 되돌리기"로 끈다.
+	 */
+	@Column(name = "period_locked", nullable = false)
+	private boolean periodLocked;
+
 	@Builder
 	private Scholarship(
 		String title,
@@ -329,8 +339,11 @@ public class Scholarship extends BaseEntity {
 		this.summary = summary;
 		this.description = description;
 		this.scholarshipType = scholarshipType;
-		this.applicationStartAt = applicationStartAt;
-		this.applicationEndAt = applicationEndAt;
+		// 관리자가 고정한 기간은 덮지 않는다. 모집 상태는 호출부(ScholarshipMapper)가 고정 기간으로 계산해 넘긴다.
+		if (!periodLocked) {
+			this.applicationStartAt = applicationStartAt;
+			this.applicationEndAt = applicationEndAt;
+		}
 		this.recruitmentStatus = recruitmentStatus == null ? RecruitmentStatus.UPCOMING : recruitmentStatus;
 		this.selectionCount = selectionCount;
 		this.amount = amount;
@@ -586,19 +599,27 @@ public class Scholarship extends BaseEntity {
 		this.summary = summary;
 		this.description = description;
 		this.scholarshipType = scholarshipType;
-		this.applicationStartAt = applicationStartAt;
-		this.applicationEndAt = applicationEndAt;
+		// 관리자가 고정한 기간은 재파싱이 덮지 않는다(나머지 필드는 평소처럼 갱신). 상태는 남은 기간으로 계산한다.
+		if (!periodLocked) {
+			this.applicationStartAt = applicationStartAt;
+			this.applicationEndAt = applicationEndAt;
+		}
 		this.selectionCount = selectionCount;
 		this.amount = amount;
 		if (homepageUrl != null) {
 			this.homepageUrl = homepageUrl;
 		}
-		this.recruitmentStatus = resolveStatus(applicationStartAt, applicationEndAt);
+		this.recruitmentStatus = resolveStatus(this.applicationStartAt, this.applicationEndAt);
 		// 마감된 공고는 목록에서 내린다. 마감일을 못 찾은 경우(null)는 노출을 유지한다 —
 		// 기간을 모른다는 것이 끝났다는 뜻은 아니고, 숨기는 쪽이 더 해롭다.
 		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
 		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
+	}
+
+	/** 모집기간 수기 고정을 켜거나 끈다. 끄면 다음 동기화·재파싱부터 수집한 기간으로 다시 덮인다. */
+	public void changePeriodLocked(boolean periodLocked) {
+		this.periodLocked = periodLocked;
 	}
 
 	/** 오등록으로 확인된 장학금을 목록에서 내린다. 이력 추적을 위해 행은 남긴다. */

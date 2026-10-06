@@ -614,6 +614,7 @@ public class ScholarshipAdminController {
 					조건의 refLabels는 화면에서 선택한 지역·전공 등의 이름이며, 서버가 실제 마스터 ID·코드로
 					변환합니다. imageSourceUrl이 있으면 DB 트랜잭션 종료 후 이미지를 S3에 저장하고 image 테이블에
 					연결합니다. 이미지 저장 실패는 장학금 등록을 취소하지 않고 imageSaved=false로 알립니다.
+					timeline 을 보내면 선발 일정도 함께 저장합니다(규칙은 통합 수기 수정과 같음). periodLocked 는 무시합니다.
 					(ADMIN 전용)
 					""")
 	@PostMapping("/manual/full")
@@ -644,8 +645,16 @@ public class ScholarshipAdminController {
 
 	@Operation(summary = "장학금 통합 수기 수정",
 			description = """
-					장학금 기본정보·조건·참조·제출서류·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는
-					전달된 최종 목록으로 교체합니다.
+					장학금 기본정보·조건·참조·제출서류·선발 일정·제출방식·자소서/면접 분기를 한 번에 수정합니다. 조건과 서류는
+					전달된 최종 목록으로 교체합니다(null 이면 빈 목록으로 보고 모두 지웁니다).
+
+					선발 일정(timeline)은 다릅니다: 생략·null 이면 기존 일정 유지, [] 이면 모두 삭제, 목록이면 그 목록으로
+					전체 교체(배열 순서가 표시 순서, 출처 MANUAL). 검증 실패는 TIMELINE_* 오류이며 data 에
+					index(0부터)·field·maxLength 가 담깁니다.
+
+					모집기간 수기 고정(periodLocked): 생략하면 모집 시작·마감이 현재 값과 달라질 때(분 단위 비교) 자동으로
+					true 가 됩니다. 명시하면 그 값을 우선합니다 — false 는 "자동 수집 값으로 되돌리기"로, 다음 공공데이터
+					동기화·대학 공지 재파싱부터 수집한 기간으로 다시 덮입니다. 고정된 동안 두 경로는 기간만 건너뜁니다.
 
 					모집 상태는 보낸 값 그대로 저장하며 날짜로 다시 계산하지 않습니다. recruitmentStatus 를 비우면 기존
 					상태를 유지합니다. 응답 statusCheck 에 마감일과의 모순(마감 지났는데 OPEN 등)이 담기니 화면에서

@@ -92,7 +92,9 @@ public class ScholarshipFieldRestorer {
 		JsonNode recordedScholarship = recorded.path("scholarship");
 		boolean scalarChosen = false;
 		for (String field : fields) {
-			if (ScholarshipChangeFields.CONDITIONS.equals(field) || ScholarshipChangeFields.DOCUMENTS.equals(field)) {
+			if (ScholarshipChangeFields.CONDITIONS.equals(field) || ScholarshipChangeFields.DOCUMENTS.equals(field)
+					|| ScholarshipChangeFields.TIMELINE.equals(field)
+					|| ScholarshipChangeFields.PERIOD_LOCKED.equals(field)) {
 				continue;
 			}
 			merged.set(field, recordedScholarship.get(field));
@@ -120,6 +122,18 @@ public class ScholarshipFieldRestorer {
 			if (fields.contains(ScholarshipChangeFields.DOCUMENTS)) {
 				aggregateStore.replaceDocumentsFromSnapshot(scholarshipId, snapshot.documents());
 			}
+		}
+		// 선발 일정·기간 고정은 2026-10 이후 기록에만 있다. 키가 없는 옛 기록이면 현재 값을 그대로 둔다
+		// (없는 것을 "빈 일정"으로 읽어 지워 버리면 안 된다).
+		if (fields.contains(ScholarshipChangeFields.TIMELINE)
+				&& ScholarshipChangeFields.recorded(Kind.AGGREGATE, recorded, ScholarshipChangeFields.TIMELINE)) {
+			aggregateStore.replaceTimelineFromSnapshot(scholarshipId,
+					read(recorded, AdminScholarshipEditSnapshot.class).timeline());
+		}
+		if (fields.contains(ScholarshipChangeFields.PERIOD_LOCKED)
+				&& ScholarshipChangeFields.recorded(Kind.AGGREGATE, recorded, ScholarshipChangeFields.PERIOD_LOCKED)) {
+			find(scholarshipId).changePeriodLocked(
+					recordedScholarship.path(ScholarshipChangeFields.PERIOD_LOCKED).asBoolean(false));
 		}
 	}
 

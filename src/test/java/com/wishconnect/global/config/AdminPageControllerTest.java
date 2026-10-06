@@ -83,6 +83,12 @@ class AdminPageControllerTest {
 							.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
 					.andExpect(status().isOk());
 		}
+		// 선발 일정 편집기가 실린 스크립트인지(정적 파일은 jar 에서 나가므로 빌드 누락을 여기서 잡는다). 한글은 응답 문자셋 때문에 피한다.
+		mockMvc.perform(get("/admin/admin-console.js").cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
+				.andExpect(content().string(org.hamcrest.Matchers.allOf(
+						org.hamcrest.Matchers.containsString("data-schedule-slot"),
+						org.hamcrest.Matchers.containsString("payload.timeline"),
+						org.hamcrest.Matchers.containsString("periodLocked"))));
 	}
 
 	private void givenAdminToken() {
