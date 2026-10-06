@@ -2,6 +2,9 @@ package com.wishconnect.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.wishconnect.domain.scholarship.entity.TimelineDateType;
+import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
+import com.wishconnect.domain.scholarship.entity.TimelineStageCode;
 import com.wishconnect.global.operation.AdminJobFailureType;
 import com.wishconnect.global.operation.AdminJobStatus;
 import java.io.IOException;
@@ -68,5 +71,28 @@ class MigrationCheckConstraintTest {
 	void failureType() throws IOException {
 		assertThat(checkValues("V20261003_01__admin_job_failure.sql", "admin_job_failure_failure_type_check"))
 				.containsExactlyInAnyOrderElementsOf(enumNames(AdminJobFailureType.class));
+	}
+
+	private static final String TIMELINE_MIGRATION = "V20261006_01__scholarship_timeline_manual_schedule.sql";
+
+	@Test
+	@DisplayName("scholarship_timeline.stage_code CHECK = TimelineStageCode")
+	void timelineStageCode() throws IOException {
+		assertThat(checkValues(TIMELINE_MIGRATION, "scholarship_timeline_stage_code_check"))
+				.containsExactlyInAnyOrderElementsOf(enumNames(TimelineStageCode.class));
+	}
+
+	@Test
+	@DisplayName("scholarship_timeline.date_type CHECK = TimelineDateType")
+	void timelineDateType() throws IOException {
+		assertThat(checkValues(TIMELINE_MIGRATION, "scholarship_timeline_date_type_check"))
+				.containsExactlyInAnyOrderElementsOf(enumNames(TimelineDateType.class));
+	}
+
+	@Test
+	@DisplayName("scholarship_timeline.origin CHECK = TimelineOrigin")
+	void timelineOrigin() throws IOException {
+		assertThat(checkValues(TIMELINE_MIGRATION, "scholarship_timeline_origin_check"))
+				.containsExactlyInAnyOrderElementsOf(enumNames(TimelineOrigin.class));
 	}
 }

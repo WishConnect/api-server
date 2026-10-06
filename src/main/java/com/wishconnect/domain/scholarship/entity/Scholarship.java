@@ -250,6 +250,16 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "dedup_scanned_at")
 	private LocalDateTime dedupScannedAt;
 
+	/**
+	 * 관리자가 모집기간을 직접 고쳤는지. true 면 공공데이터 동기화({@link #updateFromApi})와 대학 공지
+	 * 재파싱({@link #applyLlmParsed})이 <b>기간만</b> 건너뛰고 나머지는 평소처럼 갱신한다.
+	 *
+	 * <p>없을 때는 관리자가 통합 수정으로 고친 마감일을 다음 날 동기화가 원래 값으로 되돌렸다.
+	 * 통합 수정에서 기간이 바뀌면 자동으로 켜지고, 콘솔의 "자동 수집 값으로 되돌리기"로 끈다.
+	 */
+	@Column(name = "period_locked", nullable = false)
+	private boolean periodLocked;
+
 	@Builder
 	private Scholarship(
 		String title,
@@ -599,6 +609,11 @@ public class Scholarship extends BaseEntity {
 		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
 		this.deletedAt = null;
 		this.lastSyncedAt = LocalDateTime.now();
+	}
+
+	/** 모집기간 수기 고정을 켜거나 끈다. 끄면 다음 동기화·재파싱부터 수집한 기간으로 다시 덮인다. */
+	public void changePeriodLocked(boolean periodLocked) {
+		this.periodLocked = periodLocked;
 	}
 
 	/** 오등록으로 확인된 장학금을 목록에서 내린다. 이력 추적을 위해 행은 남긴다. */
