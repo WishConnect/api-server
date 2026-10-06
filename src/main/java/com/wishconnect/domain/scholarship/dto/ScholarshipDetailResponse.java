@@ -22,6 +22,7 @@ public record ScholarshipDetailResponse(
 		String posterUrl,
 		String detailUrl,
 		Summary summary,
+		@Schema(description = "선발 일정. 접수 단계를 따로 입력하지 않았으면 모집기간 \"서류접수\" 줄이 맨 앞, 그 뒤 일정이 표시 순서대로")
 		List<ScheduleStep> selectionSchedule,
 		List<RequiredDocument> requiredDocuments,
 		@Schema(description = "프로필과 공고를 대조한 추천 이유") List<String> matchReasons,
@@ -72,7 +73,23 @@ public record ScholarshipDetailResponse(
 	) {
 	}
 
-	public record ScheduleStep(String step, String date, String status) {
+	/**
+	 * 선발 일정 한 줄.
+	 *
+	 * <p>순서: 접수(APPLICATION) 단계를 직접 입력하지 않았고 모집기간이 있으면 모집기간으로 만든 "서류접수" 줄이
+	 * 맨 앞에 온다. 그 뒤에 관리자가 입력한 일정이 표시 순서대로 온다. 일정이 없으면 "서류접수" 한 줄(또는 빈 목록).
+	 */
+	@Schema(description = "선발 일정 한 줄")
+	public record ScheduleStep(
+			@Schema(description = "단계 표시명", example = "면접") String step,
+			@Schema(description = """
+					날짜 문자열. 하루 "yyyy.MM.dd", 기간 "yyyy.MM.dd ~ yyyy.MM.dd", 미정이면 관리자가 쓴 문구 그대로
+					(예: "12월 중 예정"). 모집기간 "서류접수" 줄은 한쪽 날짜만 있으면 "~yyyy.MM.dd" 또는 "yyyy.MM.dd~".""",
+					example = "2026.11.20") String date,
+			@Schema(description = """
+					한국 날짜 기준으로 조회 때 계산한 상태. CLOSED 지남 / CURRENT 진행 중(하루짜리는 당일) / UPCOMING 예정 /
+					TBD 날짜 미정. ⚠ 현재는 TBD 를 UPCOMING 으로 바꿔 보낸다 — 프론트가 TBD 를 지원하면 TBD 를 그대로 보낸다.""",
+					allowableValues = {"CLOSED", "CURRENT", "UPCOMING", "TBD"}, example = "UPCOMING") String status) {
 	}
 
 	public record RequiredDocument(String name, String downloadUrl) {
