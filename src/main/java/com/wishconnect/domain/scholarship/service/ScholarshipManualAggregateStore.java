@@ -13,11 +13,14 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
+import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
+import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.util.List;
@@ -27,7 +30,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 수기 통합 등록의 DB 작업을 한 트랜잭션으로 묶는다. 외부 이미지 다운로드는 포함하지 않는다. */
+/** 수기 통합 등록의 DB 작업(장학금·원문·조건·서류·선발 일정)을 한 트랜잭션으로 묶는다. 외부 이미지 다운로드는 포함하지 않는다. */
 @Service
 @RequiredArgsConstructor
 public class ScholarshipManualAggregateStore {
@@ -36,12 +39,14 @@ public class ScholarshipManualAggregateStore {
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
+	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ConditionRefResolver conditionRefResolver;
 	private final ObjectMapper objectMapper;
 
 	@Transactional
 	public SavedAggregate create(ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		String manualKey = Scholarship.MANUAL_SOURCE + ":" + UUID.randomUUID();
 		Scholarship scholarship = createScholarship(request, manualKey);
 
@@ -58,6 +63,7 @@ public class ScholarshipManualAggregateStore {
 
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		saveTimeline(scholarship, safe(timeline));
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
@@ -65,6 +71,7 @@ public class ScholarshipManualAggregateStore {
 	@Transactional
 	public SavedAggregate createFromRaw(Long rawId, ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		RawScholarship raw = rawScholarshipRepository.findById(rawId)
 				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
 		if (raw.getScholarship() != null) {
@@ -74,13 +81,20 @@ public class ScholarshipManualAggregateStore {
 		raw.markParsed(scholarship);
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		saveTimeline(scholarship, safe(timeline));
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
-	/** 통합 편집은 조건·서류 목록을 화면에 보이는 최종 상태로 교체한다. */
+	/**
+	 * 통합 편집은 조건·서류 목록을 화면에 보이는 최종 상태로 교체한다.
+	 *
+	 * <p>선발 일정은 다르다. {@code timeline} 이 null(생략)이면 <b>기존 일정을 그대로 둔다</b> — 일정을 모르는
+	 * 옛 화면·다른 경로가 저장하면서 일정을 지우지 않게 하려는 것이다. 빈 목록일 때만 모두 지운다.
+	 */
 	@Transactional
 	public SavedAggregate update(Long scholarshipId, ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
 				.filter(value -> !value.isDeleted())
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
@@ -99,6 +113,11 @@ public class ScholarshipManualAggregateStore {
 		scholarshipDocumentRepository.flush();
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		if (timeline != null) {
+			scholarshipTimelineRepository.deleteByScholarship(scholarship);
+			scholarshipTimelineRepository.flush();
+			saveTimeline(scholarship, timeline);
+		}
 		return saved(request, scholarship, null, refCount, documentCount);
 	}
 
@@ -230,6 +249,26 @@ public class ScholarshipManualAggregateStore {
 					.build());
 		}
 		return requests.size();
+	}
+
+	/** 순서는 배열 순서(0부터)로 매기고, 사람이 넣은 값이므로 출처는 MANUAL 이다. */
+	private void saveTimeline(Scholarship scholarship, List<ScholarshipTimelineValidator.Item> items) {
+		for (int i = 0; i < items.size(); i++) {
+			ScholarshipTimelineValidator.Item item = items.get(i);
+			scholarshipTimelineRepository.save(ScholarshipTimeline.builder()
+					.scholarship(scholarship)
+					.stageCode(item.stageCode())
+					.title(item.title())
+					.dateType(item.dateType())
+					.startDate(item.startDate())
+					.endDate(item.endDate())
+					.dateText(item.dateText())
+					.note(item.note())
+					.evidence(item.evidence())
+					.origin(TimelineOrigin.MANUAL)
+					.displayOrder(i)
+					.build());
+		}
 	}
 
 	private void validatePeriod(ScholarshipManualFullRequest request) {

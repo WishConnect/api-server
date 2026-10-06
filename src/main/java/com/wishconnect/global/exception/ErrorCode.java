@@ -73,6 +73,17 @@ public enum ErrorCode {
 	SCHOLARSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 장학금입니다."),
 	/** 수기 등록·수정에서 마감이 시작보다 앞설 때. 모집 상태 계산이 뒤틀리므로 입력 단계에서 막는다. */
 	INVALID_APPLICATION_PERIOD(HttpStatus.BAD_REQUEST, "모집 종료일이 시작일보다 빠를 수 없습니다."),
+	// 선발 일정(관리자 통합 수정·수기 등록). 실패 응답 data 에 행 번호·필드(TimelineFieldErrorResponse)가 실린다.
+	TIMELINE_TOO_MANY(HttpStatus.BAD_REQUEST, "선발 일정은 최대 10개까지 입력할 수 있습니다."),
+	TIMELINE_STAGE_CODE_INVALID(HttpStatus.BAD_REQUEST, "선발 일정 단계를 선택해주세요."),
+	TIMELINE_DATE_TYPE_INVALID(HttpStatus.BAD_REQUEST, "선발 일정 날짜 형태(단일·기간·미정)를 선택해주세요."),
+	TIMELINE_TITLE_REQUIRED(HttpStatus.BAD_REQUEST, "기타 단계는 표시명을 입력해주세요."),
+	TIMELINE_FIELD_TOO_LONG(HttpStatus.BAD_REQUEST, "선발 일정 입력값이 허용 길이를 넘었습니다."),
+	TIMELINE_DATE_REQUIRED(HttpStatus.BAD_REQUEST, "선발 일정 날짜를 입력해주세요."),
+	TIMELINE_DATE_TEXT_REQUIRED(HttpStatus.BAD_REQUEST, "미정 일정은 표시 문구를 입력해주세요."),
+	TIMELINE_TBD_DATE_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "미정 일정에는 날짜를 넣을 수 없습니다."),
+	TIMELINE_SINGLE_DATE_MISMATCH(HttpStatus.BAD_REQUEST, "단일 일정의 종료일은 시작일과 같아야 합니다."),
+	TIMELINE_RANGE_REVERSED(HttpStatus.BAD_REQUEST, "선발 일정 종료일이 시작일보다 빠를 수 없습니다."),
 	REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 신고입니다."),
 	REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 접수된 신고가 처리 중입니다."),
 	CONTENT_INQUIRY_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 콘텐츠 문의입니다."),

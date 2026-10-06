@@ -17,7 +17,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Schema(description = "장학금·원문·조건·서류·이미지를 함께 저장하는 관리자 수기 등록 요청")
+@Schema(description = "장학금·원문·조건·서류·선발 일정·이미지를 함께 저장하는 관리자 수기 등록 요청")
 public record ScholarshipManualFullRequest(
 		@NotBlank @Size(max = 500) String title,
 		@Size(max = 200) String provider,
@@ -44,8 +44,33 @@ public record ScholarshipManualFullRequest(
 		@Valid Source source,
 		@Valid List<Condition> conditions,
 		@Valid List<Document> documents,
-		@Size(max = 1000) String imageSourceUrl
+		@Size(max = 1000) String imageSourceUrl,
+		@Schema(description = """
+				선발 일정. 조건·서류와 의미가 다르다.
+				null 또는 생략: 기존 일정 유지 / []: 모두 삭제 / 목록: 그 목록으로 전체 교체(순서는 배열 순서, 출처 MANUAL).
+				최대 10행. 검증 실패는 TIMELINE_* 오류와 data(index·field·maxLength)로 돌려준다.""")
+		List<TimelineItemRequest> timeline,
+		@Schema(description = """
+				모집기간 수기 고정(통합 수정에서만 쓴다). 생략하면 모집 시작·마감이 현재 값과 달라질 때 자동으로 true.
+				명시하면 그 값을 우선한다 — false 는 "자동 수집 값으로 되돌리기"(다음 동기화·재파싱부터 수집 기간으로 덮임).
+				수기 등록·원본 수기 정제에서는 무시한다.""")
+		Boolean periodLocked
 ) {
+
+	/** 선발 일정·기간 고정을 모르는 경로(엑셀 일괄 등록 등)용. timeline=null 이라 기존 일정을 건드리지 않는다. */
+	public ScholarshipManualFullRequest(String title, String provider, String summary, String description,
+			ScholarshipType scholarshipType, LocalDateTime applicationStartAt, LocalDateTime applicationEndAt,
+			RecruitmentStatus recruitmentStatus, Integer selectionCount, Long amount, String homepageUrl,
+			String detailUrl, NoticeKind noticeKind, boolean combined, String submissionMethod,
+			SubmissionChannel submissionChannel, String submissionEvidence, String contact,
+			RequirementLevel essayRequirement, String essayEvidence, RequirementLevel interviewRequirement,
+			String interviewEvidence, Source source, List<Condition> conditions, List<Document> documents,
+			String imageSourceUrl) {
+		this(title, provider, summary, description, scholarshipType, applicationStartAt, applicationEndAt,
+				recruitmentStatus, selectionCount, amount, homepageUrl, detailUrl, noticeKind, combined,
+				submissionMethod, submissionChannel, submissionEvidence, contact, essayRequirement, essayEvidence,
+				interviewRequirement, interviewEvidence, source, conditions, documents, imageSourceUrl, null, null);
+	}
 
 	@Schema(description = "수기 등록 근거 원문. 입력 전체는 rawJson에도 자동 보관됩니다.")
 	public record Source(

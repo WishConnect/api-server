@@ -52,6 +52,8 @@ class ScholarshipAdminOverviewServiceTest {
 	@Mock
 	private ScholarshipDocumentRepository scholarshipDocumentRepository;
 	@Mock
+	private com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository scholarshipTimelineRepository;
+	@Mock
 	private ImageStorageService imageStorageService;
 
 	@Mock
