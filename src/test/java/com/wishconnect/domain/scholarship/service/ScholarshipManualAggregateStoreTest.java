@@ -267,6 +267,92 @@ class ScholarshipManualAggregateStoreTest {
 		verify(scholarshipTimelineRepository, never()).deleteByScholarship(any());
 	}
 
+	@Test
+	@DisplayName("통합 수정에서 모집 시작·마감이 현재 값과 달라지면 기간을 수기 고정한다")
+	void locksPeriodWhenChanged() {
+		Scholarship existing = existing(306L);
+		ReflectionTestUtils.setField(existing, "applicationStartAt", LocalDateTime.of(2026, 8, 19, 0, 0));
+		ReflectionTestUtils.setField(existing, "applicationEndAt", LocalDateTime.of(2026, 9, 4, 0, 0));
+
+		store.update(306L, request(LocalDateTime.of(2026, 8, 19, 0, 0), LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(existing.isPeriodLocked()).isTrue();
+	}
+
+	@Test
+	@DisplayName("기간이 그대로면(분 단위 비교, 초 이하는 무시) 고정하지 않는다")
+	void keepsUnlockedWhenPeriodSame() {
+		Scholarship existing = existing(307L);
+		ReflectionTestUtils.setField(existing, "applicationStartAt", LocalDateTime.of(2026, 8, 19, 0, 0, 30));
+		ReflectionTestUtils.setField(existing, "applicationEndAt", LocalDateTime.of(2026, 9, 4, 23, 59, 59));
+
+		store.update(307L, request(LocalDateTime.of(2026, 8, 19, 0, 0), LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(existing.isPeriodLocked()).isFalse();
+	}
+
+	@Test
+	@DisplayName("null → 날짜 생김도 기간 변경으로 본다")
+	void locksWhenPeriodAdded() {
+		Scholarship existing = existing(308L);
+
+		store.update(308L, request(null, LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(existing.isPeriodLocked()).isTrue();
+	}
+
+	@Test
+	@DisplayName("periodLocked=false 를 명시하면 기간이 바뀌어도 고정을 푼다(자동 수집 값으로 되돌리기)")
+	void explicitFalseUnlocks() {
+		Scholarship existing = existing(309L);
+		existing.changePeriodLocked(true);
+
+		store.update(309L, withTimeline(request(null, LocalDateTime.of(2026, 12, 1, 0, 0)), null, false));
+
+		assertThat(existing.isPeriodLocked()).isFalse();
+	}
+
+	@Test
+	@DisplayName("periodLocked=true 를 명시하면 기간이 그대로여도 고정한다")
+	void explicitTrueLocks() {
+		Scholarship existing = existing(310L);
+		ReflectionTestUtils.setField(existing, "applicationStartAt", LocalDateTime.of(2026, 8, 19, 0, 0));
+		ReflectionTestUtils.setField(existing, "applicationEndAt", LocalDateTime.of(2026, 9, 4, 23, 59));
+
+		store.update(310L, withTimeline(List.of(), true));
+
+		assertThat(existing.isPeriodLocked()).isTrue();
+	}
+
+	@Test
+	@DisplayName("이미 고정된 장학금은 기간을 안 바꾸고 periodLocked 를 생략해도 고정을 유지한다")
+	void keepsExistingLock() {
+		Scholarship existing = existing(311L);
+		ReflectionTestUtils.setField(existing, "applicationStartAt", LocalDateTime.of(2026, 8, 19, 0, 0));
+		ReflectionTestUtils.setField(existing, "applicationEndAt", LocalDateTime.of(2026, 9, 4, 23, 59));
+		existing.changePeriodLocked(true);
+
+		store.update(311L, request(LocalDateTime.of(2026, 8, 19, 0, 0), LocalDateTime.of(2026, 9, 4, 23, 59)));
+
+		assertThat(existing.isPeriodLocked()).isTrue();
+	}
+
+	@Test
+	@DisplayName("수기 등록·원본 수기 정제는 periodLocked 를 보내도 기본값(false)을 유지한다")
+	void createIgnoresPeriodLocked() {
+		ArgumentCaptor<Scholarship> captor = ArgumentCaptor.forClass(Scholarship.class);
+		given(scholarshipRepository.save(captor.capture())).willAnswer(invocation -> invocation.getArgument(0));
+		given(rawScholarshipRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+		RawScholarship raw = RawScholarship.builder().source("UNIV_KONKUK").sourceId("n-1")
+				.parseStatus(ParseStatus.FAILED).build();
+		given(rawScholarshipRepository.findById(78L)).willReturn(Optional.of(raw));
+
+		store.create(withTimeline(null, true));
+		store.createFromRaw(78L, withTimeline(null, true));
+
+		assertThat(captor.getAllValues()).hasSize(2).noneMatch(Scholarship::isPeriodLocked);
+	}
+
 	private Scholarship existing(Long id) {
 		Scholarship existing = Scholarship.builder()
 				.title("수정 전")

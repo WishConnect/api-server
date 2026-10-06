@@ -23,6 +23,8 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -98,6 +100,8 @@ public class ScholarshipManualAggregateStore {
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
 				.filter(value -> !value.isDeleted())
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		boolean periodChanged = changed(scholarship.getApplicationStartAt(), request.applicationStartAt())
+				|| changed(scholarship.getApplicationEndAt(), request.applicationEndAt());
 		scholarship.replaceByAdmin(
 				request.title().trim(), request.provider(), request.summary(), request.description(),
 				request.scholarshipType(), request.applicationStartAt(), request.applicationEndAt(),
@@ -106,6 +110,12 @@ public class ScholarshipManualAggregateStore {
 				request.submissionChannel(), request.submissionEvidence(), request.contact(),
 				request.essayRequirement(), request.essayEvidence(), request.interviewRequirement(),
 				request.interviewEvidence());
+		// 모집기간 수기 고정: 명시한 값이 우선(false = 자동 수집 값으로 되돌리기). 없으면 기간이 바뀔 때만 켠다.
+		if (request.periodLocked() != null) {
+			scholarship.changePeriodLocked(request.periodLocked());
+		} else if (periodChanged) {
+			scholarship.changePeriodLocked(true);
+		}
 
 		scholarshipConditionRepository.deleteByScholarship(scholarship);
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
@@ -269,6 +279,17 @@ public class ScholarshipManualAggregateStore {
 					.displayOrder(i)
 					.build());
 		}
+	}
+
+	/**
+	 * 화면(datetime-local)은 분 단위로 보낸다. 초 이하가 남은 수집 값(23:59:59 등)을 손대지 않고 저장해도
+	 * "바뀐 것"으로 보지 않도록 분 단위로 비교한다.
+	 */
+	private static boolean changed(LocalDateTime current, LocalDateTime requested) {
+		if (current == null || requested == null) {
+			return current != requested;
+		}
+		return !current.truncatedTo(ChronoUnit.MINUTES).equals(requested.truncatedTo(ChronoUnit.MINUTES));
 	}
 
 	private void validatePeriod(ScholarshipManualFullRequest request) {

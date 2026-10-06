@@ -339,8 +339,11 @@ public class Scholarship extends BaseEntity {
 		this.summary = summary;
 		this.description = description;
 		this.scholarshipType = scholarshipType;
-		this.applicationStartAt = applicationStartAt;
-		this.applicationEndAt = applicationEndAt;
+		// 관리자가 고정한 기간은 덮지 않는다. 모집 상태는 호출부(ScholarshipMapper)가 고정 기간으로 계산해 넘긴다.
+		if (!periodLocked) {
+			this.applicationStartAt = applicationStartAt;
+			this.applicationEndAt = applicationEndAt;
+		}
 		this.recruitmentStatus = recruitmentStatus == null ? RecruitmentStatus.UPCOMING : recruitmentStatus;
 		this.selectionCount = selectionCount;
 		this.amount = amount;
@@ -596,14 +599,17 @@ public class Scholarship extends BaseEntity {
 		this.summary = summary;
 		this.description = description;
 		this.scholarshipType = scholarshipType;
-		this.applicationStartAt = applicationStartAt;
-		this.applicationEndAt = applicationEndAt;
+		// 관리자가 고정한 기간은 재파싱이 덮지 않는다(나머지 필드는 평소처럼 갱신). 상태는 남은 기간으로 계산한다.
+		if (!periodLocked) {
+			this.applicationStartAt = applicationStartAt;
+			this.applicationEndAt = applicationEndAt;
+		}
 		this.selectionCount = selectionCount;
 		this.amount = amount;
 		if (homepageUrl != null) {
 			this.homepageUrl = homepageUrl;
 		}
-		this.recruitmentStatus = resolveStatus(applicationStartAt, applicationEndAt);
+		this.recruitmentStatus = resolveStatus(this.applicationStartAt, this.applicationEndAt);
 		// 마감된 공고는 목록에서 내린다. 마감일을 못 찾은 경우(null)는 노출을 유지한다 —
 		// 기간을 모른다는 것이 끝났다는 뜻은 아니고, 숨기는 쪽이 더 해롭다.
 		this.active = this.recruitmentStatus != RecruitmentStatus.CLOSED;
