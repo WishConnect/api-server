@@ -9,7 +9,6 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.Summary;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
-import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -19,9 +18,7 @@ import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.scholarship.repository.ScrapRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,13 +29,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 /*
 장학금 상세 조회입니다. 요약 정보 테이블(조건 원문을 유형별로 매핑),
-선발 일정 타임라인(없으면 모집기간으로 대체), 제출 서류 목록, 매칭 사유를 포함합니다.
+선발 일정 타임라인(접수 단계가 없으면 모집기간 "서류접수" 줄을 앞에 붙임, SelectionScheduleAssembler),
+제출 서류 목록, 매칭 사유를 포함합니다.
  */
 @Service
 @RequiredArgsConstructor
 public class ScholarshipDetailService {
-
-	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
 
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
@@ -61,9 +57,9 @@ public class ScholarshipDetailService {
 				scholarshipDocumentRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId).stream()
 						.map(document -> new RequiredDocument(document.getName(), document.getDownloadUrl()))
 						.toList();
-		List<ScheduleStep> schedule = buildSchedule(
+		List<ScheduleStep> schedule = SelectionScheduleAssembler.assemble(
 				scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId),
-				scholarship);
+				scholarship.getApplicationStartAt(), scholarship.getApplicationEndAt(), SelectionScheduleAssembler.today());
 
 		return new ScholarshipDetailResponse(
 				scholarship.getId(),
@@ -146,52 +142,9 @@ public class ScholarshipDetailService {
 		);
 	}
 
-	/** 타임라인이 있으면 그대로, 없으면 모집기간을 "서류접수" 단일 스텝으로 대체한다. */
-	private List<ScheduleStep> buildSchedule(List<ScholarshipTimeline> timelines, Scholarship scholarship) {
-		if (!timelines.isEmpty()) {
-			return timelines.stream()
-					.map(timeline -> new ScheduleStep(
-							timeline.getTitle(),
-							formatDateRange(timeline.getStartDate(), timeline.getEndDate()),
-							scheduleStatus(timeline.getStartDate(), timeline.getEndDate())))
-					.toList();
-		}
-		if (scholarship.getApplicationStartAt() == null && scholarship.getApplicationEndAt() == null) {
-			return List.of();
-		}
-		LocalDate start = scholarship.getApplicationStartAt() == null
-				? null : scholarship.getApplicationStartAt().toLocalDate();
-		LocalDate end = scholarship.getApplicationEndAt() == null
-				? null : scholarship.getApplicationEndAt().toLocalDate();
-		return List.of(new ScheduleStep("서류접수", formatDateRange(start, end), scheduleStatus(start, end)));
-	}
-
-	private String scheduleStatus(LocalDate startDate, LocalDate endDate) {
-		LocalDate today = LocalDate.now();
-		if (endDate != null && endDate.isBefore(today)) {
-			return "CLOSED";
-		}
-		if (startDate != null && startDate.isAfter(today)) {
-			return "UPCOMING";
-		}
-		return "CURRENT";
-	}
-
-	private String formatDateRange(LocalDate start, LocalDate end) {
-		if (start == null && end == null) {
-			return null;
-		}
-		if (start == null) {
-			return "~" + DATE_FORMAT.format(end);
-		}
-		if (end == null) {
-			return DATE_FORMAT.format(start) + "~";
-		}
-		return DATE_FORMAT.format(start) + " ~ " + DATE_FORMAT.format(end);
-	}
-
 	private String formatPeriod(LocalDateTime start, LocalDateTime end) {
-		return formatDateRange(start == null ? null : start.toLocalDate(), end == null ? null : end.toLocalDate());
+		return SelectionScheduleAssembler.formatPeriod(
+				start == null ? null : start.toLocalDate(), end == null ? null : end.toLocalDate());
 	}
 
 	private String joinNonNull(String first, String second) {

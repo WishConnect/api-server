@@ -22,6 +22,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipSourceAggregate;
+import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -66,6 +67,7 @@ public class ScholarshipAdminOverviewService {
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ImageRepository imageRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
+	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ImageStorageService imageStorageService;
 	private final com.wishconnect.domain.user.repository.UserRepository userRepository;
 
@@ -190,6 +192,13 @@ public class ScholarshipAdminOverviewService {
 						value.getId(), value.getName(), value.isEssay(), value.getDisplayOrder(),
 						value.getDownloadUrl()))
 				.toList();
+		List<AdminScholarshipDetailResponse.TimelineData> timeline = scholarshipTimelineRepository
+				.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId).stream()
+				.map(value -> new AdminScholarshipDetailResponse.TimelineData(
+						value.getId(), name(value.getStageCode()), value.getTitle(), name(value.getDateType()),
+						value.getStartDate(), value.getEndDate(), value.getDateText(), value.getNote(),
+						value.getEvidence(), name(value.getOrigin()), value.getDisplayOrder()))
+				.toList();
 		List<AdminScholarshipDetailResponse.ImageData> images = imageRepository
 				.findAllByEntityTypeAndEntityIdOrderByIdAsc(
 						ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId).stream()
@@ -198,7 +207,8 @@ public class ScholarshipAdminOverviewService {
 						value.getFileSize(), value.getSourceUrl(), imageStorageService.publicUrl(value.getS3Key())))
 				.toList();
 
-		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, images,
+		return new AdminScholarshipDetailResponse(scholarshipData(scholarship), raw, conditions, documents, timeline,
+				images,
 				RecruitmentStatusCheck.of(scholarship.getRecruitmentStatus(), scholarship.getApplicationStartAt(),
 						scholarship.getApplicationEndAt(), LocalDateTime.now()));
 	}
@@ -365,7 +375,8 @@ public class ScholarshipAdminOverviewService {
 				name(value.getNoticeKind()), value.isCombined(), value.getSubmissionMethod(),
 				name(value.getSubmissionChannel()), value.getSubmissionEvidence(), value.getContact(),
 				name(value.getEssayRequirement()), value.getEssayEvidence(), name(value.getInterviewRequirement()),
-				value.getInterviewEvidence(), value.getCreatedAt(), value.getUpdatedAt(), value.getDeletedAt());
+				value.getInterviewEvidence(), value.getCreatedAt(), value.getUpdatedAt(), value.getDeletedAt(),
+				value.isPeriodLocked());
 	}
 
 	private String name(Enum<?> value) {

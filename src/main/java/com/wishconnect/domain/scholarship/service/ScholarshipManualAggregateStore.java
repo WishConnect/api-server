@@ -13,13 +13,20 @@ import com.wishconnect.domain.scholarship.entity.RawScholarship;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
+import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
+import com.wishconnect.domain.scholarship.entity.TimelineDateType;
+import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
+import com.wishconnect.domain.scholarship.entity.TimelineStageCode;
 import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
+import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -27,7 +34,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 수기 통합 등록의 DB 작업을 한 트랜잭션으로 묶는다. 외부 이미지 다운로드는 포함하지 않는다. */
+/** 수기 통합 등록의 DB 작업(장학금·원문·조건·서류·선발 일정)을 한 트랜잭션으로 묶는다. 외부 이미지 다운로드는 포함하지 않는다. */
 @Service
 @RequiredArgsConstructor
 public class ScholarshipManualAggregateStore {
@@ -36,12 +43,14 @@ public class ScholarshipManualAggregateStore {
 	private final RawScholarshipRepository rawScholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
+	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ConditionRefResolver conditionRefResolver;
 	private final ObjectMapper objectMapper;
 
 	@Transactional
 	public SavedAggregate create(ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		String manualKey = Scholarship.MANUAL_SOURCE + ":" + UUID.randomUUID();
 		Scholarship scholarship = createScholarship(request, manualKey);
 
@@ -58,6 +67,7 @@ public class ScholarshipManualAggregateStore {
 
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		saveTimeline(scholarship, safe(timeline));
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
@@ -65,6 +75,7 @@ public class ScholarshipManualAggregateStore {
 	@Transactional
 	public SavedAggregate createFromRaw(Long rawId, ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		RawScholarship raw = rawScholarshipRepository.findById(rawId)
 				.orElseThrow(() -> new CustomException(ErrorCode.INVALID_INPUT));
 		if (raw.getScholarship() != null) {
@@ -74,16 +85,25 @@ public class ScholarshipManualAggregateStore {
 		raw.markParsed(scholarship);
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		saveTimeline(scholarship, safe(timeline));
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
-	/** 통합 편집은 조건·서류 목록을 화면에 보이는 최종 상태로 교체한다. */
+	/**
+	 * 통합 편집은 조건·서류 목록을 화면에 보이는 최종 상태로 교체한다.
+	 *
+	 * <p>선발 일정은 다르다. {@code timeline} 이 null(생략)이면 <b>기존 일정을 그대로 둔다</b> — 일정을 모르는
+	 * 옛 화면·다른 경로가 저장하면서 일정을 지우지 않게 하려는 것이다. 빈 목록일 때만 모두 지운다.
+	 */
 	@Transactional
 	public SavedAggregate update(Long scholarshipId, ScholarshipManualFullRequest request) {
 		validatePeriod(request);
+		List<ScholarshipTimelineValidator.Item> timeline = ScholarshipTimelineValidator.normalize(request.timeline());
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
 				.filter(value -> !value.isDeleted())
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		boolean periodChanged = changed(scholarship.getApplicationStartAt(), request.applicationStartAt())
+				|| changed(scholarship.getApplicationEndAt(), request.applicationEndAt());
 		scholarship.replaceByAdmin(
 				request.title().trim(), request.provider(), request.summary(), request.description(),
 				request.scholarshipType(), request.applicationStartAt(), request.applicationEndAt(),
@@ -92,6 +112,12 @@ public class ScholarshipManualAggregateStore {
 				request.submissionChannel(), request.submissionEvidence(), request.contact(),
 				request.essayRequirement(), request.essayEvidence(), request.interviewRequirement(),
 				request.interviewEvidence());
+		// 모집기간 수기 고정: 명시한 값이 우선(false = 자동 수집 값으로 되돌리기). 없으면 기간이 바뀔 때만 켠다.
+		if (request.periodLocked() != null) {
+			scholarship.changePeriodLocked(request.periodLocked());
+		} else if (periodChanged) {
+			scholarship.changePeriodLocked(true);
+		}
 
 		scholarshipConditionRepository.deleteByScholarship(scholarship);
 		scholarshipDocumentRepository.deleteByScholarship(scholarship);
@@ -99,6 +125,11 @@ public class ScholarshipManualAggregateStore {
 		scholarshipDocumentRepository.flush();
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
+		if (timeline != null) {
+			scholarshipTimelineRepository.deleteByScholarship(scholarship);
+			scholarshipTimelineRepository.flush();
+			saveTimeline(scholarship, timeline);
+		}
 		return saved(request, scholarship, null, refCount, documentCount);
 	}
 
@@ -156,6 +187,37 @@ public class ScholarshipManualAggregateStore {
 					.build());
 		}
 		return safe(documents).size();
+	}
+
+	/**
+	 * 감사 로그 복구: 선발 일정을 기록 시점 값으로 바꾼다. 출처(origin)도 기록 값을 쓰고, 순서는 기록 순서대로 0부터 매긴다.
+	 * 호출부가 "기록에 일정 키가 있을 때만" 부른다 — 옛 기록으로 일정을 비우지 않기 위해서다.
+	 */
+	@Transactional
+	public int replaceTimelineFromSnapshot(Long scholarshipId,
+			List<AdminScholarshipDetailResponse.TimelineData> timeline) {
+		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
+				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
+		scholarshipTimelineRepository.deleteByScholarship(scholarship);
+		scholarshipTimelineRepository.flush();
+		List<AdminScholarshipDetailResponse.TimelineData> rows = safe(timeline);
+		for (int i = 0; i < rows.size(); i++) {
+			AdminScholarshipDetailResponse.TimelineData data = rows.get(i);
+			scholarshipTimelineRepository.save(ScholarshipTimeline.builder()
+					.scholarship(scholarship)
+					.stageCode(TimelineStageCode.valueOf(data.stageCode()))
+					.title(data.title())
+					.dateType(TimelineDateType.valueOf(data.dateType()))
+					.startDate(data.startDate())
+					.endDate(data.endDate())
+					.dateText(data.dateText())
+					.note(data.note())
+					.evidence(data.evidence())
+					.origin(data.origin() == null ? TimelineOrigin.MANUAL : TimelineOrigin.valueOf(data.origin()))
+					.displayOrder(i)
+					.build());
+		}
+		return rows.size();
 	}
 
 	private Scholarship createScholarship(ScholarshipManualFullRequest request, String dedupKey) {
@@ -230,6 +292,37 @@ public class ScholarshipManualAggregateStore {
 					.build());
 		}
 		return requests.size();
+	}
+
+	/** 순서는 배열 순서(0부터)로 매기고, 사람이 넣은 값이므로 출처는 MANUAL 이다. */
+	private void saveTimeline(Scholarship scholarship, List<ScholarshipTimelineValidator.Item> items) {
+		for (int i = 0; i < items.size(); i++) {
+			ScholarshipTimelineValidator.Item item = items.get(i);
+			scholarshipTimelineRepository.save(ScholarshipTimeline.builder()
+					.scholarship(scholarship)
+					.stageCode(item.stageCode())
+					.title(item.title())
+					.dateType(item.dateType())
+					.startDate(item.startDate())
+					.endDate(item.endDate())
+					.dateText(item.dateText())
+					.note(item.note())
+					.evidence(item.evidence())
+					.origin(TimelineOrigin.MANUAL)
+					.displayOrder(i)
+					.build());
+		}
+	}
+
+	/**
+	 * 화면(datetime-local)은 분 단위로 보낸다. 초 이하가 남은 수집 값(23:59:59 등)을 손대지 않고 저장해도
+	 * "바뀐 것"으로 보지 않도록 분 단위로 비교한다.
+	 */
+	private static boolean changed(LocalDateTime current, LocalDateTime requested) {
+		if (current == null || requested == null) {
+			return current != requested;
+		}
+		return !current.truncatedTo(ChronoUnit.MINUTES).equals(requested.truncatedTo(ChronoUnit.MINUTES));
 	}
 
 	private void validatePeriod(ScholarshipManualFullRequest request) {

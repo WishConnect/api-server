@@ -26,8 +26,11 @@ import java.util.stream.StreamSupport;
  * <ul>
  *   <li>{@link Kind#ADMIN_SNAPSHOT} — 수기 수정·내리기({@code ScholarshipAdminSnapshot}). 장학금 필드가 평평하게 있다.</li>
  *   <li>{@link Kind#AGGREGATE} — 통합 수정({@code AdminScholarshipEditSnapshot}).
- *       {@code scholarship} 객체 + {@code conditions}·{@code documents} 배열.</li>
+ *       {@code scholarship} 객체 + {@code conditions}·{@code documents}·{@code timeline} 배열.</li>
  * </ul>
+ *
+ * <p>{@link #TIMELINE}·{@link #PERIOD_LOCKED} 는 2026-10 에 생겼다. 그 이전 스냅샷에는 키가 없으므로,
+ * 한쪽이라도 키가 없으면 "모름"으로 보고 바뀐 필드로 치지 않는다(빈 일정으로 오인해 복구 대상에 올리지 않기 위해).
  *
  * <p>비교 전에 정규화한다: 날짜는 초 단위로 자르고(저장 정밀도 차이로 "바뀐 것처럼" 보이는 것을 막는다),
  * 조건·서류는 행 ID 를 뺀다(통합 수정은 조건을 지우고 다시 만들어 ID 가 매번 바뀐다).
@@ -42,6 +45,10 @@ public final class ScholarshipChangeFields {
 	public static final String DELETED = "deleted";
 	public static final String CONDITIONS = "conditions";
 	public static final String DOCUMENTS = "documents";
+	/** 선발 일정 배열(스냅샷 최상위). */
+	public static final String TIMELINE = "timeline";
+	/** 모집기간 수기 고정(scholarship 객체 안). */
+	public static final String PERIOD_LOCKED = "periodLocked";
 
 	private static final Map<String, String> LABELS = new LinkedHashMap<>();
 	private static final Set<String> DATE_FIELDS = Set.of("applicationStartAt", "applicationEndAt", "deletedAt");
@@ -74,6 +81,8 @@ public final class ScholarshipChangeFields {
 		LABELS.put(DELETED, "내리기(삭제) 상태");
 		LABELS.put(CONDITIONS, "자격·우대 조건");
 		LABELS.put(DOCUMENTS, "제출 서류");
+		LABELS.put(TIMELINE, "선발 일정");
+		LABELS.put(PERIOD_LOCKED, "모집기간 수기 고정");
 	}
 
 	private static final List<String> ADMIN_FIELDS = List.of("title", "provider", "summary", "description",
@@ -81,10 +90,13 @@ public final class ScholarshipChangeFields {
 			"amount", "homepageUrl", "verified", DELETED);
 
 	private static final List<String> AGGREGATE_FIELDS = List.of("title", "provider", "summary", "description",
-			"scholarshipType", RECRUITMENT_STATUS, "applicationStartAt", "applicationEndAt", "selectionCount",
-			"amount", "homepageUrl", "detailUrl", "noticeKind", "combined", "submissionMethod",
+			"scholarshipType", RECRUITMENT_STATUS, "applicationStartAt", "applicationEndAt", PERIOD_LOCKED,
+			"selectionCount", "amount", "homepageUrl", "detailUrl", "noticeKind", "combined", "submissionMethod",
 			"submissionChannel", "submissionEvidence", "contact", "essayRequirement", "essayEvidence",
-			"interviewRequirement", "interviewEvidence", CONDITIONS, DOCUMENTS);
+			"interviewRequirement", "interviewEvidence", CONDITIONS, DOCUMENTS, TIMELINE);
+
+	/** 나중에 생긴 필드. 옛 스냅샷에 키가 없을 수 있다. */
+	private static final Set<String> LATER_FIELDS = Set.of(TIMELINE, PERIOD_LOCKED);
 
 	private ScholarshipChangeFields() {
 	}
@@ -113,17 +125,34 @@ public final class ScholarshipChangeFields {
 			}
 			return normalize(field, snapshot.get(field));
 		}
-		if (CONDITIONS.equals(field) || DOCUMENTS.equals(field)) {
+		if (CONDITIONS.equals(field) || DOCUMENTS.equals(field) || TIMELINE.equals(field)) {
 			return withoutIds(snapshot.get(field));
 		}
 		JsonNode scholarship = snapshot.get("scholarship");
 		return normalize(field, scholarship == null ? null : scholarship.get(field));
 	}
 
+	/**
+	 * 스냅샷에 그 필드가 기록돼 있는지. 옛 통합 수정 스냅샷에는 {@link #TIMELINE}·{@link #PERIOD_LOCKED} 가 없다.
+	 * 다른 필드는 늘 있다고 본다.
+	 */
+	public static boolean recorded(Kind kind, JsonNode snapshot, String field) {
+		if (kind != Kind.AGGREGATE || !LATER_FIELDS.contains(field)) {
+			return true;
+		}
+		if (snapshot == null || snapshot.isNull()) {
+			return false;
+		}
+		return TIMELINE.equals(field) ? snapshot.has(TIMELINE) : snapshot.path("scholarship").has(PERIOD_LOCKED);
+	}
+
 	/** {@code before} 와 {@code after} 사이에서 바뀐 필드(카탈로그 순서). */
 	public static List<String> changed(Kind kind, JsonNode before, JsonNode after) {
 		List<String> changed = new ArrayList<>();
 		for (String field : fields(kind)) {
+			if (!recorded(kind, before, field) || !recorded(kind, after, field)) {
+				continue;
+			}
 			if (!value(kind, before, field).equals(value(kind, after, field))) {
 				changed.add(field);
 			}
@@ -140,16 +169,49 @@ public final class ScholarshipChangeFields {
 		for (String field : changed(kind, before, after)) {
 			JsonNode from = value(kind, before, field);
 			JsonNode to = value(kind, after, field);
-			if (from.isArray() || to.isArray()) {
+			if (TIMELINE.equals(field)) {
+				int rows = changedRows(from, to);
+				parts.add(rows == 0 ? label(field) + " 순서 변경" : label(field) + " " + rows + "건 변경");
+			} else if (from.isArray() || to.isArray()) {
 				parts.add(label(field) + "(" + from.size() + "→" + to.size() + "건)");
 			} else if (RECRUITMENT_STATUS.equals(field) || DELETED.equals(field) || field.endsWith("Requirement")
-					|| "scholarshipType".equals(field)) {
+					|| "scholarshipType".equals(field) || PERIOD_LOCKED.equals(field)) {
 				parts.add(label(field) + "(" + text(from) + "→" + text(to) + ")");
 			} else {
 				parts.add(label(field));
 			}
 		}
 		return parts.isEmpty() ? "변경 없음" : "변경: " + String.join(", ", parts);
+	}
+
+	/**
+	 * 행 단위로 몇 건이 바뀌었는지. 그대로인 행(내용이 같은 행)을 빼고 남은 삭제·추가 중 많은 쪽을 센다 —
+	 * 한 행을 고치면 1건, 하나 지우고 둘 넣으면 2건. 순서만 바뀌었으면 0.
+	 */
+	static int changedRows(JsonNode before, JsonNode after) {
+		List<JsonNode> removed = rowsWithoutOrder(before);
+		List<JsonNode> added = rowsWithoutOrder(after);
+		for (java.util.Iterator<JsonNode> it = removed.iterator(); it.hasNext(); ) {
+			if (added.remove(it.next())) {
+				it.remove();
+			}
+		}
+		return Math.max(removed.size(), added.size());
+	}
+
+	private static List<JsonNode> rowsWithoutOrder(JsonNode array) {
+		List<JsonNode> rows = new ArrayList<>();
+		if (array == null || !array.isArray()) {
+			return rows;
+		}
+		for (JsonNode element : array) {
+			JsonNode copy = element.deepCopy();
+			if (copy.isObject()) {
+				((ObjectNode) copy).remove("displayOrder");
+			}
+			rows.add(copy);
+		}
+		return rows;
 	}
 
 	private static String text(JsonNode value) {

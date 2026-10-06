@@ -211,6 +211,32 @@ input[type=file] { font-size: var(--fs-md); max-width: 100%; }
 .edit-row .grow { flex: 1 1 200px; min-width: 160px; }
 .edit-row .input, .edit-row .select { height: 30px; }
 .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
+/* 선발 일정 편집기(통합 수정·수기 등록) */
+.schedule-editor { padding: var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface); }
+.schedule-editor .sub-form-head .actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.schedule-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2); border: 1px dashed var(--c-border-strong); border-radius: var(--radius); font-size: var(--fs-md); }
+.schedule-note:empty { display: none; }
+.schedule-row .row-move { display: inline-flex; gap: 2px; }
+.schedule-row .row-move .btn { padding: 0 6px; }
+.schedule-row .radio-group { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); }
+.schedule-row input[type="date"] { width: 140px; }
+.schedule-row [data-field="dateText"] { width: 180px; }
+.schedule-row [hidden] { display: none !important; }
+.schedule-evidence { flex-basis: 100%; }
+.schedule-evidence summary { font-size: var(--fs-sm); color: var(--c-muted); cursor: pointer; }
+.schedule-evidence .textarea { margin-top: var(--sp-1); min-height: 56px; width: 100%; }
+.schedule-editor > .field-warn { display: block; margin-top: var(--sp-2); }
+.schedule-preview-box { margin-top: var(--sp-2); }
+.schedule-preview-box summary { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--c-text-2); cursor: pointer; margin-bottom: var(--sp-1); }
+.schedule-preview { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.schedule-preview li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: 2px 0 2px var(--sp-3); border-left: 3px solid var(--c-border); font-size: var(--fs-md); }
+.schedule-preview li.st-current { border-left-color: var(--c-success); }
+.schedule-preview li.st-upcoming { border-left-color: var(--c-info); }
+.schedule-preview li.st-tbd { border-left-color: var(--c-warning); }
+.schedule-preview li.st-closed { color: var(--c-muted); }
+.schedule-preview .schedule-step { font-weight: var(--fw-bold); min-width: 88px; }
+@keyframes wc-flash { from { box-shadow: 0 0 0 4px var(--c-brand-soft); border-color: var(--c-brand); } to { box-shadow: none; } }
+.flash { animation: wc-flash 1.8s ease-out; }
 
 /* ---------- 카드·표 ---------- */
 .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: var(--sp-4); min-width: 0; }

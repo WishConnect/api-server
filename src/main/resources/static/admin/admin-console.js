@@ -274,7 +274,8 @@
 			check.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '';
 		const info = '<div class="detail-section"><h3>기본 정보</h3><dl class="kv">' +
 			'<dt>유형</dt><dd>' + esc(label('scholarshipType', s.scholarshipType)) + '</dd>' +
-			'<dt>모집 기간</dt><dd>' + esc(fmt.period(s.applicationStartAt, s.applicationEndAt)) + ' <span class="text-muted text-sm">(공고 기준)</span></dd>' +
+			'<dt>모집 기간</dt><dd>' + esc(fmt.period(s.applicationStartAt, s.applicationEndAt)) + ' <span class="text-muted text-sm">(공고 기준)</span>' +
+				(s.periodLocked ? ' <span class="badge b-brand" title="관리자가 고친 모집기간. 공공데이터 동기화·공지 재파싱이 덮어쓰지 않습니다">수기 고정됨</span>' : '') + '</dd>' +
 			'<dt>지원 금액</dt><dd>' + esc(fmt.won(s.amount)) + '</dd>' +
 			'<dt>선발 인원</dt><dd>' + esc(s.selectionCount == null ? '-' : s.selectionCount + '명') + '</dd>' +
 			'<dt>문의처</dt><dd>' + esc(s.contact || '-') + '</dd>' +
@@ -284,6 +285,10 @@
 			'<dt>홈페이지</dt><dd>' + (safeUrl(s.homepageUrl) ? link(s.homepageUrl, s.homepageUrl, 'truncate') : '-') + '</dd>' +
 			'<dt>등록·수정</dt><dd>' + esc(fmt.ts(s.createdAt)) + ' / ' + esc(fmt.ts(s.updatedAt)) + ' <span class="text-muted text-sm">KST</span></dd>' +
 			'</dl></div>';
+		const timeline = data.timeline || [];
+		const scheduleHtml = '<div class="detail-section"><h3>선발 일정 ' + timeline.length + '개 ' +
+			tip('사용자 상세 화면과 같은 순서·문구입니다. 접수 단계가 없으면 모집기간 "서류접수" 줄이 앞에 붙습니다. 미정은 사용자 화면에 당분간 "예정"으로 보입니다.') + '</h3>' +
+			schedulePreviewHtml(scheduleSteps(timeline, s.applicationStartAt, s.applicationEndAt)) + '</div>';
 		const text = '<div class="detail-section"><h3>요약·설명</h3><p>' + esc(s.summary || '요약 없음') + '</p>' +
 			(s.description ? '<details><summary>상세 설명 펼치기</summary><div class="raw">' + esc(s.description) + '</div></details>' : '') + '</div>';
 		const imageHtml = '<div class="detail-section"><h3>이미지 ' + images.length + '개</h3>' + (images.length ? images.map(image =>
@@ -305,7 +310,7 @@
 			(safeUrl(r.sourceUrl) ? '<p style="margin-bottom:var(--sp-1)">' + link(r.sourceUrl, '원문 사이트') + '</p>' : '') +
 			'<div class="raw">' + esc(r.rawHtml || (r.rawJson ? JSON.stringify(r.rawJson, null, 2) : '원문 없음')) + '</div></details>').join('')
 			: '<p class="text-muted text-sm">수기 등록이라 원문이 없습니다.</p>') + '</div>';
-		return head + deletedNotice + checkNotice + info + text + imageHtml + conditionHtml + documentHtml + rawHtml;
+		return head + deletedNotice + checkNotice + info + scheduleHtml + text + imageHtml + conditionHtml + documentHtml + rawHtml;
 	}
 
 	function bindScholarshipActions(root, data) {
@@ -435,8 +440,10 @@
 					' value="' + esc(value == null ? '' : value) + '">';
 			}
 			const extra = f.name === 'recruitmentStatus' ? '<span class="field-warn" data-status-warn></span>' : '';
+			// 선발 일정은 모집 시작·마감 바로 아래에 둔다(통합 수정·수기 등록만. 원문 수기 정제는 일정을 다루지 않는다).
+			const scheduleSlot = f.name === 'applicationEndAt' && mode !== 'refine' ? '<div class="form-field wide" data-schedule-slot></div>' : '';
 			return '<div class="form-field' + (f.wide || f.type === 'textarea' ? ' wide' : '') + '">' + labelHtml + control +
-				(f.help ? '<span class="field-help">' + esc(f.help) + '</span>' : '') + extra + '</div>';
+				(f.help ? '<span class="field-help">' + esc(f.help) + '</span>' : '') + extra + '</div>' + scheduleSlot;
 		}).join('');
 	}
 
@@ -472,6 +479,390 @@
 		return row;
 	}
 
+	/* ---------- 선발 일정(통합 수정·수기 등록)
+	 * 규칙은 서버와 같다: 검증 ScholarshipTimelineValidator, 사용자 화면 조립 SelectionScheduleAssembler.
+	 * 오류는 저장을 막고, 경고(날짜 역순·같은 단계 중복·모집 마감보다 이른 단계)는 저장을 막지 않는다.
+	 */
+
+	const TIMELINE_LIMIT = {rows: 10, title: 50, dateText: 100, note: 200, evidence: 2000};
+	const scheduleEditors = new WeakMap();
+	let scheduleRowSeq = 0;
+
+	const dotDate = value => value ? String(value).slice(0, 10).replace(/-/g, '.') : '';
+	const dateOnly = value => value ? String(value).slice(0, 10) : null;
+	const stageTitle = r => (r.title && String(r.title).trim()) || (r.stageCode && r.stageCode !== 'CUSTOM' ? label('stage', r.stageCode) : '');
+
+	/** 모집기간 표시(서버 formatPeriod 와 같은 모양). 한쪽만 있으면 열린 기간. */
+	function periodText(start, end) {
+		if (!start && !end) return '';
+		if (!start) return '~' + dotDate(end);
+		if (!end) return dotDate(start) + '~';
+		return dotDate(start) + ' ~ ' + dotDate(end);
+	}
+
+	function rowDateText(r) {
+		if (r.dateType === 'TBD') return r.dateText || '';
+		if (r.dateType === 'RANGE') return r.startDate && r.endDate ? dotDate(r.startDate) + ' ~ ' + dotDate(r.endDate) : '';
+		return r.startDate ? dotDate(r.startDate) : '';
+	}
+
+	/** 상태(콘솔은 TBD 를 그대로 보여 준다. 사용자 API 는 당분간 TBD 를 UPCOMING 으로 보낸다). 날짜가 덜 들어가면 null. */
+	function rowStatus(r, today) {
+		if (r.dateType === 'TBD') return 'TBD';
+		if (r.dateType === 'RANGE') {
+			if (!r.startDate || !r.endDate) return null;
+			return r.endDate < today ? 'CLOSED' : r.startDate > today ? 'UPCOMING' : 'CURRENT';
+		}
+		if (!r.startDate) return null;
+		return r.startDate < today ? 'CLOSED' : r.startDate > today ? 'UPCOMING' : 'CURRENT';
+	}
+
+	function periodStatus(start, end, today) {
+		if (end && end < today) return 'CLOSED';
+		if (start && start > today) return 'UPCOMING';
+		return 'CURRENT';
+	}
+
+	/** 사용자 상세 selectionSchedule 과 같은 순서·문구. 접수 행이 없고 모집기간이 있으면 "서류접수" 줄을 맨 앞에. */
+	function scheduleSteps(rows, startAt, endAt, today = fmt.todayKst()) {
+		const start = dateOnly(startAt), end = dateOnly(endAt);
+		const steps = [];
+		if (!rows.some(r => r.stageCode === 'APPLICATION') && (start || end)) {
+			steps.push({step: '서류접수', date: periodText(start, end), status: periodStatus(start, end, today), auto: true});
+		}
+		rows.forEach(r => steps.push({step: stageTitle(r) || '(표시명 없음)', date: rowDateText(r), status: rowStatus(r, today)}));
+		return steps;
+	}
+
+	function schedulePreviewHtml(steps) {
+		if (!steps.length) return '<p class="text-muted text-sm">표시할 일정이 없습니다. 모집기간도 없어 사용자 화면에 선발 일정이 비어 보입니다.</p>';
+		return '<ol class="schedule-preview">' + steps.map(s => '<li class="st-' + esc(String(s.status || 'none').toLowerCase()) + '">' +
+			'<span class="schedule-step">' + esc(s.step) + '</span><span class="schedule-date">' + esc(s.date || '날짜 없음') + '</span>' +
+			(s.status ? badge('scheduleStatus', s.status) : '<span class="text-muted text-sm">날짜를 넣으면 상태가 계산됩니다</span>') +
+			(s.auto ? '<span class="text-muted text-sm">모집기간에서 자동</span>' : '') + '</li>').join('') + '</ol>';
+	}
+
+	/** 비교용 정규화: 행 ID·순서·출처를 빼고, 비운 표시명은 기본 표시명으로, 형태에 맞지 않는 칸은 비운다. */
+	function timelineKey(r) {
+		const type = r.dateType || 'SINGLE';
+		return JSON.stringify({
+			stageCode: r.stageCode || null, title: stageTitle(r) || null, dateType: type,
+			startDate: type === 'TBD' ? null : r.startDate || null,
+			endDate: type === 'TBD' ? null : type === 'SINGLE' ? r.startDate || null : r.endDate || null,
+			dateText: type === 'TBD' ? textOrNull(r.dateText) : null, note: textOrNull(r.note), evidence: textOrNull(r.evidence)
+		});
+	}
+	const timelineText = r => (stageTitle(r) || '(표시명 없음)') + ' · ' + label('stage', r.stageCode, '단계 없음') + ' · ' +
+		(rowDateText(r) || '날짜 없음') + (textOrNull(r.note) ? ' · ' + r.note : '') + (textOrNull(r.evidence) ? ' · 근거 있음' : '');
+
+	/**
+	 * 행 단위 비교. 내용이 같은 행은 빼고, 남은 행 중 단계가 같은 것끼리 "변경"으로 짝짓는다.
+	 * @return null(같음) 또는 {before, after, count} — before/after 는 화면에 그대로 보일 여러 줄 문자열
+	 */
+	function timelineDiff(oldRows, newRows) {
+		const oldKeys = oldRows.map(timelineKey), newKeys = newRows.map(timelineKey);
+		if (JSON.stringify(oldKeys) === JSON.stringify(newKeys)) return null;
+		const removed = oldRows.map((r, i) => ({r, key: oldKeys[i]})), added = newRows.map((r, i) => ({r, key: newKeys[i]}));
+		for (let i = removed.length - 1; i >= 0; i--) {
+			const match = added.findIndex(a => a.key === removed[i].key);
+			if (match >= 0) { added.splice(match, 1); removed.splice(i, 1); }
+		}
+		const before = [], after = [];
+		let changed = 0;
+		removed.slice().forEach(item => {
+			const match = added.findIndex(a => a.r.stageCode === item.r.stageCode);
+			if (match < 0) return;
+			before.push('~ ' + timelineText(item.r));
+			after.push('~ ' + timelineText(added[match].r));
+			added.splice(match, 1);
+			removed.splice(removed.indexOf(item), 1);
+			changed++;
+		});
+		removed.forEach(item => before.push('− ' + timelineText(item.r)));
+		added.forEach(item => after.push('+ ' + timelineText(item.r)));
+		const count = changed + removed.length + added.length;
+		if (!before.length && !after.length) return {before: '순서만 바뀜', after: '순서만 바뀜', count: 0};
+		// 추가·삭제와 함께 남은 행의 순서도 바뀌었으면 따로 알린다(위 목록에는 순서 변경이 드러나지 않는다).
+		const kept = keys => keys.filter(key => oldKeys.includes(key) && newKeys.includes(key));
+		if (JSON.stringify(kept(oldKeys)) !== JSON.stringify(kept(newKeys))) after.push('(남은 행의 순서도 바뀜)');
+		return {before: before.join('\n'), after: after.join('\n'), count};
+	}
+
+	function timelineRow(value = {}) {
+		const row = document.createElement('div');
+		row.className = 'edit-row schedule-row';
+		row.dataset.kind = 'timeline';
+		const n = ++scheduleRowSeq;
+		const type = value.dateType || 'SINGLE';
+		const radio = (code, text) => '<label class="check"><input type="radio" name="sch-type-' + n + '" data-field="dateType" value="' + code + '"' +
+			(type === code ? ' checked' : '') + '> ' + text + '</label>';
+		const origin = value.origin
+			? '<span class="badge' + (value.origin === 'MANUAL' ? '' : ' b-info') + '" title="' + esc(value.origin === 'MANUAL' ? '관리자가 입력한 행'
+				: '자동 추출 행. 저장하면 수기(MANUAL)로 바뀝니다') + '">' + esc(label('timelineOrigin', value.origin)) + '</span>'
+			: '<span class="badge b-brand" title="아직 저장하지 않은 행">새 행</span>';
+		row.innerHTML = '<span class="row-move"><button type="button" class="btn btn-sm" data-move="-1" aria-label="위로" title="위로">▲</button>' +
+			'<button type="button" class="btn btn-sm" data-move="1" aria-label="아래로" title="아래로">▼</button></span>' +
+			'<select class="select" data-field="stageCode" aria-label="단계">' + options('stage', value.stageCode, '단계 선택') + '</select>' +
+			'<input class="input" style="width:140px" data-field="title" maxlength="' + TIMELINE_LIMIT.title + '" aria-label="표시명" value="' + esc(value.title || '') + '">' +
+			'<span class="radio-group" role="radiogroup" aria-label="날짜 형태">' + radio('SINGLE', '단일') + radio('RANGE', '기간') + radio('TBD', '미정') + '</span>' +
+			'<input class="input" type="date" data-field="startDate" aria-label="날짜" value="' + esc(value.startDate || '') + '">' +
+			'<span data-range-part>~</span><input class="input" type="date" data-field="endDate" data-range-part aria-label="종료일" value="' + esc(value.endDate || '') + '">' +
+			'<input class="input" data-field="dateText" maxlength="' + TIMELINE_LIMIT.dateText + '" placeholder="예: 12월 중 예정" aria-label="미정 문구" value="' + esc(value.dateText || '') + '">' +
+			'<input class="input grow" data-field="note" maxlength="' + TIMELINE_LIMIT.note + '" placeholder="비고(예: 18:00 마감)" aria-label="비고" value="' + esc(value.note || '') + '">' +
+			origin + '<button type="button" class="btn btn-sm btn-danger-ghost" data-remove>삭제</button>' +
+			'<details class="schedule-evidence"' + (value.evidence ? ' open' : '') + '><summary>근거 문장' + (value.evidence ? '' : ' (선택)') + '</summary>' +
+			'<textarea class="textarea" data-field="evidence" maxlength="' + TIMELINE_LIMIT.evidence + '" placeholder="공고 원문 문장을 그대로 붙여 넣습니다">' +
+			esc(value.evidence || '') + '</textarea></details>';
+		return row;
+	}
+
+	/** 행 하나를 서버 요청 모양으로 읽는다. 형태에 맞지 않는 칸은 보내지 않는다(서버도 버린다). */
+	function readTimelineRow(row) {
+		const get = name => row.querySelector('[data-field="' + name + '"]');
+		const type = (row.querySelector('[data-field="dateType"]:checked') || {}).value || 'SINGLE';
+		const start = get('startDate').value || null, end = get('endDate').value || null;
+		return {
+			stageCode: get('stageCode').value || null, title: textOrNull(get('title').value), dateType: type,
+			startDate: type === 'TBD' ? null : start,
+			endDate: type === 'TBD' ? null : type === 'SINGLE' ? start : end,
+			dateText: type === 'TBD' ? textOrNull(get('dateText').value) : null,
+			note: textOrNull(get('note').value), evidence: textOrNull(get('evidence').value)
+		};
+	}
+
+	/** 저장을 막는 오류. 서버 ScholarshipTimelineValidator 와 같은 규칙이다. */
+	function timelineErrors(rows) {
+		const errors = [];
+		rows.forEach(({row, data}, index) => {
+			const el = name => row.querySelector('[data-field="' + name + '"]');
+			const at = (index + 1) + '번째 일정';
+			if (!data.stageCode) errors.push({el: el('stageCode'), message: at + '의 단계를 고르세요.'});
+			if (data.stageCode === 'CUSTOM' && !data.title) errors.push({el: el('title'), message: at + ': 기타 단계는 표시명을 입력하세요.'});
+			[['title', '표시명'], ['dateText', '미정 문구'], ['note', '비고'], ['evidence', '근거 문장']].forEach(([name, text]) => {
+				if (data[name] && data[name].length > TIMELINE_LIMIT[name]) errors.push({el: el(name), message: at + '의 ' + text + '은(는) ' + TIMELINE_LIMIT[name] + '자까지입니다.'});
+			});
+			if (data.dateType === 'SINGLE' && !data.startDate) errors.push({el: el('startDate'), message: at + '의 날짜를 입력하세요.'});
+			if (data.dateType === 'RANGE') {
+				if (!data.startDate) errors.push({el: el('startDate'), message: at + '의 시작일을 입력하세요.'});
+				if (!data.endDate) errors.push({el: el('endDate'), message: at + '의 종료일을 입력하세요.'});
+				if (data.startDate && data.endDate && data.endDate < data.startDate) errors.push({el: el('endDate'), message: at + '의 종료일이 시작일보다 빠릅니다.'});
+			}
+			if (data.dateType === 'TBD' && !data.dateText) errors.push({el: el('dateText'), message: at + '은(는) 미정 문구를 입력하세요(예: 12월 중 예정).'});
+		});
+		return errors;
+	}
+
+	/** 저장은 되지만 확인이 필요한 것. 서버는 막지 않는다(트랙별 접수처럼 실제 공고에 있는 모양이라). */
+	function timelineWarnings(rows, applicationEndAt) {
+		const warnings = [];
+		const applyEnd = dateOnly(applicationEndAt);
+		const seen = {};
+		let previous = null;
+		rows.forEach((r, index) => {
+			const at = (index + 1) + '번째 일정';
+			if (r.stageCode && r.stageCode !== 'CUSTOM') {
+				if (seen[r.stageCode] != null) warnings.push(at + ': ' + label('stage', r.stageCode) + ' 단계가 ' + (seen[r.stageCode] + 1) + '번째와 겹칩니다.');
+				else seen[r.stageCode] = index;
+			}
+			const start = r.dateType === 'TBD' ? null : r.startDate;
+			if (!start) return;
+			if (previous && start < previous.date) warnings.push(at + '의 날짜가 앞 단계(' + (previous.index + 1) + '번째)보다 빠릅니다.');
+			previous = {date: start, index};
+			if (applyEnd && r.stageCode !== 'APPLICATION' && start < applyEnd) warnings.push(at + '이(가) 모집 마감(' + dotDate(applyEnd) + ')보다 이릅니다.');
+		});
+		return warnings;
+	}
+
+	/**
+	 * 선발 일정 편집기를 [data-schedule-slot] 에 붙인다(통합 수정·수기 등록). 원문 수기 정제는 일정을 다루지 않는다
+	 * (timeline 을 보내지 않으면 서버는 null 로 받는다).
+	 * @param root 모집 시작·마감 칸과 slot 을 함께 담은 요소
+	 */
+	function mountSchedule(root, {mode, detail} = {}) {
+		const slot = root.querySelector('[data-schedule-slot]');
+		if (!slot) return null;
+		const s = detail ? detail.scholarship : {};
+		const state = {locked: Boolean(s.periodLocked), unlock: false};
+		const loadedStart = fmt.inputDate(s.applicationStartAt), loadedEnd = fmt.inputDate(s.applicationEndAt);
+		slot.innerHTML = '<div class="schedule-editor"><div class="sub-form-head"><h3>선발 일정 ' +
+			tip('사용자 상세의 "선발 일정"에 나갑니다. 접수 단계를 따로 넣지 않으면 모집기간으로 만든 "서류접수" 줄이 맨 앞에 자동으로 붙습니다. 미정 일정은 사용자 화면에 당분간 "예정"으로 보입니다.') +
+			'</h3><div class="actions"><button type="button" class="btn btn-sm" data-sch="preset">기본 구성 추가</button>' +
+			'<button type="button" class="btn btn-sm" data-sch="add">단계 추가</button>' +
+			'<button type="button" class="btn btn-sm" data-sch="application" title="트랙별 접수 기간처럼 모집기간과 다른 접수 일정을 직접 넣습니다">접수 기간 따로 입력</button></div></div>' +
+			(mode === 'edit' ? '<div class="schedule-note" data-sch-lock></div>' : '') +
+			'<div class="schedule-note" data-sch-auto></div>' +
+			'<div class="edit-list" data-list="timeline"></div>' +
+			'<div class="field-warn" data-sch-warn></div>' +
+			'<details class="schedule-preview-box" open><summary>사용자 화면 미리보기</summary><div data-sch-preview></div></details></div>';
+		const list = slot.querySelector('[data-list="timeline"]');
+		const field = name => root.querySelector('[name="' + name + '"]');
+		const period = () => ({start: field('applicationStartAt') ? field('applicationStartAt').value : '', end: field('applicationEndAt') ? field('applicationEndAt').value : ''});
+		const rows = () => [...list.querySelectorAll('[data-kind="timeline"]')];
+		const data = () => rows().map(readTimelineRow);
+
+		function syncRow(row) {
+			const type = (row.querySelector('[data-field="dateType"]:checked') || {}).value || 'SINGLE';
+			row.querySelectorAll('[data-range-part]').forEach(el => el.hidden = type !== 'RANGE');
+			row.querySelector('[data-field="startDate"]').hidden = type === 'TBD';
+			row.querySelector('[data-field="startDate"]').setAttribute('aria-label', type === 'RANGE' ? '시작일' : '날짜');
+			row.querySelector('[data-field="dateText"]').hidden = type !== 'TBD';
+			const stage = row.querySelector('[data-field="stageCode"]').value;
+			row.querySelector('[data-field="title"]').placeholder = stage === 'CUSTOM' ? '표시명 *' : stage ? label('stage', stage) + ' (기본)' : '표시명';
+		}
+
+		function renderLock() {
+			const box = slot.querySelector('[data-sch-lock]');
+			if (!box) return;
+			const {start, end} = period();
+			const changed = start !== loadedStart || end !== loadedEnd;
+			if (state.unlock) {
+				box.innerHTML = '<span class="badge b-warning">저장하면 고정 해제</span><span class="text-sm">다음 공공데이터 동기화·공지 재파싱 때 수집한 모집기간으로 덮어씁니다.' +
+					(changed ? ' 바꾼 모집기간도 그때 덮어씁니다.' : '') + '</span><button type="button" class="btn btn-sm" data-sch="relock">해제 취소</button>';
+			} else if (state.locked) {
+				box.innerHTML = '<span class="badge b-brand" title="관리자가 고친 모집기간">수기 고정됨</span><span class="text-sm text-muted">동기화·재파싱이 모집기간을 덮어쓰지 않습니다.</span>' +
+					'<button type="button" class="btn btn-sm" data-sch="unlock">자동 수집 값으로 되돌리기</button>';
+			} else if (changed) {
+				box.innerHTML = '<span class="badge b-info">저장하면 수기 고정</span><span class="text-sm text-muted">모집기간을 바꿔 저장하면 동기화·재파싱이 덮어쓰지 않습니다.</span>';
+			} else {
+				box.innerHTML = '';
+			}
+		}
+
+		function refresh() {
+			const current = data(), {start, end} = period();
+			const hasApplication = current.some(r => r.stageCode === 'APPLICATION');
+			const auto = slot.querySelector('[data-sch-auto]');
+			if (hasApplication) {
+				auto.innerHTML = '<span class="text-sm text-muted">접수 단계를 직접 입력해 모집기간 "서류접수" 자동 줄은 숨겼습니다.</span>';
+			} else {
+				auto.innerHTML = (start || end
+					? '<b>서류접수</b><span>' + esc(periodText(dateOnly(start), dateOnly(end))) + '</span><span class="text-sm text-muted">(모집기간에서 자동)</span>'
+					: '<span class="text-sm text-muted">모집기간이 없어 "서류접수" 줄이 자동으로 붙지 않습니다.</span>') +
+					'<button type="button" class="btn btn-sm" data-sch="period">모집기간 수정</button>';
+			}
+			const full = rows().length >= TIMELINE_LIMIT.rows;
+			slot.querySelectorAll('[data-sch="add"], [data-sch="preset"], [data-sch="application"]').forEach(b => {
+				b.disabled = full;
+				b.title = full ? '선발 일정은 최대 ' + TIMELINE_LIMIT.rows + '개까지입니다' : b.dataset.sch === 'application' ? '트랙별 접수 기간처럼 모집기간과 다른 접수 일정을 직접 넣습니다' : '';
+			});
+			const warnings = timelineWarnings(current, end);
+			slot.querySelector('[data-sch-warn]').textContent = warnings.length ? '⚠ ' + warnings.join(' ') + ' (저장은 할 수 있습니다)' : '';
+			slot.querySelector('[data-sch-preview]').innerHTML = schedulePreviewHtml(scheduleSteps(current, start, end));
+			renderLock();
+		}
+
+		function add(value) {
+			if (rows().length >= TIMELINE_LIMIT.rows) { ui.toast('선발 일정은 최대 ' + TIMELINE_LIMIT.rows + '개까지 입력할 수 있습니다.', 'warn'); return null; }
+			const row = timelineRow(value);
+			list.appendChild(row);
+			syncRow(row);
+			return row;
+		}
+
+		(detail ? detail.timeline || [] : []).forEach(value => add(value));
+
+		list.addEventListener('click', event => {
+			const row = event.target.closest('[data-kind="timeline"]');
+			if (!row) return;
+			const move = event.target.closest('[data-move]');
+			if (move) {
+				const sibling = move.dataset.move === '-1' ? row.previousElementSibling : row.nextElementSibling;
+				if (sibling) move.dataset.move === '-1' ? list.insertBefore(row, sibling) : list.insertBefore(sibling, row);
+				move.focus();
+				refresh();
+			} else if (event.target.closest('[data-remove]')) {
+				row.remove();
+				refresh();
+			}
+		});
+		const onRowInput = event => {
+			const row = event.target.closest('[data-kind="timeline"]');
+			if (row) syncRow(row);
+			refresh();
+		};
+		list.addEventListener('input', onRowInput);
+		list.addEventListener('change', onRowInput);
+		['applicationStartAt', 'applicationEndAt'].forEach(name => {
+			const el = field(name);
+			if (el) { el.addEventListener('input', refresh); el.addEventListener('change', refresh); }
+		});
+		slot.querySelector('.schedule-editor').addEventListener('click', event => {
+			const button = event.target.closest('[data-sch]');
+			if (!button || button.disabled) return;
+			const act = button.dataset.sch;
+			if (act === 'add') {
+				const row = add({});
+				if (row) row.querySelector('[data-field="stageCode"]').focus();
+			} else if (act === 'preset') {
+				const room = TIMELINE_LIMIT.rows - rows().length;
+				['DOC_RESULT', 'INTERVIEW', 'FINAL_RESULT'].slice(0, room).forEach(stageCode => add({stageCode, dateType: 'SINGLE'}));
+				if (room < 3) ui.toast('최대 ' + TIMELINE_LIMIT.rows + '개라 ' + Math.max(room, 0) + '개만 추가했습니다.', 'warn');
+			} else if (act === 'application') {
+				const {start, end} = period();
+				const row = add({stageCode: 'APPLICATION', dateType: 'RANGE', startDate: dateOnly(start), endDate: dateOnly(end)});
+				if (row) { list.insertBefore(row, list.firstElementChild); row.querySelector('[data-field="title"]').focus(); }
+			} else if (act === 'period') {
+				const el = field('applicationStartAt');
+				if (!el) return;
+				el.scrollIntoView({block: 'center', behavior: 'smooth'});
+				el.focus({preventScroll: true});
+				el.classList.remove('flash');
+				void el.offsetWidth;
+				el.classList.add('flash');
+				setTimeout(() => el.classList.remove('flash'), 1800);
+			} else if (act === 'unlock') {
+				ui.confirmAction({
+					title: '모집기간 수기 고정 해제', kind: 'primary', confirmLabel: '저장할 때 해제',
+					targets: [{id: '장학금 #' + s.id, title: s.title}],
+					summary: ['저장하면 "수기 고정"을 끕니다(periodLocked=false).',
+						'다음 공공데이터 동기화·대학 공지 재파싱 때 <b>수집한 모집기간으로 덮어씁니다.</b>',
+						'지금 화면의 모집기간은 저장할 때 그대로 저장되고, 덮어쓰기는 그 다음 수집부터입니다.'],
+					reversible: 'yes', reversibleText: '저장 전에는 [해제 취소], 저장 후에는 모집기간을 다시 고쳐 저장하면 다시 고정됩니다.',
+					onConfirm: async () => { state.unlock = true; refresh(); }
+				});
+			} else if (act === 'relock') {
+				state.unlock = false;
+				refresh();
+			}
+			if (['add', 'preset', 'application'].includes(act)) refresh();
+		});
+
+		const editor = {
+			/** @return {timeline, errors} — timeline 은 화면의 행 그대로(모두 지웠으면 []) */
+			collect() {
+				const items = rows().map(row => ({row, data: readTimelineRow(row)}));
+				const errors = timelineErrors(items);
+				if (items.length > TIMELINE_LIMIT.rows) errors.unshift({el: list, message: '선발 일정은 최대 ' + TIMELINE_LIMIT.rows + '개까지 입력할 수 있습니다.'});
+				return {timeline: items.map(item => item.data), errors};
+			},
+			/** 명시적으로 해제를 고른 경우만 false 를 보낸다. 그 밖에는 보내지 않아 서버가 기간 변경으로 판단한다. */
+			periodLocked: () => state.unlock ? false : undefined,
+			warnings: () => timelineWarnings(data(), period().end),
+			/** 서버 TIMELINE_* 오류(data.index·field)를 해당 칸에 표시하고 몇 번째 일정인지 문구에 붙인다. */
+			showServerError(error) {
+				const d = error && error.data;
+				if (!d || typeof d !== 'object' || !d.field) return error;
+				const row = Number.isInteger(d.index) ? rows()[d.index] : null;
+				const el = row ? row.querySelector('[data-field="' + d.field + '"]') : list;
+				if (el) {
+					const details = el.closest('details');
+					if (details) details.open = true;
+					el.classList.add('is-invalid');
+				}
+				if (Number.isInteger(d.index)) error.message = (d.index + 1) + '번째 일정: ' + error.message;
+				return error;
+			}
+		};
+		scheduleEditors.set(slot, editor);
+		refresh();
+		return editor;
+	}
+
+	const scheduleEditorIn = root => {
+		const slot = root && root.querySelector('[data-schedule-slot]');
+		return slot ? scheduleEditors.get(slot) || null : null;
+	};
+
 	/** 폼 값을 서버 요청 형태로 모은다. 비어 있는 필수값은 빨갛게 표시하고 오류를 던진다. */
 	function collectForm(root, mode, extra = {}, {validate = true} = {}) {
 		const field = name => root.querySelector('[name="' + name + '"]');
@@ -501,6 +892,9 @@
 			if (!get('name').value.trim()) mark(get('name'), (index + 1) + '번째 서류의 이름을 입력하세요.');
 			return {name: get('name').value.trim(), essay: get('essay').checked, displayOrder: index, downloadUrl: textOrNull(get('downloadUrl').value)};
 		});
+		const schedule = scheduleEditorIn(root);
+		const scheduleResult = schedule ? schedule.collect() : null;
+		if (scheduleResult) scheduleResult.errors.forEach(e => mark(e.el, e.message));
 		if (!validate) root.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
 		if (validate && problems.length) {
 			const first = root.querySelector('.is-invalid');
@@ -521,6 +915,9 @@
 			conditions, documents, imageSourceUrl: textOrNull(value('imageSourceUrl'))
 		};
 		if (mode !== 'create') payload.noticeKind = textOrNull(value('noticeKind'));
+		// 일정 섹션을 건드리지 않았어도 불러온 일정을 그대로 보낸다(생략하면 서버는 "유지"로 본다). 모두 지웠을 때만 [].
+		if (scheduleResult) payload.timeline = scheduleResult.timeline;
+		if (schedule && schedule.periodLocked() !== undefined) payload.periodLocked = schedule.periodLocked();
 		return Object.assign(payload, extra);
 	}
 
@@ -537,6 +934,7 @@
 		(detail ? detail.documents || [] : []).forEach(d => documentList.appendChild(documentRow(d)));
 		body.querySelector('[data-add="condition"]').onclick = () => conditionList.appendChild(conditionRow());
 		body.querySelector('[data-add="document"]').onclick = () => documentList.appendChild(documentRow());
+		if (mode === 'edit') mountSchedule(body, {mode, detail});
 		body.addEventListener('submit', event => event.preventDefault());
 		return body;
 	}
@@ -601,7 +999,7 @@
 	function diffPayload(before, after) {
 		const rows = [];
 		Object.keys(after).forEach(key => {
-			if (['conditions', 'documents', 'source', 'imageSourceUrl'].includes(key)) return;
+			if (['conditions', 'documents', 'source', 'imageSourceUrl', 'timeline', 'periodLocked'].includes(key)) return;
 			const a = before[key] == null || before[key] === '' ? null : before[key], b = after[key] == null || after[key] === '' ? null : after[key];
 			if (JSON.stringify(a) !== JSON.stringify(b)) rows.push([FIELD_BY_NAME[key] ? FIELD_BY_NAME[key].label : key, displayValue(key, a), displayValue(key, b), key]);
 		});
@@ -616,6 +1014,9 @@
 		};
 		listDiff('지원 조건', before.conditions || [], after.conditions || [], conditionText);
 		listDiff('제출서류', before.documents || [], after.documents || [], documentText);
+		const schedule = timelineDiff(before.timeline || [], after.timeline || []);
+		if (schedule) rows.push(['선발 일정 (' + (before.timeline || []).length + '개 → ' + (after.timeline || []).length + '개)', schedule.before, schedule.after, 'timeline']);
+		if (after.periodLocked === false) rows.push(['모집기간 수기 고정', '고정됨', '해제(다음 수집부터 자동 수집 값으로 덮어씀)', 'periodLocked']);
 		return rows;
 	}
 
@@ -639,23 +1040,28 @@
 		const readWarnings = bindStatusWarning(body);
 		await ui.modal({
 			title: mode === 'edit' ? '#' + scholarshipId + ' 통합 수정' : '원문 #' + raw.rawId + ' 수기 정제',
-			subtitle: mode === 'edit' ? '장학금 본문·조건·서류·자소서/면접 분기를 함께 저장합니다.' : '이 원문으로 새 장학금을 만듭니다.',
+			subtitle: mode === 'edit' ? '장학금 본문·조건·서류·선발 일정·자소서/면접 분기를 함께 저장합니다.' : '이 원문으로 새 장학금을 만듭니다.',
 			size: 'xl', body, confirmLabel: mode === 'edit' ? '저장' : '장학금 만들기',
 			footNote: mode === 'edit' ? '저장 기록은 [감사·복구]에 남아 되돌릴 수 있습니다.' : '',
 			onConfirm: async () => {
 				const payload = collectForm(body, mode, sourceExtra);
 				const path = mode === 'edit' ? '/api/v1/scholarships/manual/' + scholarshipId + '/full' : '/api/v1/scholarships/admin/raw/' + raw.rawId + '/manual';
-				const save = () => api(path, {method: mode === 'edit' ? 'PUT' : 'POST', body: payload});
+				const schedule = scheduleEditorIn(body);
+				const save = () => api(path, {method: mode === 'edit' ? 'PUT' : 'POST', body: payload})
+					.catch(error => { throw schedule ? schedule.showServerError(error) : error; });
 				let result;
 				if (mode === 'edit') {
 					const rows = diffPayload(baseline, payload);
 					if (!rows.length) { ui.toast('바뀐 내용이 없습니다.', 'info'); return false; }
 					const warnings = readWarnings();
+					const scheduleWarnings = schedule ? schedule.warnings() : [];
 					result = await ui.confirmAction({
 						title: '변경 내용 확인', subtitle: '#' + scholarshipId + ' ' + (s.title || ''), kind: 'primary', size: 'lg',
 						confirmLabel: rows.length + '개 항목 저장',
 						extraHtml: (warnings.length ? '<div class="notice warn"><b>모집 상태와 날짜가 맞지 않습니다.</b> 이대로 저장할 수 있지만 사용자 화면에 그대로 보입니다.<ul>' +
 							warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '') +
+							(scheduleWarnings.length ? '<div class="notice warn"><b>선발 일정을 확인하세요.</b> 저장은 할 수 있습니다.<ul>' +
+								scheduleWarnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '') +
 							'<table class="diff-table"><thead><tr><th>항목</th><th>이전</th><th>이후</th></tr></thead><tbody>' + rows.map(r =>
 								'<tr' + (r[3] === 'recruitmentStatus' ? ' class="warn-row"' : '') + '><td class="nowrap"><b>' + esc(r[0]) + '</b></td><td class="val before">' +
 								esc(r[1]) + '</td><td class="val after">' + esc(r[2]) + '</td></tr>').join('') + '</tbody></table>' +
@@ -1205,11 +1611,25 @@
 		const before = flatten(parseJson(row.beforeJson)), after = flatten(parseJson(row.afterJson));
 		let html;
 		if (before && after && typeof before === 'object' && typeof after === 'object') {
-			const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
-			const changed = keys.filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+			// 선발 일정·기간 고정은 2026-10 이후 기록에만 있다. 한쪽에 없으면 비교하지 않는다(없음 ≠ 빈 일정).
+			const later = ['timeline', 'scholarship.periodLocked'];
+			const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+				.filter(key => !later.includes(key) || (key in before && key in after));
+			const changed = keys.filter(key => key === 'timeline'
+				? Boolean(timelineDiff(before.timeline || [], after.timeline || []))
+				: JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+			const cellsFor = key => {
+				if (key !== 'timeline') return [showValue(before[key]), showValue(after[key])];
+				const diff = timelineDiff(before.timeline || [], after.timeline || []);
+				return [diff.before || '(없음)', diff.after || '(없음)'];
+			};
 			html = changed.length ? '<table class="diff-table"><thead><tr><th>필드</th><th>이전</th><th>이후</th></tr></thead><tbody>' +
-				changed.map(key => '<tr><td class="mono">' + esc(key) + '</td><td class="val before">' + esc(showValue(before[key])) +
-					'</td><td class="val after">' + esc(showValue(after[key])) + '</td></tr>').join('') + '</tbody></table>'
+				changed.map(key => {
+					const [from, to] = cellsFor(key);
+					const name = key === 'timeline' ? 'timeline (선발 일정 · 행 단위: + 추가 / − 삭제 / ~ 변경)' : key;
+					return '<tr><td class="mono">' + esc(name) + '</td><td class="val before">' + esc(from) +
+						'</td><td class="val after">' + esc(to) + '</td></tr>';
+				}).join('') + '</tbody></table>'
 				: view.emptyHtml('바뀐 필드가 없습니다.');
 		} else {
 			html = '<div class="grid-2"><div><p class="section-label">이전</p><div class="raw">' + esc(showValue(before)) + '</div></div>' +
@@ -1598,6 +2018,7 @@
 	function resetManualForm() {
 		$('manualFields').innerHTML = fieldsHtml({scholarshipType: 'EXTERNAL'}, 'create');
 		bindStatusWarning($('manualFields'));
+		mountSchedule($('manualFields'), {mode: 'create'});
 		$('manualConditions').innerHTML = '';
 		$('manualDocuments').innerHTML = '';
 	}
@@ -1616,12 +2037,14 @@
 		await ui.busy($('manualSubmit'), async () => {
 			try {
 				const result = await api('/api/v1/scholarships/manual/full', {method: 'POST', body: payload});
-				ui.toast('장학금 #' + result.scholarshipId + ' 등록 완료 · 조건 ' + result.conditionCount + '개 · 서류 ' + result.documentCount + '개');
+				ui.toast('장학금 #' + result.scholarshipId + ' 등록 완료 · 조건 ' + result.conditionCount + '개 · 서류 ' + result.documentCount + '개' +
+					(payload.timeline && payload.timeline.length ? ' · 선발 일정 ' + payload.timeline.length + '개' : ''));
 				if (result.imageError) ui.toast('장학금은 등록했지만 이미지는 저장하지 못했습니다: ' + result.imageError, 'warn');
 				resetManualForm();
 				afterWrite({});
 			} catch (error) {
-				ui.toast(WC.errorText(error), 'error');
+				const schedule = scheduleEditorIn(form);
+				ui.toast(WC.errorText(schedule ? schedule.showServerError(error) : error), 'error');
 			}
 		}, '등록 중…');
 	}

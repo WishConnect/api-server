@@ -133,7 +133,11 @@ public class ScholarshipController {
 
 	/** 장학금 상세(요약 테이블 + 선발 일정 타임라인 + 제출 서류 + 매칭 사유). */
 	@GetMapping("/{scholarshipId}")
-	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다. 비로그인도 조회할 수 있으며 이때 isScrapped는 false, matchReasons는 빈 배열, 조건 판정은 UNKNOWN입니다.")
+	@Operation(summary = "장학금 상세 조회", description = "요약 정보, 모집 기간, 선발 일정, 제출 서류, 자소서·면접 필요 여부와 근거, 조건별 자격 판정, 추천 이유를 반환합니다. "
+			+ "비로그인도 조회할 수 있으며 이때 isScrapped는 false, matchReasons는 빈 배열, 조건 판정은 UNKNOWN입니다. "
+			+ "selectionSchedule: 접수(APPLICATION) 단계를 관리자가 따로 입력하지 않았고 모집기간이 있으면 모집기간으로 만든 "
+			+ "\"서류접수\" 줄이 맨 앞에 오고, 그 뒤에 입력된 일정이 순서대로 옵니다. status 는 한국 날짜 기준으로 조회 때 계산하며, "
+			+ "날짜 미정(TBD) 단계는 현재 UPCOMING 으로 내려갑니다(date 에 미정 문구).")
 	public ApiResponse<ScholarshipDetailResponse> getDetail(
 			@AuthenticationPrincipal String userId,
 			@PathVariable Long scholarshipId) {

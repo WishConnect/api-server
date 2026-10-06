@@ -75,6 +75,52 @@ class JpqlSmokeTest {
 	}
 
 	@Test
+	@DisplayName("남길 쪽에 일정·이미지·면접 질문이 이미 있을 때의 병합 JPQL 도 해석된다(일정 삭제 분기)")
+	void mergeExecutorQueriesAreValidWhenPrimaryHasData() {
+		List<String> jpql = new ArrayList<>();
+		EntityManager entityManager = mock(EntityManager.class);
+		Query query = mock(Query.class);
+		given(entityManager.createQuery(anyString())).will(invocation -> {
+			jpql.add(invocation.getArgument(0));
+			return query;
+		});
+		given(entityManager.createNativeQuery(anyString())).willReturn(query);
+		given(query.setParameter(anyString(), any())).willReturn(query);
+		given(query.getSingleResult()).willReturn(1L);
+
+		new ScholarshipMergeExecutor(entityManager).merge(scholarship(1L), scholarship(2L));
+
+		assertThat(jpql).contains("delete from ScholarshipTimeline e where e.scholarship.id = :id");
+		for (String q : jpql) {
+			validator.validate(q);
+		}
+	}
+
+	@Test
+	@DisplayName("병합의 일정 순서 다시 매기기 JPQL 이 해석된다")
+	void timelineRenumberQueriesAreValid() {
+		List<String> jpql = new ArrayList<>();
+		EntityManager entityManager = mock(EntityManager.class);
+		Query query = mock(Query.class);
+		given(entityManager.createQuery(anyString())).will(invocation -> {
+			jpql.add(invocation.getArgument(0));
+			return query;
+		});
+		given(entityManager.createNativeQuery(anyString())).willReturn(query);
+		given(query.setParameter(anyString(), any())).willReturn(query);
+		given(query.getSingleResult()).willReturn(0L);
+		given(query.getResultList()).willReturn(List.of(7L));
+
+		new ScholarshipMergeExecutor(entityManager).merge(scholarship(1L), scholarship(2L));
+
+		assertThat(jpql).anyMatch(q -> q.startsWith("select t.id from ScholarshipTimeline"))
+				.anyMatch(q -> q.startsWith("update ScholarshipTimeline t set t.displayOrder"));
+		for (String q : jpql) {
+			validator.validate(q);
+		}
+	}
+
+	@Test
 	@DisplayName("모든 리포지토리의 @Query(JPQL) 가 해석된다")
 	void repositoryQueriesAreValid() throws Exception {
 		ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false) {

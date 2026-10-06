@@ -102,7 +102,7 @@ class ScholarshipMergeExecutorTest {
 		assertThat(moved.keySet()).containsExactlyInAnyOrder(
 				"scrap.deletedDuplicate", "scrap.moved",
 				"essay.moved", "report.moved", "dispatchLog.moved",
-				"recommendation.moved", "timeline.moved", "event.moved",
+				"recommendation.moved", "timeline.moved", "timeline.deletedOnDuplicate", "event.moved",
 				"rawScholarship.moved",
 				"image.moved", "image.keptOnDuplicate",
 				"interviewPrep.moved", "interviewPrep.keptOnDuplicate",
@@ -196,6 +196,66 @@ class ScholarshipMergeExecutorTest {
 				.noneMatch(q -> q.contains("delete from Essay"));
 	}
 
+	// --- 선발 일정 ---
+
+	@Test
+	@DisplayName("남길 쪽에 일정이 있으면 중복 쪽 일정은 옮기지 않고 지운다")
+	void deletesDuplicateTimelineWhenPrimaryHasOne() {
+		Query timelineCount = org.mockito.Mockito.mock(Query.class);
+		given(timelineCount.setParameter(anyString(), org.mockito.ArgumentMatchers.any())).willReturn(timelineCount);
+		given(timelineCount.getSingleResult()).willReturn(2L);
+		given(entityManager.createQuery(anyString())).will(invocation -> {
+			String jpql = invocation.getArgument(0);
+			issuedQueries.add(jpql);
+			return jpql.equals("select count(e) from ScholarshipTimeline e where e.scholarship.id = :id")
+					? timelineCount : query;
+		});
+		given(query.executeUpdate()).willReturn(4);
+
+		Map<String, Integer> moved = executor.merge(primary, duplicate);
+
+		assertThat(moved).containsEntry("timeline.moved", 0).containsEntry("timeline.deletedOnDuplicate", 4);
+		assertThat(executedQueries()).contains("delete from ScholarshipTimeline e where e.scholarship.id = :id")
+				.noneMatch(q -> q.startsWith("update ScholarshipTimeline"));
+		verify(timelineCount).setParameter("id", 10L);
+	}
+
+	@Test
+	@DisplayName("남길 쪽에 일정이 없으면 옮긴 뒤 순서를 0부터 다시 매긴다")
+	void movesAndRenumbersTimelineWhenPrimaryHasNone() {
+		Query ids = org.mockito.Mockito.mock(Query.class);
+		Query renumber = org.mockito.Mockito.mock(Query.class);
+		given(ids.setParameter(anyString(), org.mockito.ArgumentMatchers.any())).willReturn(ids);
+		given(ids.getResultList()).willReturn(List.of(501L, 502L, 503L));
+		given(renumber.setParameter(anyString(), org.mockito.ArgumentMatchers.any())).willReturn(renumber);
+		given(entityManager.createQuery(anyString())).will(invocation -> {
+			String jpql = invocation.getArgument(0);
+			issuedQueries.add(jpql);
+			if (jpql.startsWith("select t.id from ScholarshipTimeline")) return ids;
+			if (jpql.startsWith("update ScholarshipTimeline t set t.displayOrder")) return renumber;
+			return query;
+		});
+
+		Map<String, Integer> moved = executor.merge(primary, duplicate);
+
+		assertThat(moved).containsEntry("timeline.deletedOnDuplicate", 0);
+		assertThat(executedQueries()).contains(
+				"update ScholarshipTimeline e set e.scholarship.id = :to where e.scholarship.id = :from")
+				.noneMatch(q -> q.startsWith("delete from ScholarshipTimeline"));
+		verify(ids).setParameter("id", 10L);
+		org.mockito.InOrder order = org.mockito.Mockito.inOrder(renumber);
+		order.verify(renumber).setParameter("order", 0);
+		order.verify(renumber).setParameter("id", 501L);
+		order.verify(renumber).setParameter("order", 1);
+		order.verify(renumber).setParameter("id", 502L);
+		order.verify(renumber).setParameter("order", 2);
+		order.verify(renumber).setParameter("id", 503L);
+		verify(renumber, org.mockito.Mockito.times(3)).executeUpdate();
+		// 옮기기가 순서 매기기보다 먼저다.
+		assertThat(indexOfMatch(executedQueries(), q -> q.startsWith("update ScholarshipTimeline e set e.scholarship.id")))
+				.isLessThan(indexOfMatch(executedQueries(), q -> q.startsWith("select t.id from ScholarshipTimeline")));
+	}
+
 	// --- 소프트 삭제 ---
 
 	@Test
@@ -250,7 +310,7 @@ class ScholarshipMergeExecutorTest {
 		Map<String, Integer> moved = executor.merge(primary, duplicate);
 
 		moved.forEach((key, count) -> {
-			if (key.endsWith("keptOnDuplicate")) {
+			if (key.endsWith("keptOnDuplicate") || key.endsWith("deletedOnDuplicate")) {
 				assertThat(count).as(key).isZero();
 			} else {
 				assertThat(count).as(key).isEqualTo(3);
