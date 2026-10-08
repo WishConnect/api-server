@@ -68,6 +68,7 @@ public class ScholarshipManualAggregateStore {
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
 		saveTimeline(scholarship, safe(timeline));
+        if (timeline != null) scholarship.lockTimeline();
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
@@ -86,6 +87,7 @@ public class ScholarshipManualAggregateStore {
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
 		saveTimeline(scholarship, safe(timeline));
+        if (timeline != null) scholarship.lockTimeline();
 		return saved(request, scholarship, raw.getId(), refCount, documentCount);
 	}
 
@@ -126,6 +128,7 @@ public class ScholarshipManualAggregateStore {
 		int refCount = saveConditions(scholarship, safe(request.conditions()));
 		int documentCount = saveDocuments(scholarship, safe(request.documents()));
 		if (timeline != null) {
+            scholarship.lockTimeline();
 			scholarshipTimelineRepository.deleteByScholarship(scholarship);
 			scholarshipTimelineRepository.flush();
 			saveTimeline(scholarship, timeline);
@@ -201,6 +204,7 @@ public class ScholarshipManualAggregateStore {
 		scholarshipTimelineRepository.deleteByScholarship(scholarship);
 		scholarshipTimelineRepository.flush();
 		List<AdminScholarshipDetailResponse.TimelineData> rows = safe(timeline);
+        scholarship.lockTimeline();
 		for (int i = 0; i < rows.size(); i++) {
 			AdminScholarshipDetailResponse.TimelineData data = rows.get(i);
 			scholarshipTimelineRepository.save(ScholarshipTimeline.builder()

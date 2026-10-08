@@ -3,8 +3,12 @@ package com.wishconnect.domain.common.repository;
 import com.wishconnect.domain.common.entity.Image;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 /*
@@ -12,9 +16,26 @@ import org.springframework.data.repository.query.Param;
  */
 public interface ImageRepository extends JpaRepository<Image, Long> {
 
-	Optional<Image> findFirstByEntityTypeAndEntityIdOrderByIdAsc(String entityType, Long entityId);
+    /** 관리자 검수 포스터 우선, 같은 출처에서는 최신 행. 모든 노출·교체 경로가 이 정렬을 쓴다. */
+    String REPRESENTATIVE_ORDER = " ORDER BY CASE WHEN i.s3Key LIKE 'scholarships/admin/%' "
+            + "OR i.s3Key LIKE 'scholarships/manual/%' THEN 0 ELSE 1 END, i.id DESC";
 
-	Optional<Image> findFirstByEntityTypeAndEntityIdOrderByIdDesc(String entityType, Long entityId);
+    @Query("SELECT i FROM Image i WHERE i.entityType = :entityType AND i.entityId = :entityId" + REPRESENTATIVE_ORDER)
+    List<Image> findRepresentativeCandidates(@Param("entityType") String entityType,
+            @Param("entityId") Long entityId, Pageable pageable);
+
+    default Optional<Image> findRepresentative(String entityType, Long entityId) {
+        return findRepresentativeCandidates(entityType, entityId, PageRequest.of(0, 1)).stream().findFirst();
+    }
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM Image i WHERE i.entityType = :entityType AND i.entityId = :entityId" + REPRESENTATIVE_ORDER)
+    List<Image> findRepresentativeCandidatesForUpdate(@Param("entityType") String entityType,
+            @Param("entityId") Long entityId, Pageable pageable);
+
+    default Optional<Image> findRepresentativeForUpdate(String entityType, Long entityId) {
+        return findRepresentativeCandidatesForUpdate(entityType, entityId, PageRequest.of(0, 1)).stream().findFirst();
+    }
 
 	List<Image> findAllByEntityTypeAndEntityIdOrderByIdAsc(String entityType, Long entityId);
 
@@ -31,7 +52,7 @@ public interface ImageRepository extends JpaRepository<Image, Long> {
 	@Query("SELECT i FROM Image i " +
 			"WHERE i.entityType = :entityType " +
 			"AND i.entityId IN :entityIds " +
-			"ORDER BY i.id ASC")
+            REPRESENTATIVE_ORDER)
 	List<Image> findAllByEntityTypeAndEntityIdIn(
 			@Param("entityType") String entityType,
 			@Param("entityIds") List<Long> entityIds

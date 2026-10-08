@@ -29,7 +29,7 @@ import lombok.NoArgsConstructor;
  *   <li>{@code TBD} — 날짜 없이 {@link #dateText}("12월 중 예정")만</li>
  * </ul>
  *
- * <p>지금은 관리자 수기 입력만 이 테이블에 쓴다. 수집 배치는 쓰지 않는다({@link TimelineOrigin}).
+ * <p>관리자 수기 입력과 원문 근거를 검증한 크롤링 파싱 결과를 저장한다({@link TimelineOrigin}).
  */
 @Entity
 @Getter

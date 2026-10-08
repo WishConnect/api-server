@@ -26,6 +26,7 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.util.KosafNoticeText;
+import com.wishconnect.domain.scholarship.util.NoticeTimelineParser;
 import com.wishconnect.domain.scholarship.util.NoticeHtmlExtractor;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
@@ -97,6 +98,7 @@ public class UnivNoticeLlmParsingService {
 	private final LlmProperties llmProperties;
 	private final ObjectMapper objectMapper;
 	private final ConditionRefResolver conditionRefResolver;
+    private final CrawledScholarshipTimelineService timelineService;
 
 	/**
 	 * 대학 장학공지를 LLM 으로 파싱한다.
@@ -197,6 +199,7 @@ public class UnivNoticeLlmParsingService {
 					scholarshipDocumentRepository.deleteByScholarship(scholarship);
 					storeConditions(scholarship, parser.resolveConditions(notice, body));
 					storeDocuments(scholarship, notice.safeDocuments());
+                    timelineService.replaceFromParsed(scholarship, notice, body, SelectionScheduleAssembler.today());
 					// 공고종류는 채우지 않는다 — 공공데이터는 전부 모집 공고다.
 					UnivNoticeLlmParser.Requirement essay = parser.resolveRequirement(
 							notice.essayRequirement(), notice.essayEvidence(), body, title);
@@ -328,6 +331,10 @@ public class UnivNoticeLlmParsingService {
 
 		Optional<UnivNoticeLlmParser.ExtractedBody> body = parser.extractBody(raw.getRawHtml());
 		if (body.isEmpty()) {
+            // 이미지 전용 공고도 이미 연결된 장학금의 잘못된 자동 포스터는 LLM 없이 바로 교정할 수 있다.
+            if (!dryRun && raw.getScholarship() != null && !raw.getScholarship().isDeleted()) {
+                storePoster(raw, raw.getScholarship(), raw.getScholarship().getTitle());
+            }
 			// 포스터 이미지뿐인 공지는 따로 표시한다. 내용이 없는 게 아니라 형식이 달라서,
 			// 나중에 OCR·이미지 모델을 붙이면 살릴 수 있는 대상이다.
 			boolean imageOnly = parser.isImageOnly(raw.getRawHtml());
@@ -396,13 +403,16 @@ public class UnivNoticeLlmParsingService {
 		// 절반밖에 확인할 수 없다 — 조건 추출이 통째로 망가져도 멀쩡해 보인다.
 		int conditionCount = parser.resolveConditions(notice, bodyText).size();
 		int documentCount = notice.safeDocuments().size();
+        LocalDate referenceDate = raw.getCrawledAt() == null
+                ? SelectionScheduleAssembler.today() : raw.getCrawledAt().toLocalDate();
+        int timelineCount = NoticeTimelineParser.resolve(notice, bodyText, referenceDate).size();
 		boolean posterFound = NoticeHtmlExtractor.posterUrl(
 				org.jsoup.Jsoup.parse(raw.getRawHtml(),
 						raw.getSourceUrl() == null ? "" : raw.getSourceUrl())) != null;
 
 		if (dryRun) {
 			return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", title, beforePeriod,
-					afterPeriod, conditionCount, documentCount, posterFound, note));
+                    afterPeriod, conditionCount, documentCount, posterFound, note).withTimelineCount(timelineCount));
 		}
 
 		Scholarship scholarship = upsert(raw, notice, title, bodyText, period.orElse(null), htmlTitle);
@@ -410,10 +420,11 @@ public class UnivNoticeLlmParsingService {
 		saveLog(raw, extracted, ParseStatus.PARSED, notice, null, note);
 		storeConditions(scholarship, parser.resolveConditions(notice, bodyText));
 		storeDocuments(scholarship, notice.safeDocuments());
+        timelineService.replaceFromParsed(scholarship, notice, bodyText, referenceDate);
 		storePoster(raw, scholarship, title);
 
 		return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", title, beforePeriod,
-				afterPeriod, conditionCount, documentCount, posterFound, note));
+                afterPeriod, conditionCount, documentCount, posterFound, note).withTimelineCount(timelineCount));
 	}
 
 	/**

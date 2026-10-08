@@ -349,7 +349,7 @@ public class ScholarshipRecommendationService {
 	private record Page<T>(List<T> items, Pagination pagination) {
 	}
 
-	/** 카드에 실을 포스터 주소. 이미지가 여러 장이면 가장 먼저 붙은 것을 쓴다. */
+    /** 카드에 실을 포스터 주소. 관리자 검수 이미지 우선, 같은 출처에서는 최신 행을 쓴다. */
 	private Map<Long, String> findPosterUrls(List<Long> scholarshipIds) {
 		if (scholarshipIds.isEmpty()) {
 			return Map.of();

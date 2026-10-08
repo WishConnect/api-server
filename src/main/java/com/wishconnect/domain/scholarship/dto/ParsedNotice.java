@@ -55,8 +55,26 @@ public record ParsedNotice(
 		String interviewEvidence,
 		List<String> documents,
 		List<Condition> conditions,
-		String contact
+        String contact,
+        List<Timeline> timeline
 ) {
+
+    /** 예전 파싱 결과와 기존 호출자의 호환성. 일정 필드가 없으면 자동 삭제하지 않는다. */
+    public ParsedNotice(String title, String provider, String scholarshipType, String applicationStart,
+            String applicationEnd, String periodEvidence, Integer selectionCount, Long amount, String summary,
+            String noticeKind, Boolean combined, String submissionMethod, String submissionChannel,
+            String submissionEvidence, String essayRequirement, String essayEvidence,
+            String interviewRequirement, String interviewEvidence, List<String> documents,
+            List<Condition> conditions, String contact) {
+        this(title, provider, scholarshipType, applicationStart, applicationEnd, periodEvidence, selectionCount,
+                amount, summary, noticeKind, combined, submissionMethod, submissionChannel, submissionEvidence,
+                essayRequirement, essayEvidence, interviewRequirement, interviewEvidence, documents, conditions,
+                contact, null);
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Timeline(String stageCode, String dateType, String startDate, String endDate,
+            String dateText, String note, String evidence) { }
 
 	/**
 	 * 자격조건 하나. {@code evidence} 는 기간과 같은 이유로 <b>본문 원문 인용</b>이어야 한다.

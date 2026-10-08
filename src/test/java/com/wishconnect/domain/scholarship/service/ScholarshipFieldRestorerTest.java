@@ -148,7 +148,7 @@ class ScholarshipFieldRestorerTest {
 				ID, title, "기관", null, null, "EXTERNAL", "OPEN",
 				LocalDateTime.of(2026, 9, 1, 0, 0), LocalDateTime.of(2026, 9, 30, 23, 59), null, null,
 				true, true, "MANUAL", null, null, null, false, null, null, null, null, null, null, null, null,
-				LocalDateTime.of(2026, 8, 1, 0, 0), LocalDateTime.of(2026, 9, 1, 0, 0), null, periodLocked);
+                LocalDateTime.of(2026, 8, 1, 0, 0), LocalDateTime.of(2026, 9, 1, 0, 0), null, periodLocked, false);
 		return new AdminScholarshipDetailResponse(data, List.of(), List.of(), List.of(), timeline, List.of(), null);
 	}
 }
