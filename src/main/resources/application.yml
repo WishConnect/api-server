@@ -105,6 +105,8 @@ llm:
 
 # 장학금 공공데이터 동기화 배치 (API 키 등 나머지 scholarship.api.* 는 환경별 주입)
 scholarship:
+  enrich:
+    collect-schedule: ${SCHOLARSHIP_ENRICH_COLLECT_SCHEDULE:true} # 찾은 상세 본문을 LLM으로 파싱해 선발 일정 보완
   sync:
     scheduled: ${SCHOLARSHIP_SYNC_SCHEDULED:true}   # false 면 일일 배치 비활성화
     cron: ${SCHOLARSHIP_SYNC_CRON:0 0 11 * * *}     # 매일 오전 11시 (Asia/Seoul)

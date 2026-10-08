@@ -97,7 +97,7 @@ public class ScholarshipMergeExecutor {
 		// 5) 포스터 이미지와 면접 예상 질문. 남길 쪽에 이미 있으면 옮기지 않는다(아래 설명).
 		moveImages(from, to, moved);
 		moveInterviewPrepQuestions(from, to, moved);
-		moveTimeline(from, to, moved);
+        moveTimeline(from, to, primary, duplicate, moved);
 
 		// 6) 파생 데이터는 옮기지 않고 지운다. primary 쪽 값이 이미 있고,
 		//    합치면 같은 조건·서류가 중복으로 쌓인다. 재파싱하면 다시 만들어진다.
@@ -182,13 +182,15 @@ public class ScholarshipMergeExecutor {
 	 * 남길 쪽에서 다시 확인해 고칠 수 있고, 섞어 두면 어느 줄이 맞는지 가릴 수 없다.
 	 * 없으면 통째로 옮기고 순서를 0부터 다시 매긴다(옮겨 온 행의 순서가 중간부터 시작하지 않게).
 	 */
-	private void moveTimeline(Long from, Long to, Map<String, Integer> moved) {
-		if (countByScholarship("ScholarshipTimeline", to) > 0) {
+    private void moveTimeline(Long from, Long to, Scholarship primary, Scholarship duplicate,
+            Map<String, Integer> moved) {
+        if (primary.isTimelineLocked() || countByScholarship("ScholarshipTimeline", to) > 0) {
 			moved.put("timeline.moved", 0);
 			moved.put("timeline.deletedOnDuplicate", deleteBy("ScholarshipTimeline", from));
 			return;
 		}
 		moved.put("timeline.moved", repoint("ScholarshipTimeline", from, to));
+        if (duplicate.isTimelineLocked()) primary.lockTimeline();
 		moved.put("timeline.deletedOnDuplicate", 0);
 		// 벌크 갱신으로 순서를 매긴다. 엔티티를 읽어 고치면 영속성 컨텍스트에 남은 옛 상태(scholarship_id)가
 		// 함께 flush 될 수 있다.

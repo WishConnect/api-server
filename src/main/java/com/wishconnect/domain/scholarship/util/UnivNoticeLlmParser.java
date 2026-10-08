@@ -97,7 +97,7 @@ public class UnivNoticeLlmParser {
 	 * 제목 판별 기준과 제목 동봉 · 자소서/면접 판단 · 공지 종류(RECRUITMENT/RESULT/GUIDE) ·
 	 * 통합 공고 · 제출 방식과 경로 · FINANCIAL_AID_TYPE 정의 축소.
 	 */
-	public static final String PROMPT_VERSION = "v6";
+    public static final String PROMPT_VERSION = "v7";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
@@ -125,7 +125,7 @@ public class UnivNoticeLlmParser {
 					"submissionMethod", "submissionChannel", "submissionEvidence", "essayRequirement",
 					"essayEvidence", "interviewRequirement", "interviewEvidence", "applicationStart",
 					"applicationEnd", "periodEvidence", "selectionCount", "amount", "summary",
-					"documents", "conditions", "contact"),
+                    "documents", "conditions", "contact", "timeline"),
 			"properties", buildProperties());
 
 	private static Map<String, Object> buildProperties() {
@@ -160,6 +160,16 @@ public class UnivNoticeLlmParser {
 						"required", List.of("type", "evidence", "necessity", "refLabels",
 								"operator", "valueInt", "valueIntMax"),
 						"properties", conditionProperties())));
+        Map<String, Object> timeline = new LinkedHashMap<>();
+        timeline.put("stageCode", Map.of("type", "string", "enum",
+                List.of("DOC_REVIEW", "DOC_RESULT", "INTERVIEW", "FINAL_RESULT", "PAYMENT")));
+        timeline.put("dateType", Map.of("type", "string", "enum", List.of("SINGLE", "RANGE", "TBD")));
+        for (String name : List.of("startDate", "endDate", "dateText", "note")) timeline.put(name, nullable("string"));
+        timeline.put("evidence", Map.of("type", "string"));
+        properties.put("timeline", Map.of("type", "array", "items", Map.of(
+                "type", "object", "additionalProperties", false,
+                "required", List.of("stageCode", "dateType", "startDate", "endDate", "dateText", "note", "evidence"),
+                "properties", timeline)));
 		return properties;
 	}
 
@@ -248,6 +258,10 @@ public class UnivNoticeLlmParser {
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
 			  "interviewEvidence": 문자열|null,
 			  "contact": 문자열|null,
+              "timeline": [{"stageCode": "DOC_REVIEW"|"DOC_RESULT"|"INTERVIEW"|"FINAL_RESULT"|"PAYMENT",
+                            "dateType": "SINGLE"|"RANGE"|"TBD", "startDate": "yyyy-MM-dd"|null,
+                            "endDate": "yyyy-MM-dd"|null, "dateText": 문자열|null,
+                            "note": 문자열|null, "evidence": 문자열}],
 			  "documents": [문자열],
 			  "conditions": [{"type": 문자열, "evidence": 문자열, "necessity": "REQUIRED"|"PREFERRED",
 			                  "refLabels": [문자열], "operator": 문자열|null,
@@ -255,6 +269,14 @@ public class UnivNoticeLlmParser {
 			}
 
 			절대 규칙:
+            - timeline: 본문에 실제로 명시된 선발 일정만 최대 10개, 원문 순서로 추출한다.
+              서류심사 DOC_REVIEW / 서류 합격 발표 DOC_RESULT / 면접 INTERVIEW /
+              최종 합격·선발 발표 FINAL_RESULT / 장학금 지급 PAYMENT.
+              접수는 applicationStart/applicationEnd로 처리하며 timeline에 넣지 않는다.
+              evidence는 단계와 날짜를 포함한 원문 문장을 그대로 인용한다. 근거가 없으면 []다.
+              하루는 SINGLE, 기간은 RANGE. 날짜가 명시적으로 미정이면 TBD이며 날짜는 null,
+              dateText에는 '12월 중 예정' 같은 원문 문구만 넣는다. note도 원문 인용만 허용한다.
+              조건·근무기간·게시일을 일정으로 넣거나 신청 마감일로 발표일을 계산하지 마라.
 			- 본문에 근거가 없는 값은 반드시 null 로 둔다. 추측·유추·계산으로 값을 만들지 마라.
 			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.

@@ -260,6 +260,13 @@ public class Scholarship extends BaseEntity {
 	@Column(name = "period_locked", nullable = false)
 	private boolean periodLocked;
 
+    /** 관리자가 명시적으로 저장한 일정은 빈 목록도 포함해 자동 파싱에서 보존한다. */
+    @Column(name = "timeline_locked", nullable = false)
+    private boolean timelineLocked;
+
+    public void lockTimeline() { this.timelineLocked = true; }
+
+
 	@Builder
 	private Scholarship(
 		String title,

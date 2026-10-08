@@ -272,12 +272,12 @@ public class ScholarshipAdminOverviewService {
 				});
 		Page<Scholarship> scholarships = scholarshipRepository.findAll(spec, pageable);
 		List<Long> ids = scholarships.stream().map(Scholarship::getId).toList();
-		Map<Long, Image> latest = ids.isEmpty() ? Map.of() : imageRepository
+        Map<Long, Image> representatives = ids.isEmpty() ? Map.of() : imageRepository
 				.findAllByEntityTypeAndEntityIdIn(ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, ids)
 				.stream().collect(Collectors.toMap(Image::getEntityId, Function.identity(),
-						(left, right) -> left.getId() > right.getId() ? left : right));
+                        (left, right) -> left));
 		List<AdminImageRowResponse> content = scholarships.stream().map(s -> {
-			Image image = latest.get(s.getId());
+            Image image = representatives.get(s.getId());
 			return new AdminImageRowResponse(s.getId(), s.getTitle(), s.getProvider(), s.getPrimarySource(),
 					image == null ? null : image.getId(), image == null ? null : image.getImageType(),
 					image == null ? null : image.getOriginalName(), image == null ? null : image.getSourceUrl(),
@@ -376,7 +376,7 @@ public class ScholarshipAdminOverviewService {
 				name(value.getSubmissionChannel()), value.getSubmissionEvidence(), value.getContact(),
 				name(value.getEssayRequirement()), value.getEssayEvidence(), name(value.getInterviewRequirement()),
 				value.getInterviewEvidence(), value.getCreatedAt(), value.getUpdatedAt(), value.getDeletedAt(),
-				value.isPeriodLocked());
+                value.isPeriodLocked(), value.isTimelineLocked());
 	}
 
 	private String name(Enum<?> value) {

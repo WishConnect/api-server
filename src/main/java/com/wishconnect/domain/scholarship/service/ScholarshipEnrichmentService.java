@@ -73,6 +73,7 @@ public class ScholarshipEnrichmentService {
 	private final ImageRepository imageRepository;
 	private final ImageStorageService imageStorageService;
 	private final NaverSearchClient naverSearchClient;
+    private final CrawledScholarshipTimelineService timelineService;
 
 	/** 남의 사이트를 두들기지 않도록 요청 사이에 쉬는 시간(ms). */
 	@Value("${scholarship.enrich.delay-ms:1500}")
@@ -81,6 +82,9 @@ public class ScholarshipEnrichmentService {
 	/** 포스터 이미지 수집 여부. 저작권 이슈가 생기면 재배포 없이 끌 수 있어야 한다. */
 	@Value("${scholarship.enrich.collect-image:true}")
 	private boolean collectImage;
+
+    @Value("${scholarship.enrich.collect-schedule:true}")
+    private boolean collectSchedule;
 
 	@Transactional
 	public EnrichmentResult enrich(int limit) {
@@ -94,6 +98,7 @@ public class ScholarshipEnrichmentService {
 		int detailFound = 0;
 		int imageSaved = 0;
 		int documentLinked = 0;
+        int timelineSaved = 0;
 		int skipped = 0;
 		boolean searchUnavailable = false;
 		List<EnrichmentResult.Skipped> skippedRows = new ArrayList<>();
@@ -116,10 +121,11 @@ public class ScholarshipEnrichmentService {
 				if (page == null) {
 					continue;
 				}
-				if (collectImage && saveposterIfAbsent(scholarship, page)) {
+                if (collectImage && savePosterIfAutomatic(scholarship, page)) {
 					imageSaved++;
 				}
 				documentLinked += linkAttachments(scholarship, page);
+                if (collectSchedule) timelineSaved += timelineService.enrichFromPage(scholarship, page);
 			} catch (SearchUnavailableException e) {
 				// 검색이 죽어 있으면 남은 건도 전부 실패한다. 쿼터·시간을 태우지 말고 즉시 중단한다.
 				log.error("[Enrich] 검색 API 를 쓸 수 없어 중단합니다. 키·쿼터를 확인하세요.");
@@ -141,7 +147,7 @@ public class ScholarshipEnrichmentService {
 		log.info("[Enrich] 대상={} 상세URL={} 이미지={} 첨부={} 건너뜀={} 검색불가={}",
 				targets.size(), detailFound, imageSaved, documentLinked, skipped, searchUnavailable);
 		return new EnrichmentResult(targets.size(), detailFound, imageSaved, documentLinked,
-				skipped, searchUnavailable, skippedRows);
+                skipped, searchUnavailable, skippedRows, timelineSaved);
 	}
 
 	/**
@@ -185,10 +191,10 @@ public class ScholarshipEnrichmentService {
 		}
 	}
 
-	/** 이미 포스터가 있으면 건드리지 않는다(크롤링 수집분·관리자 업로드분을 덮지 않기 위함). */
-	private boolean saveposterIfAbsent(Scholarship scholarship, Document page) {
-		if (imageRepository.existsByEntityTypeAndEntityId(
-				ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId())) {
+    /** 관리자 검수 포스터는 보존하고 자동 수집 포스터는 개선된 규칙으로 갱신한다. */
+    private boolean savePosterIfAutomatic(Scholarship scholarship, Document page) {
+        if (imageRepository.findRepresentative(ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId())
+                .map(Image::isManuallyManaged).orElse(false)) {
 			return false;
 		}
 		String imageUrl = ScholarshipPageParser.findPosterImageUrl(page);
@@ -201,10 +207,7 @@ public class ScholarshipEnrichmentService {
 		if (stored == null) {
 			return false;
 		}
-		// 출처를 남긴다. 저작권 문의가 오면 어디서 가져왔는지 확인하고 지울 수 있어야 한다.
-		imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
-						ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarship.getId())
-				.ifPresent(image -> image.updateSourceUrl(imageUrl));
+
 		return true;
 	}
 

@@ -14,6 +14,8 @@ import java.time.Duration;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import jakarta.persistence.EntityManager;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,6 +55,7 @@ public class ImageStorageService {
 	private final S3Client s3Client;
 	private final S3Presigner s3Presigner;
 	private final ImageRepository imageRepository;
+    private final EntityManager entityManager;
 
 	@Value("${app.s3.bucket:wishconnect-images}")
 	private String bucket;
@@ -65,38 +68,32 @@ public class ImageStorageService {
 	 *
 	 * @return 공개 URL. 실패 시 null(호출측 흐름은 계속).
 	 */
+    @Transactional
 	public String storeFromUrl(String imageUrl, String keyPrefix, String entityType, Long entityId,
 			String originalName) {
 		try {
-			HttpResponse<byte[]> response = HTTP.send(
-					HttpRequest.newBuilder(URI.create(imageUrl))
-							.header("User-Agent", "Mozilla/5.0 (WishConnect image collector)")
-							.timeout(Duration.ofSeconds(15))
-							.GET().build(),
-					HttpResponse.BodyHandlers.ofByteArray());
-			byte[] body = response.body();
-			String contentType = response.headers().firstValue("Content-Type").orElse("");
-			if (response.statusCode() != 200 || body.length == 0 || body.length > MAX_IMAGE_BYTES
-					|| !contentType.startsWith("image/")) {
-				log.debug("[ImageStorage] 이미지 아님/비정상 응답 url={} status={} type={}",
-						imageUrl, response.statusCode(), contentType);
-				return null;
-			}
+            Image existing = imageRepository.findRepresentative(entityType, entityId).orElse(null);
+            if (existing != null && existing.isManuallyManaged()) return publicUrl(existing.getS3Key());
+            Downloaded downloaded = download(imageUrl, MAX_IMAGE_BYTES);
+            byte[] body = downloaded.body();
+            String contentType = normalizeType(downloaded.contentType());
+            if (body.length == 0 || !ADMIN_IMAGE_TYPES.contains(contentType)) return null;
 			String extension = extensionOf(contentType);
-			String key = keyPrefix + "/" + entityId + extension;
+            String key = keyPrefix + "/" + entityId + "/" + UUID.randomUUID() + extension;
+            // 내려받는 동안 관리자가 교체했을 수도 있으므로 업로드·저장 직전에 다시 확인한다.
+            existing = imageRepository.findRepresentativeForUpdate(entityType, entityId).orElse(null);
+            if (existing != null) entityManager.refresh(existing);
+            if (existing != null && existing.isManuallyManaged()) return publicUrl(existing.getS3Key());
 			s3Client.putObject(PutObjectRequest.builder()
-							.bucket(bucket).key(key).contentType(contentType).build(),
-					RequestBody.fromBytes(body));
-			imageRepository.save(Image.builder()
-					.entityType(entityType)
-					.entityId(entityId)
-					.s3Key(key)
-					.originalName(originalName)
-					.contentType(contentType)
-					.fileSize((long) body.length)
-					.imageType("POSTER")
-					.sourceUrl(imageUrl)
-					.build());
+                        .bucket(bucket).key(key).contentType(contentType).build(), RequestBody.fromBytes(body));
+            if (existing == null) {
+                existing = Image.builder().entityType(entityType).entityId(entityId).s3Key(key)
+                        .originalName(originalName).contentType(contentType).fileSize((long) body.length)
+                        .imageType("POSTER").sourceUrl(imageUrl).build();
+            } else {
+                existing.replaceStorage(key, originalName, contentType, (long) body.length, "POSTER", imageUrl);
+            }
+            imageRepository.save(existing);
 			log.info("[ImageStorage] 업로드 완료 key={} size={}B", key, body.length);
 			return publicUrl(key);
 		} catch (Exception e) {
@@ -113,6 +110,7 @@ public class ImageStorageService {
 	 *
 	 * @throws CustomException ADMIN_IMAGE_* 중 하나
 	 */
+    @Transactional
 	public String replaceFromUrl(String imageUrl, String keyPrefix, String entityType, Long entityId,
 			String originalName) {
 		Downloaded downloaded = download(imageUrl);
@@ -125,6 +123,7 @@ public class ImageStorageService {
 	 *
 	 * @throws CustomException ADMIN_IMAGE_* 중 하나
 	 */
+    @Transactional
 	public String replaceFromUpload(MultipartFile file, String keyPrefix, String entityType,
 			Long entityId) {
 		if (file == null || file.isEmpty()) {
@@ -155,18 +154,24 @@ public class ImageStorageService {
 		if (body.length > MAX_ADMIN_IMAGE_BYTES) {
 			throw new CustomException(ErrorCode.ADMIN_IMAGE_TOO_LARGE);
 		}
-		String normalized = contentType == null ? "" : contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
-		if ("image/jpg".equals(normalized)) {
-			normalized = "image/jpeg";
-		}
+        String normalized = normalizeType(contentType);
 		if (!ADMIN_IMAGE_TYPES.contains(normalized)) {
 			throw new CustomException(ErrorCode.ADMIN_IMAGE_INVALID_FORMAT);
 		}
 		return normalized;
 	}
 
+    private static String normalizeType(String contentType) {
+        String type = contentType == null ? "" : contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+        return "image/jpg".equals(type) ? "image/jpeg" : type;
+    }
+
 	/** 관리자 이미지 URL 내려받기. 크기 상한을 넘으면 끝까지 받지 않고 끊는다. */
 	private Downloaded download(String imageUrl) {
+        return download(imageUrl, MAX_ADMIN_IMAGE_BYTES);
+    }
+
+    private Downloaded download(String imageUrl, long maxBytes) {
 		URI uri;
 		try {
 			uri = URI.create(imageUrl == null ? "" : imageUrl.trim());
@@ -197,11 +202,11 @@ public class ImageStorageService {
 				throw new CustomException(ErrorCode.ADMIN_IMAGE_DOWNLOAD_FAILED);
 			}
 			long declared = response.headers().firstValueAsLong("Content-Length").orElse(-1);
-			if (declared > MAX_ADMIN_IMAGE_BYTES) {
+            if (declared > maxBytes) {
 				throw new CustomException(ErrorCode.ADMIN_IMAGE_TOO_LARGE);
 			}
-			byte[] body = in.readNBytes((int) MAX_ADMIN_IMAGE_BYTES + 1);
-			if (body.length > MAX_ADMIN_IMAGE_BYTES) {
+            byte[] body = in.readNBytes((int) maxBytes + 1);
+            if (body.length > maxBytes) {
 				throw new CustomException(ErrorCode.ADMIN_IMAGE_TOO_LARGE);
 			}
 			return new Downloaded(body, response.headers().firstValue("Content-Type").orElse(""));
@@ -223,13 +228,14 @@ public class ImageStorageService {
 			log.error("[ImageStorage] S3 저장 실패 key={} : {}", key, e.toString());
 			throw new CustomException(ErrorCode.ADMIN_IMAGE_STORAGE_FAILED, e);
 		}
-		Image image = imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdDesc(entityType, entityId)
+        Image image = imageRepository.findRepresentativeForUpdate(entityType, entityId)
 				.orElse(null);
 		if (image == null) {
 			image = Image.builder().entityType(entityType).entityId(entityId).s3Key(key)
 					.originalName(originalName).contentType(contentType).fileSize((long) body.length)
 					.imageType("POSTER").sourceUrl(sourceUrl).build();
 		} else {
+            entityManager.refresh(image);
 			image.replaceStorage(key, originalName, contentType, (long) body.length, "POSTER", sourceUrl);
 		}
 		imageRepository.save(image);
