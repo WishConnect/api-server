@@ -1306,9 +1306,12 @@
 
 	function candidateHtml(item) {
 		const pending = item.status === 'PENDING';
-		return '<div class="card" data-candidate="' + item.candidateId + '"><div class="card-head"><div class="badges">' +
-			'<span class="badge">후보 #' + item.candidateId + '</span>' + badge('mergeOrigin', item.origin) + badge('mergeStatus', item.status) + '</div>' +
-			'<span class="meta">' + esc(item.reason || '') + '</span></div><div class="compare">' + sideHtml(item.primary, 'keep') +
+		const selected = dupSelection.has(item.candidateId);
+		const check = pending ? '<label class="check cand-check"><input type="checkbox" data-cand-select="' + item.candidateId + '"' +
+			(selected ? ' checked' : '') + ' aria-label="후보 #' + item.candidateId + ' 선택"> 선택</label>' : '';
+		return '<div class="card' + (selected ? ' is-selected' : '') + '" data-candidate="' + item.candidateId + '"><div class="card-head"><div class="badges">' +
+			check + '<span class="badge">후보 #' + item.candidateId + '</span>' + badge('mergeOrigin', item.origin) + badge('mergeStatus', item.status) + '</div>' +
+			'<span class="meta">' + esc(item.reason || '') + '</span></div><div class="card-conflict" data-cand-conflict></div><div class="compare">' + sideHtml(item.primary, 'keep') +
 			'<div class="compare-mid"><span class="arrow">←</span>병합하면<br>오른쪽 데이터가<br>왼쪽으로 옮겨집니다</div>' + sideHtml(item.duplicate, 'drop') + '</div>' +
 			'<div class="card-head" style="border-top:1px solid var(--c-border);border-bottom:0">' +
 			(pending ? '<span class="meta">두 카드를 비교한 뒤 결정하세요.</span><div class="actions">' +
@@ -1320,21 +1323,185 @@
 	}
 
 	let duplicateItems = new Map();
-	async function loadDuplicates() {
+
+	/* ---------- 중복 후보 여러 건 선택(이 페이지 안에서만. 페이지를 옮기거나 검색하면 풀린다) */
+
+	const dupSelection = new Map();
+	const DUP_RESET_TEXT = {page: '페이지를 옮겨', search: '검색 조건이 바뀌어', filter: '상태·경로 필터가 바뀌어', refresh: '목록을 다시 불러와'};
+	let dupResetNotice = null, dupResetTimer = null, dupBulkBusy = null;
+
+	/** 선택을 비운다. reason 이 있으면(페이지 이동·검색 등) 작업 바에 "선택이 풀렸다"를 잠시 보여 준다. */
+	function clearDuplicateSelection(reason) {
+		const had = dupSelection.size;
+		dupSelection.clear();
+		clearTimeout(dupResetTimer);
+		dupResetNotice = had && DUP_RESET_TEXT[reason] ? DUP_RESET_TEXT[reason] + ' 선택한 ' + had + '건을 해제했습니다.' : null;
+		if (dupResetNotice) dupResetTimer = setTimeout(() => { dupResetNotice = null; updateDuplicateBulkBar(); }, 6000);
+		document.querySelectorAll('#duplicateList [data-cand-select]').forEach(box => { box.checked = false; });
+		document.querySelectorAll('#duplicateList .card.is-selected').forEach(card => card.classList.remove('is-selected'));
+		updateDuplicateBulkBar();
+	}
+
+	function updateDuplicateBulkBar() {
+		const bar = $('duplicateBulkBar');
+		if (!bar) return;
+		const count = dupSelection.size;
+		const onReview = currentPage === 'duplicate' && !document.querySelector('[data-dup-panel="review"]').hidden;
+		bar.hidden = !(count || dupResetNotice);
+		document.body.classList.toggle('has-bulk-bar', onReview && !bar.hidden);
+		$('duplicateBulkInfo').innerHTML = dupBulkBusy ? '<span class="spinner" aria-hidden="true"></span> ' + esc(dupBulkBusy)
+			: count ? esc(count + '건 선택') + (dupResetNotice ? '<small>' + esc(dupResetNotice) + '</small>' : '')
+				: esc(dupResetNotice || '');
+		['bulkMerge', 'bulkReject', 'bulkClear'].forEach(id => { $(id).disabled = !count || Boolean(dupBulkBusy); });
+		$('bulkMerge').textContent = count ? '선택 ' + count + '건 병합' : '선택 병합';
+		$('bulkReject').textContent = count ? '선택 ' + count + '건 중복 아님' : '선택 중복 아님';
+		const boxes = [...document.querySelectorAll('#duplicateList [data-cand-select]')];
+		const all = $('duplicateCheckAll');
+		const checked = boxes.filter(box => box.checked).length;
+		all.checked = boxes.length > 0 && checked === boxes.length;
+		all.indeterminate = checked > 0 && checked < boxes.length;
+		all.disabled = !boxes.length || Boolean(dupBulkBusy);
+	}
+
+	function setDuplicateSelected(id, on) {
+		const item = duplicateItems.get(id);
+		if (on && item && item.status === 'PENDING') dupSelection.set(id, item); else dupSelection.delete(id);
+		const card = document.querySelector('#duplicateList [data-candidate="' + id + '"]');
+		if (card) card.classList.toggle('is-selected', dupSelection.has(id));
+		const box = document.querySelector('#duplicateList [data-cand-select="' + id + '"]');
+		if (box) box.checked = dupSelection.has(id);
+	}
+
+	/** reason: page·search·filter·refresh — 선택을 풀고 작업 바에 알린다. write(일괄 처리 직후)는 알리지 않는다. */
+	async function loadDuplicates(reason = 'refresh') {
+		clearDuplicateSelection(reason === 'write' ? null : reason);
 		const target = $('duplicateList');
+		const pendingView = ($('duplicateStatus').value || 'PENDING') === 'PENDING';
 		await view.load(target, async () => {
 			const result = await api(qs('/api/v1/scholarships/merge/candidates', {status: $('duplicateStatus').value || 'PENDING',
 				origin: $('duplicateOrigin').value, keyword: val('duplicateKeyword'), page: pageNo.duplicate, size: 10}));
 			duplicateItems = new Map(result.items.map(item => [item.candidateId, item]));
 			renderPager('duplicatePager', {number: pageNo.duplicate, totalElements: result.totalCount, totalPages: Math.ceil(result.totalCount / 10)},
-				'duplicate', loadDuplicates);
+				'duplicate', () => loadDuplicates('page'));
+			$('duplicateSelectRow').hidden = !(pendingView && result.items.some(item => item.status === 'PENDING'));
 			return result.items.length ? result.items.map(candidateHtml).join('')
 				: '<div class="card">' + view.emptyHtml('이 조건의 후보가 없습니다.', $('duplicateStatus').value === 'PENDING' ? '모든 후보를 처리했습니다.' : '') + '</div>';
 		}, {what: '중복 후보를'});
 		target.querySelectorAll('[data-merge-approve]').forEach(button => button.onclick = () => approveMerge(duplicateItems.get(Number(button.dataset.mergeApprove))));
 		target.querySelectorAll('[data-merge-reject]').forEach(button => button.onclick = () => rejectMerge(duplicateItems.get(Number(button.dataset.mergeReject))));
 		target.querySelectorAll('[data-merge-reopen]').forEach(button => button.onclick = () => reopenMerge(duplicateItems.get(Number(button.dataset.mergeReopen))));
+		target.querySelectorAll('[data-cand-select]').forEach(box => box.onchange = () => {
+			setDuplicateSelected(Number(box.dataset.candSelect), box.checked);
+			updateDuplicateBulkBar();
+		});
 		bindOpenScholarship(target);
+		updateDuplicateBulkBar();
+	}
+
+	const pairText = item => '#' + item.primary.scholarshipId + ' ' + (item.primary.title || '(제목 없음)') + ' ← #' +
+		item.duplicate.scholarshipId + ' ' + (item.duplicate.title || '(제목 없음)');
+	const pairListHtml = items => '<ul class="pair-list">' + items.map(item => '<li><span class="pair-cand">후보 #' + item.candidateId + '</span>' +
+		'<b>#' + item.primary.scholarshipId + ' ' + esc(item.primary.title || '(제목 없음)') + '</b> <span class="pair-drop">← #' +
+		item.duplicate.scholarshipId + ' ' + esc(item.duplicate.title || '(제목 없음)') + '</span></li>').join('') + '</ul>';
+
+	const CONFLICT_LABEL = {NOT_FOUND: '없는 후보', NOT_PENDING: '이미 처리됨', DUPLICATE_ID: '중복 선택', SAME_DUPLICATE: '같은 장학금을 두 번 내림',
+		CHAINED_MERGE: '연쇄 병합', SCHOLARSHIP_DELETED: '내려진 장학금 포함'};
+
+	/** 서버 사전 검사 충돌을 모달과 카드에 표시한다. 아무것도 처리되지 않은 상태다. */
+	function showBulkConflicts(root, ctx, conflicts) {
+		document.querySelectorAll('#duplicateList .card.is-conflict').forEach(card => card.classList.remove('is-conflict'));
+		document.querySelectorAll('#duplicateList [data-cand-conflict]').forEach(box => { box.innerHTML = ''; });
+		const byCandidate = new Map();
+		conflicts.forEach(c => { if (!byCandidate.has(c.candidateId)) byCandidate.set(c.candidateId, []); byCandidate.get(c.candidateId).push(c); });
+		byCandidate.forEach((list, id) => {
+			const card = document.querySelector('#duplicateList [data-candidate="' + id + '"]');
+			if (!card) return;
+			card.classList.add('is-conflict');
+			card.querySelector('[data-cand-conflict]').innerHTML = '<div class="notice danger"><b>일괄 처리에서 제외해야 합니다.</b><ul>' +
+				list.map(c => '<li>' + esc(c.message) + '</li>').join('') + '</ul></div>';
+		});
+		const box = root.querySelector('[data-bulk-conflicts]');
+		box.innerHTML = '<div class="notice danger"><b>함께 처리할 수 없는 후보가 ' + byCandidate.size + '건 있어 아무것도 처리하지 않았습니다.</b>' +
+			'<ul>' + conflicts.map(c => '<li><b>후보 #' + esc(c.candidateId) + '</b> · ' + esc(CONFLICT_LABEL[c.reason] || c.reason) + ' — ' + esc(c.message) +
+			'</li>').join('') + '</ul><div class="actions"><button type="button" class="btn btn-sm" data-drop-conflicts>이 후보들을 선택에서 빼고 닫기</button></div></div>';
+		box.querySelector('[data-drop-conflicts]').onclick = () => {
+			byCandidate.forEach((list, id) => setDuplicateSelected(id, false));
+			updateDuplicateBulkBar();
+			ctx.close(null);
+		};
+		box.scrollIntoView({block: 'nearest'});
+		const first = document.querySelector('#duplicateList .card.is-conflict');
+		if (first) first.scrollIntoView({block: 'nearest'});
+	}
+
+	/** 결과 요약(성공·건너뜀·실패와 건별 사유). */
+	function showBulkResult(result, kind) {
+		const done = kind === 'merge' ? '병합' : '중복 아님';
+		const resultBadge = r => r === 'MERGED' ? '<span class="badge b-success">병합됨</span>' : r === 'REJECTED' ? '<span class="badge b-success">중복 아님</span>'
+			: r === 'SKIPPED' ? '<span class="badge b-warning">건너뜀</span>' : '<span class="badge b-danger">실패</span>';
+		const rows = (result.results || []).map(r => '<tr><td class="nowrap">후보 #' + r.candidateId + '</td><td class="nowrap">#' + esc(r.primaryId) + ' ← #' + esc(r.duplicateId) +
+			'</td><td>' + resultBadge(r.result) + '</td><td>' + esc(r.message || '') + (r.errorCode && r.result !== 'MERGED' && r.result !== 'REJECTED'
+				? '<span class="cell-sub mono">' + esc(r.errorCode) + '</span>' : '') + '</td></tr>').join('');
+		return ui.notify('일괄 ' + done + ' 결과', '<div class="result-counts"><span class="badge">요청 ' + result.total + '건</span>' +
+			'<span class="badge b-success">' + done + ' ' + result.succeeded + '건</span><span class="badge b-warning">건너뜀 ' + result.skipped + '건</span>' +
+			'<span class="badge b-danger">실패 ' + result.failed + '건</span></div>' +
+			(result.failed ? '<div class="notice warn">실패한 후보는 아무것도 바뀌지 않고 승인 대기로 남았습니다. 사유를 확인한 뒤 하나씩 다시 처리하세요.</div>' : '') +
+			(result.skipped ? '<div class="notice neutral">건너뛴 후보는 다른 관리자가 먼저 처리한 것입니다.</div>' : '') +
+			'<div class="table-wrap" style="max-height:360px"><table><thead><tr><th>후보</th><th>유지 ← 내림</th><th>결과</th><th>사유</th></tr></thead><tbody>' +
+			rows + '</tbody></table></div><p class="field-help" style="margin-top:var(--sp-2)">성공한 건은 [작업 기록]에 건마다 남습니다.</p>');
+	}
+
+	/** 일괄 처리 요청. 처리 중에는 작업 바를 잠그고 진행 표시, 충돌(400)이면 모달에 표시하고 열어 둔다. */
+	async function runBulk(kind, items, body, root, ctx) {
+		const path = '/api/v1/scholarships/merge/candidates/' + (kind === 'merge' ? 'bulk-approve' : 'bulk-reject');
+		dupBulkBusy = items.length + '건 ' + (kind === 'merge' ? '병합' : '중복 아님 처리') + ' 중… 창을 닫지 마세요';
+		updateDuplicateBulkBar();
+		let result;
+		try {
+			result = await api(path, {method: 'POST', body});
+		} catch (error) {
+			if (error.status === 400 && error.data && Array.isArray(error.data.conflicts)) {
+				showBulkConflicts(root, ctx, error.data.conflicts);
+				return false;
+			}
+			throw error;
+		} finally {
+			dupBulkBusy = null;
+			updateDuplicateBulkBar();
+		}
+		afterWrite({reload: () => loadDuplicates('write')});
+		return result;
+	}
+
+	async function bulkApproveMerge() {
+		const items = [...dupSelection.values()];
+		if (!items.length) return;
+		const result = await ui.confirmAction({
+			title: '선택한 후보 일괄 병합', subtitle: items.length + '건 · 위에서부터 순서대로 처리합니다', size: 'lg', confirmLabel: items.length + '건 병합 실행',
+			summary: ['각 후보의 <b>오른쪽(내릴 쪽)</b>이 사용자 목록에서 내려가고, 스크랩·자소서 등 사용자 데이터가 왼쪽(유지 쪽)으로 옮겨집니다.',
+				'한 건이 실패해도 나머지는 계속 처리합니다. 실패한 건은 아무것도 바뀌지 않습니다.',
+				'처리 전에 서버가 선택 전체를 검사합니다. 함께 처리할 수 없는 후보(같은 장학금을 두 번 내림, 연쇄 병합 등)가 있으면 아무것도 하지 않습니다.'],
+			extraHtml: '<p class="section-label">유지할 쪽 ← 내릴 쪽</p>' + pairListHtml(items) + '<div data-bulk-conflicts></div>',
+			reversible: 'no', reversibleText: '옮겨진 사용자 데이터를 원래대로 나눌 수 없고, 병합으로 내린 쪽은 복원되지 않습니다.',
+			onConfirm: (_, root, ctx) => runBulk('merge', items, {candidateIds: items.map(item => item.candidateId)}, root, ctx)
+		});
+		if (result) showBulkResult(result, 'merge');
+	}
+
+	async function bulkRejectMerge() {
+		const items = [...dupSelection.values()];
+		if (!items.length) return;
+		const result = await ui.confirmAction({
+			title: '선택한 후보 중복 아님 처리', subtitle: items.length + '건', size: 'lg', kind: 'primary', confirmLabel: items.length + '건 중복 아님',
+			summary: ['두 장학금을 모두 그대로 둡니다. 이 쌍들은 다시 자동 후보로 올라오지 않습니다.',
+				'<b>아래에 적는 사유 하나가 선택한 ' + items.length + '건 전부에 똑같이 남습니다.</b> 사유가 다르면 나눠서 처리하세요.'],
+			extraHtml: '<p class="section-label">대상 후보</p>' + pairListHtml(items) + '<div data-bulk-conflicts></div>',
+			reversible: 'yes', reversibleText: '반려한 후보는 상태를 [반려됨]으로 바꿔 조회한 뒤 하나씩 [반려 취소]로 되돌릴 수 있습니다.',
+			reason: {label: '중복이 아닌 근거', required: true, maxLength: 500, placeholder: '예: 학기가 다른 별개 공고, 캠퍼스가 다름',
+				help: '같은 사유가 선택한 ' + items.length + '건 전부에 적용됩니다. 다른 관리자가 같은 쌍을 다시 볼 때 참고합니다(500자까지).'},
+			onConfirm: (note, root, ctx) => runBulk('reject', items, {candidateIds: items.map(item => item.candidateId), note}, root, ctx)
+		});
+		if (result) showBulkResult(result, 'reject');
 	}
 
 	async function loadDuplicateReports() {
@@ -1385,6 +1552,7 @@
 	function showDupTab(name) {
 		document.querySelectorAll('[data-dup-tab]').forEach(button => button.classList.toggle('active', button.dataset.dupTab === name));
 		document.querySelectorAll('[data-dup-panel]').forEach(panel => panel.hidden = panel.dataset.dupPanel !== name);
+		updateDuplicateBulkBar();
 		if (name === 'reports') loadDuplicateReports();
 	}
 
@@ -2124,6 +2292,7 @@
 		document.title = PAGES[id].title + ' · WishConnect 관리자';
 		$('app').classList.remove('nav-open');
 		if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+		updateDuplicateBulkBar();
 		window.scrollTo(0, 0);
 		if (load && PAGES[id].load) PAGES[id].load();
 	}
@@ -2196,8 +2365,15 @@
 		$('includeDeleted').addEventListener('change', () => { pageNo.scholarship = 0; loadScholarships(); });
 		click('refreshAlways', () => loadAlways());
 		click('refreshDuplicates', () => { loadDuplicates(); if (!document.querySelector('[data-dup-panel="reports"]').hidden) loadDuplicateReports(); });
-		search('searchDuplicates', 'duplicate', loadDuplicates);
-		$('duplicateStatus').addEventListener('change', () => { pageNo.duplicate = 0; loadDuplicates(); });
+		search('searchDuplicates', 'duplicate', () => loadDuplicates('search'));
+		$('duplicateStatus').addEventListener('change', () => { pageNo.duplicate = 0; loadDuplicates('filter'); });
+		$('duplicateCheckAll').addEventListener('change', event => {
+			document.querySelectorAll('#duplicateList [data-cand-select]').forEach(box => setDuplicateSelected(Number(box.dataset.candSelect), event.target.checked));
+			updateDuplicateBulkBar();
+		});
+		click('bulkMerge', bulkApproveMerge);
+		click('bulkReject', bulkRejectMerge);
+		click('bulkClear', () => clearDuplicateSelection(null));
 		document.querySelectorAll('[data-dup-tab]').forEach(button => button.onclick = () => showDupTab(button.dataset.dupTab));
 		click('mergeSearchButton', searchMergeScholarships);
 		click('createManualMerge', createManualMerge);
