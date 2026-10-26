@@ -62,7 +62,7 @@ class MigrationCheckConstraintTest {
 	@Test
 	@DisplayName("admin_audit_log.action CHECK = AdminAction")
 	void auditAction() throws IOException {
-		assertThat(checkValues("V20261003_02__admin_audit_actions.sql", "admin_audit_log_action_check"))
+		assertThat(checkValues("V20261026_01__raw_scholarship_dismiss.sql", "admin_audit_log_action_check"))
 				.containsExactlyInAnyOrderElementsOf(enumNames(com.wishconnect.global.audit.AdminAction.class));
 	}
 
@@ -71,6 +71,14 @@ class MigrationCheckConstraintTest {
 	void failureType() throws IOException {
 		assertThat(checkValues("V20261003_01__admin_job_failure.sql", "admin_job_failure_failure_type_check"))
 				.containsExactlyInAnyOrderElementsOf(enumNames(AdminJobFailureType.class));
+	}
+
+	@Test
+	@DisplayName("raw_scholarship.dismissed_reason CHECK = RawDismissReason")
+	void rawDismissReason() throws IOException {
+		assertThat(checkValues("V20261026_01__raw_scholarship_dismiss.sql", "raw_scholarship_dismissed_reason_check"))
+				.containsExactlyInAnyOrderElementsOf(enumNames(
+						com.wishconnect.domain.scholarship.entity.RawDismissReason.class));
 	}
 
 	private static final String TIMELINE_MIGRATION = "V20261006_01__scholarship_timeline_manual_schedule.sql";

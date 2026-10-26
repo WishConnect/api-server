@@ -71,6 +71,22 @@ public class RawScholarship extends BaseEntity {
 	@Column(name = "parse_error", columnDefinition = "TEXT")
 	private String parseError;
 
+	/**
+	 * 관리자가 실패 재처리 대상에서 "만료 처리"한 시각. null 이면 만료 처리 안 됨.
+	 *
+	 * <p>파싱 상태와 별개 축이다. 만료 처리된 원본은 실패 재처리 목록·배지에서 빠지고, 매일 배치 파싱·LLM 재처리·
+	 * 공공데이터 동기화가 다시 처리하지 않는다(동기화는 본문만 갱신). 되돌리면 세 칸을 비운다.
+	 */
+	@Column(name = "dismissed_at")
+	private LocalDateTime dismissedAt;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "dismissed_reason", length = 30)
+	private RawDismissReason dismissedReason;
+
+	@Column(name = "dismissed_note", length = 200)
+	private String dismissedNote;
+
 	@Builder
 	private RawScholarship(
 		Scholarship scholarship,
@@ -118,6 +134,34 @@ public class RawScholarship extends BaseEntity {
 		this.scholarship = null;
 		this.parseStatus = status;
 		this.parseError = parseError;
+	}
+
+	/** 실패 재처리 대상에서 만료 처리(숨기기). 파싱 상태는 그대로 둔다. */
+	public void dismiss(RawDismissReason reason, String note, LocalDateTime at) {
+		this.dismissedAt = at;
+		this.dismissedReason = reason;
+		this.dismissedNote = note;
+	}
+
+	/** 만료 처리 되돌리기. */
+	public void clearDismissal() {
+		this.dismissedAt = null;
+		this.dismissedReason = null;
+		this.dismissedNote = null;
+	}
+
+	public boolean isDismissed() {
+		return dismissedAt != null;
+	}
+
+	/**
+	 * 만료 처리된 원본을 수집기가 다시 만났을 때: 본문만 갱신한다. 파싱 상태·오류·만료 표시는 건드리지 않는다
+	 * ({@link #updateRawData} 는 상태를 PENDING 으로 되돌리므로 쓰지 않는다).
+	 */
+	public void refreshDismissedBody(String sourceUrl, Map<String, Object> rawJson) {
+		this.sourceUrl = sourceUrl;
+		this.rawJson = rawJson;
+		this.crawledAt = LocalDateTime.now();
 	}
 
 	public void updateRawData(String sourceUrl, Map<String, Object> rawJson) {
