@@ -58,6 +58,11 @@ public class Image extends BaseCreatedEntity {
 	@Column(name = "source_url", length = 1000)
 	private String sourceUrl;
 
+    /** 관리자 등록·교체의 기존 S3 경로 규약. 자동 수집은 이 이미지를 덮지 않는다. */
+    public boolean isManuallyManaged() {
+        return s3Key != null && (s3Key.startsWith("scholarships/admin/") || s3Key.startsWith("scholarships/manual/"));
+    }
+
 	/** 자동 수집한 포스터의 출처. 저작권 문의 대응과 개별 삭제를 위해 남긴다. */
 	public void updateSourceUrl(String sourceUrl) {
 		this.sourceUrl = sourceUrl;

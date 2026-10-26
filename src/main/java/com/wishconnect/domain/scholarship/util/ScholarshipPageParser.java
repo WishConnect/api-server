@@ -16,7 +16,7 @@ import org.springframework.util.StringUtils;
 그래서 검색으로 찾은 기관 상세페이지를 직접 읽어 채운다.
 
 기관 사이트가 2,109곳이라 구조가 제각각이므로, 특정 사이트에 맞춘 셀렉터 대신
-표준 메타태그(og:image)와 확장자 기반 규칙만 쓴다. 못 찾으면 빈 값으로 두고 넘어간다.
+공고 본문·첨부를 우선하고 공유용 로고를 제외한다. 못 찾으면 빈 값으로 두고 넘어간다.
  */
 public final class ScholarshipPageParser {
 
@@ -24,31 +24,15 @@ public final class ScholarshipPageParser {
 	private static final Set<String> DOCUMENT_EXTENSIONS =
 			Set.of(".hwp", ".hwpx", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip");
 
-	/** 배너·로고·아이콘을 포스터로 오인하지 않도록 거른다. */
-	private static final List<String> IMAGE_NOISE =
-			List.of("logo", "banner", "icon", "btn", "button", "sprite", "blank", "spacer", "profile");
 
 	private static final int MAX_DOCUMENTS = 10;
 
 	private ScholarshipPageParser() {
 	}
 
-	/**
-	 * 포스터 이미지 URL. {@code og:image} 를 우선한다 — 기관 사이트도 카카오톡 공유를 신경 쓰기 때문에
-	 * 대개 채워져 있고, 본문 첫 이미지보다 정확하다. 없으면 본문에서 노이즈를 걸러 첫 이미지를 쓴다.
-	 */
+    /** 두 수집 경로가 공통 포스터 후보 규칙을 쓴다. */
 	public static String findPosterImageUrl(Document document) {
-		String ogImage = document.select("meta[property=og:image], meta[name=og:image]").attr("abs:content");
-		if (StringUtils.hasText(ogImage) && !isNoisyImage(ogImage)) {
-			return ogImage;
-		}
-		for (Element img : document.select("img[src]")) {
-			String src = img.absUrl("src");
-			if (StringUtils.hasText(src) && !isNoisyImage(src)) {
-				return src;
-			}
-		}
-		return null;
+        return PosterImageSelector.find(document);
 	}
 
 	/**
@@ -102,11 +86,6 @@ public final class ScholarshipPageParser {
 		String path = url.split("\\?")[0];
 		int slash = path.lastIndexOf('/');
 		return slash >= 0 && slash < path.length() - 1 ? path.substring(slash + 1) : path;
-	}
-
-	private static boolean isNoisyImage(String url) {
-		String lower = url.toLowerCase(Locale.ROOT);
-		return IMAGE_NOISE.stream().anyMatch(lower::contains);
 	}
 
 	public record Attachment(String name, String downloadUrl) {

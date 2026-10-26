@@ -19,8 +19,14 @@ public record EnrichmentResult(
 		 * 이 둘을 구분하지 않아, 키가 401 로 죽어 있는데도 매칭 실패처럼 보인 적이 있다.
 		 */
 		boolean searchUnavailable,
-		List<Skipped> skippedRows
+        List<Skipped> skippedRows,
+        int timelineSaved
 ) {
+
+    public EnrichmentResult(int targetCount, int detailUrlFound, int imageSaved, int documentLinked,
+            int skippedCount, boolean searchUnavailable, List<Skipped> skippedRows) {
+        this(targetCount, detailUrlFound, imageSaved, documentLinked, skippedCount, searchUnavailable, skippedRows, 0);
+    }
 
 	public record Skipped(Long scholarshipId, String title, String reason) {
 	}

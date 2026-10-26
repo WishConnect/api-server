@@ -70,7 +70,7 @@ public class ScholarshipDetailService {
 				CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt()),
 				userId != null && scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),
 				List.of(),
-				imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+                imageRepository.findRepresentative(
 								ImageStorageService.ENTITY_TYPE_SCHOLARSHIP, scholarshipId)
 						.map(image -> imageStorageService.publicUrl(image.getS3Key()))
 						.orElse(null),

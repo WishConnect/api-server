@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -83,6 +84,7 @@ class UnivNoticeLlmParsingServiceTest {
 	@Mock private NoticeParseLogRepository noticeParseLogRepository;
 	/** 포스터 저장. 파싱 성패와 무관하므로 스텁하지 않는다. */
 	@Mock private ImageStorageService imageStorageService;
+    @Mock private CrawledScholarshipTimelineService timelineService;
 	@Mock private RegionResolver regionResolver;
 	@Mock private com.wishconnect.domain.common.service.SchoolResolver schoolResolver;
 	@Mock private FamilyTypeRepository familyTypeRepository;
@@ -100,7 +102,7 @@ class UnivNoticeLlmParsingServiceTest {
 				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
 						"claude-haiku-4-5", "claude-haiku-4-5", 4096),
 				new ObjectMapper(),
-				new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository));
+                new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository), timelineService);
 	}
 
 	// --- Fixture ---
@@ -172,6 +174,7 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(target.getParseStatus()).isEqualTo(ParseStatus.PARSED);
 		assertThat(result.items().get(0).afterPeriod()).isEqualTo("2026-08-01 ~ 2026-08-14");
 		verify(scholarshipDocumentRepository).saveAll(anyList());
+        verify(timelineService).replaceFromParsed(any(Scholarship.class), any(), anyString(), any());
 	}
 
 	@Test
