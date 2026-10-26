@@ -219,10 +219,10 @@ public class ScholarshipMergeBulkService {
 			}
 		}
 		Map<Long, List<Long>> dropCount = new HashMap<>();
-		Set<Long> keepIds = new HashSet<>();
+		Map<Long, List<Long>> keepBy = new HashMap<>();
 		for (ScholarshipMergeCandidate candidate : selected) {
 			dropCount.computeIfAbsent(candidate.getDuplicate().getId(), k -> new ArrayList<>()).add(candidate.getId());
-			keepIds.add(candidate.getPrimary().getId());
+			keepBy.computeIfAbsent(candidate.getPrimary().getId(), k -> new ArrayList<>()).add(candidate.getId());
 		}
 
 		List<Conflict> conflicts = new ArrayList<>();
@@ -236,10 +236,18 @@ public class ScholarshipMergeBulkService {
 						"장학금 #" + duplicate.getId() + " 이(가) 후보 " + joinIds(sameDrop)
 								+ " 에서 모두 내릴 쪽입니다. 하나만 고르세요."));
 			}
-			if (keepIds.contains(duplicate.getId())) {
+			List<Long> keptElsewhere = keepBy.get(duplicate.getId());
+			if (keptElsewhere != null) {
 				conflicts.add(new Conflict(id, List.of(duplicate.getId()), Reason.CHAINED_MERGE,
-						"장학금 #" + duplicate.getId() + " 이(가) 이 후보에서는 내릴 쪽, 다른 선택 후보에서는 유지 쪽입니다. "
-								+ "따로 나눠 처리하세요."));
+						"장학금 #" + duplicate.getId() + " 이(가) 이 후보에서는 내릴 쪽, 후보 " + joinIds(keptElsewhere)
+								+ " 에서는 유지 쪽입니다. 따로 나눠 처리하세요."));
+			}
+			// 연쇄의 반대편(이 후보의 유지 쪽이 다른 선택 후보의 내릴 쪽)도 같이 표시해 두 카드를 모두 강조한다.
+			List<Long> droppedElsewhere = dropCount.get(primary.getId());
+			if (droppedElsewhere != null) {
+				conflicts.add(new Conflict(id, List.of(primary.getId()), Reason.CHAINED_MERGE,
+						"장학금 #" + primary.getId() + " 이(가) 이 후보에서는 유지 쪽, 후보 " + joinIds(droppedElsewhere)
+								+ " 에서는 내릴 쪽입니다. 따로 나눠 처리하세요."));
 			}
 			List<Long> deleted = new ArrayList<>();
 			if (primary.isDeleted()) deleted.add(primary.getId());
