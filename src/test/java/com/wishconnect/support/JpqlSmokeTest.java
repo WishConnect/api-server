@@ -170,4 +170,20 @@ class JpqlSmokeTest {
 		}
 		return scholarship;
 	}
+
+	@Test
+	@DisplayName("LLM 재파싱·공공데이터 보강 대상 @Query 는 만료 처리 원본을 뺀다(매일 배치 PENDING 대상은 메서드 이름으로)")
+	void rawTargetQueriesExcludeDismissed() throws Exception {
+		Class<?> repository = com.wishconnect.domain.scholarship.repository.RawScholarshipRepository.class;
+		for (String name : List.of("findReparseTargets", "findIncompleteReparseTargets", "findOpenPublicDataTargets")) {
+			Method method = java.util.Arrays.stream(repository.getDeclaredMethods())
+					.filter(m -> m.getName().equals(name)).findFirst().orElseThrow();
+			String jpql = method.getAnnotation(org.springframework.data.jpa.repository.Query.class).value();
+			assertThat(jpql).as(name).contains("r.dismissedAt is null");
+			validator.validate(jpql);
+		}
+		assertThat(java.util.Arrays.stream(repository.getDeclaredMethods()).map(Method::getName))
+				.contains("findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc")
+				.doesNotContain("findBySourceStartingWithAndParseStatusOrderByIdAsc");
+	}
 }

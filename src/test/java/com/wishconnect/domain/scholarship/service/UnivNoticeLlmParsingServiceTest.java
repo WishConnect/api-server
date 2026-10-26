@@ -608,4 +608,38 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(item.conditionCount()).isZero();           // 이 공고에는 자격조건이 없다
 		assertThat(item.posterFound()).isFalse();
 	}
+
+	@Test
+	@DisplayName("선택 LLM 재처리(rawIds·reparse)로 보내도 만료 처리된 원본은 LLM 을 부르지 않고 건너뛴다")
+	void skipsDismissedRawsEvenWhenPicked() {
+		RawScholarship dismissed = raw(7L, html(BODY), null, ParseStatus.FAILED);
+		dismissed.dismiss(com.wishconnect.domain.scholarship.entity.RawDismissReason.NOT_SCHOLARSHIP, null,
+				java.time.LocalDateTime.now());
+		given(rawScholarshipRepository.findByIdInOrderByIdAsc(List.of(7L))).willReturn(List.of(dismissed));
+
+		var result = service.parse(20, true, false, List.of(7L), false);
+
+		assertThat(result.skippedCount()).isEqualTo(1);
+		assertThat(result.items().get(0).status()).isEqualTo("SKIPPED");
+		assertThat(result.items().get(0).note()).contains("만료 처리");
+		assertThat(dismissed.getParseStatus()).isEqualTo(ParseStatus.FAILED);
+		verify(llmClient, never()).chat(any());
+	}
+
+	@Test
+	@DisplayName("매일 배치·재파싱 대상에 만료 처리 원본이 섞여 들어와도(조회 후 만료) 건너뛴다")
+	void skipsDismissedRawsInBatch() {
+		RawScholarship dismissed = raw(8L, html(BODY), null, ParseStatus.PENDING);
+		dismissed.dismiss(com.wishconnect.domain.scholarship.entity.RawDismissReason.DUPLICATE, null,
+				java.time.LocalDateTime.now());
+		givenPendingTargets(List.of(dismissed));
+		givenAllTargets(List.of(dismissed));
+
+		var batch = service.parse(20, false, false);
+		var reparse = service.parse(20, true, false);
+
+		assertThat(batch.skippedCount()).isEqualTo(1);
+		assertThat(reparse.skippedCount()).isEqualTo(1);
+		verify(llmClient, never()).chat(any());
+	}
 }
