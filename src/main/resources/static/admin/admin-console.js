@@ -1127,54 +1127,175 @@
 	}
 
 	const RAW_ID_PATTERN = /^(?:raw\s*)?#?\s*(\d{1,10})$/i;
+	/** 지금 목록에 보이는 행(rawId → 행). 만료 처리 모달이 연결 장학금 수를 세는 데 쓴다. */
+	let failureRowMap = new Map();
+	const dismissedView = () => $('failureDismissed').checked;
+
 	async function loadFailures() {
 		const body = $('failureRows');
 		const keyword = val('failureKeyword');
 		const rawIdMatch = keyword.match(RAW_ID_PATTERN);
+		const dismissed = dismissedView();
+		$('failureErrorHead').textContent = dismissed ? '만료 처리 사유·메모' : '오류';
+		$('failureTimeHead').textContent = dismissed ? '만료 처리(KST)' : '최근 변경(KST)';
+		$('retryFailures').hidden = dismissed;
+		$('dismissFailures').hidden = dismissed;
+		$('restoreFailures').hidden = !dismissed;
 		await view.load(body, async () => {
 			// 원문 ID 로 찾을 수 있게 한다. 목록 API 는 게시물 번호·오류 문구만 검색하므로 숫자면 원문을 직접 조회해 맨 위에 붙인다.
 			const [page, exact] = await Promise.all([
 				api(qs('/api/v1/scholarships/admin/failures', {
 					keyword: rawIdMatch ? rawIdMatch[1] : keyword, source: val('failureSource'), status: $('failureStatus').value,
-					retryableOnly: $('failureRetryable').checked, page: pageNo.failures, size: PAGE_SIZE, sort: 'updatedAt,desc'
+					retryableOnly: $('failureRetryable').checked, dismissed, page: pageNo.failures, size: PAGE_SIZE,
+					sort: dismissed ? 'dismissedAt,desc' : 'updatedAt,desc'
 				})),
 				rawIdMatch ? api('/api/v1/scholarships/admin/raw/' + rawIdMatch[1]).catch(() => null) : Promise.resolve(null)
 			]);
 			renderPager('failurePager', page, 'failures', loadFailures);
+			failureRowMap = new Map(page.content.map(row => [row.rawId, row]));
 			const rows = page.content.filter(row => !exact || row.rawId !== exact.rawId);
-			const exactRow = exact ? '<tr class="selected">' + failureCells({rawId: exact.rawId, scholarshipId: exact.scholarshipId, source: exact.source,
-				status: exact.parseStatus, error: exact.parseError, updatedAt: exact.crawledAt}, '<span class="badge b-brand">원문 ID 일치</span>') + '</tr>' : '';
-			const html = exactRow + rows.map(row => '<tr>' + failureCells(row) + '</tr>').join('');
-			return html || view.row(7, view.emptyHtml(keyword ? '검색 결과가 없습니다.' : '재처리할 원문이 없습니다.',
-				keyword ? '원문 ID 는 숫자만, 게시물 번호나 오류 문구 일부로도 찾을 수 있습니다.' : '모든 원문이 정상 처리됐습니다.'));
+			const exactRow = exact ? {rawId: exact.rawId, scholarshipId: exact.scholarshipId, source: exact.source, status: exact.parseStatus,
+				error: exact.parseError, updatedAt: exact.crawledAt, dismissedAt: exact.dismissedAt, dismissedReason: exact.dismissedReason,
+				dismissedNote: exact.dismissedNote,
+				linkedRecruitmentStatus: exact.scholarship ? exact.scholarship.scholarship.recruitmentStatus : null,
+				linkedScholarshipDeleted: Boolean(exact.scholarship && exact.scholarship.scholarship.deletedAt)} : null;
+			if (exactRow) failureRowMap.set(exactRow.rawId, Object.assign({}, failureRowMap.get(exactRow.rawId) || {}, exactRow));
+			const html = (exactRow ? '<tr class="selected">' + failureCells(exactRow, '<span class="badge b-brand">원문 ID 일치</span>') + '</tr>' : '') +
+				rows.map(row => '<tr>' + failureCells(row) + '</tr>').join('');
+			return html || view.row(7, view.emptyHtml(keyword ? '검색 결과가 없습니다.' : dismissed ? '만료 처리한 원문이 없습니다.' : '재처리할 원문이 없습니다.',
+				keyword ? '원문 ID 는 숫자만, 게시물 번호나 오류 문구 일부로도 찾을 수 있습니다.' : dismissed ? '' : '모든 원문이 정상 처리됐거나 만료 처리됐습니다.'));
 		}, {colspan: 7, what: '재처리 대상을'});
 		$('failureCheckAll').checked = false;
 		updateRetryButton();
 		body.querySelectorAll('[data-failure-edit]').forEach(button => button.onclick = () => openEdit({rawId: Number(button.dataset.failureEdit)}));
 		body.querySelectorAll('[data-failure-view]').forEach(button => button.onclick = () => openRawModal(Number(button.dataset.failureView)));
+		body.querySelectorAll('[data-failure-dismiss]').forEach(button => button.onclick = () => dismissFailureRows([Number(button.dataset.failureDismiss)]));
+		body.querySelectorAll('[data-failure-restore]').forEach(button => button.onclick = () => restoreFailureRows([Number(button.dataset.failureRestore)]));
 		body.querySelectorAll('[data-retry-id]').forEach(box => box.onchange = updateRetryButton);
+		bindOpenScholarship(body);
 	}
+
+	const isDismissedRow = row => Boolean(row.dismissedAt);
 
 	function failureCells(row, extraBadge = '') {
 		const retryable = String(row.source || '').startsWith('UNIV_');
 		const failed = ['FAILED', 'SKIPPED', 'IMAGE_ONLY'].includes(row.status);
-		return '<td class="check-col"><input type="checkbox" data-retry-id="' + row.rawId + '"' + (retryable && failed ? '' : ' disabled') +
-			' aria-label="원문 #' + row.rawId + ' 선택" title="' + (retryable ? 'LLM 재처리 대상으로 선택' : '대학 공지만 LLM 재처리할 수 있습니다') + '"></td>' + cells([
-			badge('parse', row.status) + (extraBadge ? '<br>' + extraBadge : ''),
-			'<span class="nowrap cell-title">원문 #' + row.rawId + '</span>' + (row.scholarshipId ? '<span class="cell-sub">장학금 #' + row.scholarshipId + '</span>' : ''),
+		const dismissed = isDismissedRow(row);
+		// 만료 처리·되돌리기는 출처와 무관하게 고를 수 있다. LLM 재처리는 고른 것 중 대학 공지만 보낸다.
+		const selectable = dismissed ? dismissedView() : failed && !dismissedView();
+		const linked = row.scholarshipId ? '<span class="cell-sub">' + scholarshipLink(row.scholarshipId, '장학금 #' + row.scholarshipId) +
+			(row.linkedRecruitmentStatus ? ' · ' + esc(label('recruitment', row.linkedRecruitmentStatus)) : '') + (row.linkedScholarshipDeleted ? ' · 내려짐' : '') + '</span>' : '';
+		const dismissBox = dismissed ? '<div class="dismiss-info"><span class="badge b-warning">만료 처리됨</span> <b>' + esc(label('dismissReason', row.dismissedReason)) + '</b>' +
+			(row.dismissedNote ? ' · ' + esc(row.dismissedNote) : '') + '</div>' : '';
+		return '<td class="check-col"><input type="checkbox" data-retry-id="' + row.rawId + '" data-retryable="' + (retryable && failed ? 'true' : 'false') + '"' +
+			(selectable ? '' : ' disabled') + ' aria-label="원문 #' + row.rawId + ' 선택" title="' + (dismissedView() ? '되돌릴 원문으로 선택'
+				: retryable ? 'LLM 재처리·만료 처리 대상으로 선택' : '만료 처리 대상으로 선택(LLM 재처리는 대학 공지만 됩니다)') + '"></td>' + cells([
+			badge('parse', row.status) + (extraBadge ? '<br>' + extraBadge : '') + (dismissed && !dismissedView() ? '<br><span class="badge b-warning">만료 처리됨</span>' : ''),
+			'<span class="nowrap cell-title">원문 #' + row.rawId + '</span>' + linked,
 			sourceHtml(row.source),
-			'<span class="clamp-2" title="' + esc(row.error || '') + '">' + esc(row.error || '-') + '</span>',
-			'<span class="nowrap">' + esc(fmt.ts(row.updatedAt)) + '</span>',
+			dismissedView() ? dismissBox + (row.error ? '<span class="clamp-2 cell-sub" title="' + esc(row.error) + '">원래 오류: ' + esc(row.error) + '</span>' : '')
+				: '<span class="clamp-2" title="' + esc(row.error || '') + '">' + esc(row.error || '-') + '</span>',
+			'<span class="nowrap">' + esc(fmt.ts(dismissedView() ? row.dismissedAt : row.updatedAt)) + '</span>',
 			'<div class="actions"><button type="button" class="btn btn-sm" data-failure-view="' + row.rawId + '">원문</button>' +
-				'<button type="button" class="btn btn-sm" data-failure-edit="' + row.rawId + '">수기 정제</button></div>'
+				(dismissed ? (dismissedView() ? '<button type="button" class="btn btn-sm btn-primary" data-failure-restore="' + row.rawId + '">되돌리기</button>' : '')
+					: '<button type="button" class="btn btn-sm" data-failure-edit="' + row.rawId + '">수기 정제</button>' +
+						(failed ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-failure-dismiss="' + row.rawId + '">만료 처리</button>' : '')) + '</div>'
 		]);
 	}
 
-	function selectedRetryIds() { return [...document.querySelectorAll('#failureRows [data-retry-id]:checked')].map(box => Number(box.dataset.retryId)); }
+	const checkedFailureBoxes = () => [...document.querySelectorAll('#failureRows [data-retry-id]:checked')];
+	function selectedRetryIds() { return checkedFailureBoxes().filter(box => box.dataset.retryable === 'true').map(box => Number(box.dataset.retryId)); }
+	function selectedFailureIds() { return [...new Set(checkedFailureBoxes().map(box => Number(box.dataset.retryId)))]; }
+	let failureBusy = false;
 	function updateRetryButton() {
-		const count = selectedRetryIds().length;
-		$('retryFailures').disabled = count === 0;
-		$('retryFailures').textContent = count ? '선택 ' + count + '건 LLM 재처리' : '선택 LLM 재처리';
+		const retry = selectedRetryIds().length, all = selectedFailureIds().length;
+		$('retryFailures').disabled = retry === 0 || failureBusy;
+		$('retryFailures').textContent = retry ? '선택 ' + retry + '건 LLM 재처리' : '선택 LLM 재처리';
+		$('retryFailures').title = all > retry ? '고른 것 중 대학 공지 ' + retry + '건만 LLM 재처리합니다' : '';
+		$('dismissFailures').disabled = all === 0 || failureBusy;
+		$('dismissFailures').textContent = all ? '선택 ' + all + '건 만료 처리' : '선택 만료 처리';
+		$('restoreFailures').disabled = all === 0 || failureBusy;
+		$('restoreFailures').textContent = all ? '선택 ' + all + '건 되돌리기' : '선택 되돌리기';
+	}
+
+	/** 만료·되돌리기 요청 중에는 상단 버튼을 잠근다(모달 버튼은 모달이 스스로 잠근다). */
+	async function withFailureBusy(task) {
+		failureBusy = true;
+		updateRetryButton();
+		try { return await task(); } finally { failureBusy = false; updateRetryButton(); }
+	}
+
+	const idListText = ids => ids.slice(0, 12).map(id => '#' + id).join(', ') + (ids.length > 12 ? ' 외 ' + (ids.length - 12) + '건' : '');
+
+	/** 만료 처리 모달. 사유는 기본값 없이 고르게 하고, 기타면 메모를 받는다. */
+	async function dismissFailureRows(ids) {
+		if (!ids.length) return;
+		const rows = ids.map(id => failureRowMap.get(id) || {rawId: id});
+		const linked = rows.filter(row => row.scholarshipId && !row.linkedScholarshipDeleted);
+		const linkedOpen = linked.filter(row => ['OPEN', 'UPCOMING'].includes(row.linkedRecruitmentStatus));
+		const body = '<div class="target-box"><span class="target-id">원문 ' + ids.length + '건</span><span class="target-title">' + esc(idListText(ids)) + '</span></div>' +
+			'<p class="section-label">사유 <span class="req">*</span></p><div class="choice-list">' +
+			Object.keys(L.dismissReason).map(code => '<label class="choice"><input type="radio" name="dismissReason" value="' + code + '"><span>' +
+				esc(label('dismissReason', code)) + '<small>' + esc({PERIOD_EXPIRED: '모집이 끝난 공고인데 기간을 못 읽어 남아 있습니다.',
+					NOT_SCHOLARSHIP: '행사·결과 발표·일반 안내 등 장학금 모집 공고가 아닙니다.', DUPLICATE: '다른 원문·장학금과 같은 공고입니다.',
+					OTHER: '위에 없는 사유. 메모가 필요합니다.'}[code]) + '</small></span></label>').join('') + '</div>' +
+			'<div class="form-field" style="margin-top:var(--sp-3)"><label for="dismissNote">메모 <span class="req" data-note-req hidden>*</span>' +
+			'<span class="text-muted" data-note-opt>(선택)</span></label><textarea id="dismissNote" class="textarea" maxlength="200" placeholder="예: 2025학년도 공고, 학과 행사 안내"></textarea>' +
+			'<span class="field-help">200자까지. 사유가 기타면 꼭 적습니다.</span></div>' +
+			'<label class="check" style="margin-top:var(--sp-3);white-space:normal"><input type="checkbox" id="dismissCloseLinked"' + (linked.length ? '' : ' disabled') + '> ' +
+			'연결된 장학금도 마감 처리 <span class="text-muted">(연결 장학금이 있는 원문 ' + linked.length + '건' + (linkedOpen.length ? ' · 그중 모집 중·예정 ' + linkedOpen.length + '건' : '') + ')</span></label>' +
+			'<p class="field-help">장학금을 지우지 않고 모집 상태만 [마감]으로 바꿉니다. 이미 마감이거나 내려진 장학금은 건너뜁니다.</p>' +
+			(linkedOpen.length ? '<div class="notice warn" data-open-warn>연결 장학금 ' + linkedOpen.length + '건이 아직 사용자에게 모집 중으로 보입니다. 원문만 숨기면 장학금은 그대로 노출됩니다.</div>' : '') +
+			'<div class="revert yes"><b>되돌릴 수 있습니다.</b> 만료 처리하면 목록에서 숨겨지고, \'만료 처리됨 보기\'에서 되돌릴 수 있습니다. 숨긴 원문은 매일 배치·LLM 재처리·공공데이터 동기화가 다시 처리하지 않습니다. 마감한 장학금은 되돌리기로 돌아오지 않습니다([작업 기록]의 복구 또는 통합 수정).</div>';
+		const result = await ui.modal({
+			title: '원문 만료 처리', subtitle: ids.length + '건 · 실패 재처리 목록에서 숨깁니다', size: 'lg', kind: 'danger', confirmLabel: ids.length + '건 만료 처리', body,
+			valid: root => {
+				const reason = root.querySelector('[name="dismissReason"]:checked');
+				const other = reason && reason.value === 'OTHER';
+				root.querySelector('[data-note-req]').hidden = !other;
+				root.querySelector('[data-note-opt]').hidden = other;
+				return Boolean(reason) && (!other || Boolean(root.querySelector('#dismissNote').value.trim()));
+			},
+			onConfirm: root => withFailureBusy(() => api('/api/v1/scholarships/admin/failures/dismiss', {method: 'POST', body: {
+				rawIds: ids, reason: root.querySelector('[name="dismissReason"]:checked').value,
+				note: textOrNull(root.querySelector('#dismissNote').value), closeLinkedScholarship: root.querySelector('#dismissCloseLinked').checked
+			}}))
+		});
+		if (!result) return;
+		afterWrite({reload: loadFailures});
+		const resultBadge = r => r === 'DISMISSED' ? '<span class="badge b-success">만료 처리</span>' : r === 'SKIPPED' ? '<span class="badge b-warning">건너뜀</span>'
+			: '<span class="badge b-danger">실패</span>';
+		ui.notify('만료 처리 결과', '<div class="result-counts"><span class="badge">요청 ' + result.total + '건</span><span class="badge b-success">만료 처리 ' + result.dismissed + '건</span>' +
+			'<span class="badge b-warning">건너뜀 ' + result.skipped + '건</span><span class="badge b-danger">실패 ' + result.failed + '건</span>' +
+			'<span class="badge b-brand">장학금 마감 ' + result.scholarshipClosed + '건</span></div>' +
+			(result.warnings ? '<div class="notice warn"><b>모집 중인 장학금에 연결된 원문 ' + result.warnings + '건</b>을 만료 처리했습니다. ' +
+				(result.scholarshipClosed ? '마감 처리한 장학금을 빼면 ' : '') + '해당 장학금은 사용자 목록에 그대로 보입니다. 필요하면 장학금을 확인하세요.</div>' : '') +
+			'<div class="table-wrap" style="max-height:340px"><table><thead><tr><th>원문</th><th>결과</th><th>연결 장학금</th><th>내용</th></tr></thead><tbody>' +
+			result.results.map(r => '<tr><td class="nowrap">원문 #' + r.rawId + '</td><td>' + resultBadge(r.result) + '</td><td class="nowrap">' +
+				(r.linkedScholarshipId ? scholarshipLink(r.linkedScholarshipId, '#' + r.linkedScholarshipId) + (r.scholarshipClosed ? ' <span class="badge b-brand">마감함</span>' : '') +
+					(r.warningOpenScholarship ? ' <span class="badge b-warning" title="처리 전 기준 모집 중·예정이고 마감 전">모집 중</span>' : '') : '-') +
+				'</td><td>' + esc(r.message || '') + '</td></tr>').join('') + '</tbody></table></div>');
+	}
+
+	async function restoreFailureRows(ids) {
+		if (!ids.length) return;
+		const result = await ui.confirmAction({
+			title: '만료 처리 되돌리기', kind: 'primary', confirmLabel: ids.length + '건 되돌리기',
+			targets: [{id: '원문 ' + ids.length + '건', title: idListText(ids)}],
+			summary: ['실패 재처리 목록에 다시 올라오고, 매일 배치·LLM 재처리·동기화 대상이 됩니다.',
+				'<b>연결 장학금의 모집 상태는 되돌리지 않습니다.</b> 만료 처리 때 마감했다면 통합 수정이나 [작업 기록]의 복구로 되돌리세요.'],
+			reversible: 'yes', reversibleText: '다시 만료 처리할 수 있습니다.',
+			onConfirm: () => withFailureBusy(() => api('/api/v1/scholarships/admin/failures/restore', {method: 'POST', body: {rawIds: ids}}))
+		});
+		if (!result) return;
+		afterWrite({reload: loadFailures});
+		ui.notify('되돌리기 결과', '<div class="result-counts"><span class="badge">요청 ' + result.total + '건</span><span class="badge b-success">되돌림 ' + result.restored + '건</span>' +
+			'<span class="badge b-warning">건너뜀 ' + result.skipped + '건</span><span class="badge b-danger">실패 ' + result.failed + '건</span></div>' +
+			'<div class="notice neutral">' + esc(result.notice) + '</div><div class="table-wrap" style="max-height:340px"><table><thead><tr><th>원문</th><th>결과</th><th>연결 장학금(지금 상태)</th><th>내용</th></tr></thead><tbody>' +
+			result.results.map(r => '<tr><td class="nowrap">원문 #' + r.rawId + '</td><td>' + (r.result === 'RESTORED' ? '<span class="badge b-success">되돌림</span>'
+				: r.result === 'SKIPPED' ? '<span class="badge b-warning">건너뜀</span>' : '<span class="badge b-danger">실패</span>') + '</td><td class="nowrap">' +
+				(r.linkedScholarshipId ? scholarshipLink(r.linkedScholarshipId, '#' + r.linkedScholarshipId) + ' · ' + esc(label('recruitment', r.linkedRecruitmentStatus)) : '-') +
+				'</td><td>' + esc(r.message || '') + '</td></tr>').join('') + '</tbody></table></div>');
 	}
 
 	async function openRawModal(rawId) {
@@ -2186,6 +2307,9 @@
 		click('refreshFailures', () => loadFailures());
 		search('searchFailures', 'failures', loadFailures);
 		click('retryFailures', retryFailures);
+		click('dismissFailures', () => dismissFailureRows(selectedFailureIds()));
+		click('restoreFailures', () => restoreFailureRows(selectedFailureIds()));
+		$('failureDismissed').addEventListener('change', () => { pageNo.failures = 0; loadFailures(); });
 		$('failureCheckAll').addEventListener('change', event => {
 			document.querySelectorAll('#failureRows [data-retry-id]:not(:disabled)').forEach(box => box.checked = event.target.checked);
 			updateRetryButton();

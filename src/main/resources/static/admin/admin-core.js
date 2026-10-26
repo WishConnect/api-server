@@ -164,6 +164,8 @@
 			OPEN_BUT_ENDED: '마감 지난 모집 중', MISSING_LINK: '링크 없음', MISSING_CONDITION: '조건 없음'
 		},
 		deleteKind: {ADMIN: '관리자가 내림', MERGE: '병합으로 내림', SYSTEM: '수집 배치가 내림'},
+		/** 실패 재처리 원문 만료 처리 사유(서버 RawDismissReason). */
+		dismissReason: {PERIOD_EXPIRED: '모집기간 경과', NOT_SCHOLARSHIP: '장학금 공고 아님', DUPLICATE: '중복', OTHER: '기타'},
 		action: {
 			EXCEL_IMPORT: '엑셀 일괄 수정', SCHOLARSHIP_CREATE: '장학금 등록', SCHOLARSHIP_UPDATE: '장학금 수정',
 			SCHOLARSHIP_AGGREGATE_UPDATE: '통합 수정', SCHOLARSHIP_IMAGE_UPDATE: '이미지 등록·교체',
@@ -171,7 +173,8 @@
 			REPORT_RESOLVE: '신고 처리', CONTENT_INQUIRY_RESOLVE: '문의 처리', SYNC_TRIGGER: '공공데이터 수동 동기화',
 			COLLECT_TRIGGER: '수동 수집', CONDITION_EXTRACT_TRIGGER: '조건 추출 실행', CONDITION_REF_BACKFILL: '조건 참조 채우기',
 			ENRICH_TRIGGER: '자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '병합 승인',
-			SCHOLARSHIP_MERGE_REJECT: '중복 아님(반려)', MERGE_CANDIDATE_REOPEN: '반려 취소', AUDIT_RESTORE: '감사 복구'
+			SCHOLARSHIP_MERGE_REJECT: '중복 아님(반려)', MERGE_CANDIDATE_REOPEN: '반려 취소', AUDIT_RESTORE: '감사 복구',
+			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기'
 		}
 	};
 	const label = (group, code, fallback = '-') => code == null || code === '' ? fallback : ((L[group] || {})[code] || code);

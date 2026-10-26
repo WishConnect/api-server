@@ -164,7 +164,8 @@ public class ScholarshipAdminOverviewService {
 		Long scholarshipId = raw.getScholarship() == null ? null : raw.getScholarship().getId();
 		return new AdminRawDetailResponse(raw.getId(), scholarshipId, raw.getSource(), raw.getSourceId(),
 				raw.getSourceUrl(), raw.getRawJson(), raw.getRawHtml(), raw.getParseStatus().name(),
-				raw.getParseError(), raw.getCrawledAt(), scholarshipId == null ? null : detail(scholarshipId));
+				raw.getParseError(), raw.getCrawledAt(), scholarshipId == null ? null : detail(scholarshipId),
+				raw.getDismissedAt(), name(raw.getDismissedReason()), raw.getDismissedNote());
 	}
 
 	public AdminScholarshipDetailResponse detail(Long scholarshipId) {
