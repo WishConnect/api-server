@@ -27,7 +27,8 @@ public record AdminScholarshipDetailResponse(
 			String submissionEvidence, String contact, String essayRequirement, String essayEvidence,
 			String interviewRequirement, String interviewEvidence, LocalDateTime createdAt,
 			LocalDateTime updatedAt, LocalDateTime deletedAt,
-			@Schema(description = "모집기간 수기 고정. true 면 동기화·재파싱이 기간을 덮지 않는다") boolean periodLocked) {
+            @Schema(description = "모집기간 수기 고정. true 면 동기화·재파싱이 기간을 덮지 않는다") boolean periodLocked,
+            @Schema(description = "선발 일정 수기 보호. 빈 목록으로 저장한 경우도 자동 보완하지 않는다") boolean timelineLocked) {
 	}
 	public record RawData(Long id, String source, String sourceId, String sourceUrl,
 			Map<String, Object> rawJson, String rawHtml, String parseStatus, String parseError,

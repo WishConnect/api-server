@@ -56,8 +56,22 @@ public record NoticeParsingResponse(
 			boolean posterFound,
 			String note,
 			/** 실패 유형(AdminJobFailureType 이름). 실패가 아니면 null. LLM_CREDIT·LLM_AUTH 는 재처리로 풀리지 않는다. */
-			String failureType
+            String failureType,
+            int timelineCount
 	) {
+        public Item(Long rawId, String source, String sourceUrl, String status, String title, String beforePeriod,
+                String afterPeriod, int conditionCount, int documentCount, boolean posterFound, String note,
+                String failureType) {
+            this(rawId, source, sourceUrl, status, title, beforePeriod, afterPeriod, conditionCount, documentCount,
+                    posterFound, note, failureType, 0);
+        }
+
+        /** 검증된 자동 추출 후보 수. 수기 보호로 실제 저장 수와 다를 수 있다. */
+        public Item withTimelineCount(int count) {
+            return new Item(rawId, source, sourceUrl, status, title, beforePeriod, afterPeriod, conditionCount,
+                    documentCount, posterFound, note, failureType, count);
+        }
+
 		public Item(Long rawId, String source, String sourceUrl, String status, String title, String beforePeriod,
 				String afterPeriod, int conditionCount, int documentCount, boolean posterFound, String note) {
 			this(rawId, source, sourceUrl, status, title, beforePeriod, afterPeriod, conditionCount, documentCount,

@@ -127,6 +127,8 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 			   and (r.scholarship is null
 			        or r.scholarship.applicationEndAt is null
 			        or r.scholarship.noticeKind is null
+                    or (r.scholarship.timelineLocked = false and not exists (
+                        select 1 from ScholarshipTimeline t where t.scholarship.id = r.scholarship.id))
 			        or r.scholarship.title like concat(r.source, ' 공고 %'))
 			 order by r.id asc
 			""")

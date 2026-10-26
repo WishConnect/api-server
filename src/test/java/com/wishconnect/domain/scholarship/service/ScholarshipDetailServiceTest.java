@@ -106,7 +106,7 @@ class ScholarshipDetailServiceTest {
 						.build()));
 		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).willReturn(List.of());
 		given(scrapRepository.existsByUserIdAndScholarshipId(USER_ID, 1L)).willReturn(true);
-		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+        given(imageRepository.findRepresentative(
 				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
 				.willReturn(Optional.empty());
 		given(scholarshipRecommendationService.getMatchReasons(eq(USER_ID), any(), anyList()))
@@ -139,7 +139,7 @@ class ScholarshipDetailServiceTest {
 						.dateText("12월 중 예정")
 						.origin(com.wishconnect.domain.scholarship.entity.TimelineOrigin.MANUAL)
 						.build()));
-		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+        given(imageRepository.findRepresentative(
 				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
 				.willReturn(Optional.empty());
 
@@ -161,7 +161,7 @@ class ScholarshipDetailServiceTest {
 				.willReturn(List.of());
 		given(scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
 				.willReturn(List.of());
-		given(imageRepository.findFirstByEntityTypeAndEntityIdOrderByIdAsc(
+        given(imageRepository.findRepresentative(
 				org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong()))
 				.willReturn(Optional.empty());
 

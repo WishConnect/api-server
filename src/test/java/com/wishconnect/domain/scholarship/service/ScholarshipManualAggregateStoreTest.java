@@ -201,6 +201,7 @@ class ScholarshipManualAggregateStoreTest {
 
 		verify(scholarshipTimelineRepository).deleteByScholarship(existing);
 		verify(scholarshipTimelineRepository, never()).save(any());
+        assertThat(existing.isTimelineLocked()).isTrue();
 	}
 
 	@Test
