@@ -142,7 +142,7 @@ class UnivNoticeLlmParsingServiceTest {
 	}
 
 	private void givenPendingTargets(List<RawScholarship> targets) {
-		given(rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
+		given(rawScholarshipRepository.findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc(
 				eq("UNIV_"), eq(ParseStatus.PENDING), any(Pageable.class))).willReturn(targets);
 	}
 
@@ -184,7 +184,7 @@ class UnivNoticeLlmParsingServiceTest {
 
 		service.parse(20, false, false);
 
-		verify(rawScholarshipRepository).findBySourceStartingWithAndParseStatusOrderByIdAsc(
+		verify(rawScholarshipRepository).findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc(
 				eq("UNIV_"), eq(ParseStatus.PENDING), any(Pageable.class));
 	}
 
@@ -505,7 +505,7 @@ class UnivNoticeLlmParsingServiceTest {
 
 		var captor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
 		verify(rawScholarshipRepository, org.mockito.Mockito.times(2))
-				.findBySourceStartingWithAndParseStatusOrderByIdAsc(any(), any(), captor.capture());
+				.findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc(any(), any(), captor.capture());
 		assertThat(captor.getAllValues().get(0).getPageSize()).isEqualTo(100);
 		assertThat(captor.getAllValues().get(1).getPageSize()).isEqualTo(1);
 	}

@@ -39,8 +39,9 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	/**
 	 * LLM 파싱 대상: 아직 파싱되지 않은 대학 공고.
 	 * source 가 UNIV_ 로 시작하는 것만 — 공공데이터(KOSAF 등)는 기존 방식으로 파싱하므로 제외한다.
+	 * 관리자가 만료 처리한 원본은 매일 배치가 다시 집지 않는다.
 	 */
-	List<RawScholarship> findBySourceStartingWithAndParseStatusOrderByIdAsc(
+	List<RawScholarship> findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc(
 			String sourcePrefix, ParseStatus parseStatus, Pageable pageable);
 
 	/**
@@ -68,6 +69,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 			select r from RawScholarship r
 			 where r.source = 'KOSAF_SCHOLARSHIP'
 			   and r.scholarship is not null
+			   and r.dismissedAt is null
 			   and r.scholarship.applicationEndAt >= current_timestamp
 			   and r.id = (select min(r2.id) from RawScholarship r2
 			                where r2.scholarship = r.scholarship)
@@ -92,6 +94,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	@Query("""
 			select r from RawScholarship r
 			 where r.source like concat(:sourcePrefix, '%')
+			   and r.dismissedAt is null
 			   and r.parseStatus not in (
 			       com.wishconnect.domain.scholarship.entity.ParseStatus.SKIPPED,
 			       com.wishconnect.domain.scholarship.entity.ParseStatus.IMAGE_ONLY)
@@ -118,6 +121,7 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	@Query("""
 			select r from RawScholarship r
 			 where r.source like concat(:sourcePrefix, '%')
+			   and r.dismissedAt is null
 			   and r.parseStatus not in (
 			       com.wishconnect.domain.scholarship.entity.ParseStatus.SKIPPED,
 			       com.wishconnect.domain.scholarship.entity.ParseStatus.IMAGE_ONLY)
