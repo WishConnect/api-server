@@ -35,7 +35,8 @@ public class AdminAuditLog extends BaseCreatedEntity {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@Column(name = "actor_id", nullable = false)
+	/** 관리자. 로그인 실패처럼 누군지 모를 때만 null(V20261027_01 부터). */
+	@Column(name = "actor_id")
 	private UUID actorId;
 
 	@Enumerated(EnumType.STRING)
