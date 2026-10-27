@@ -233,4 +233,28 @@ class ScholarshipSyncServiceTest {
 
 		assertThat(previous.isDeleted()).isFalse();
 	}
+
+	@Test
+	@DisplayName("만료 처리된 원본을 다시 만나면 본문만 갱신하고 상태·만료 표시·연결 장학금은 그대로 둔다")
+	void dismissedRawKeepsStateOnResync() {
+		Scholarship linked = scholarship(1L);
+		RawScholarship raw = rawLinkedTo(linked);
+		raw.markFailed("이전 실패");
+		raw.dismiss(com.wishconnect.domain.scholarship.entity.RawDismissReason.PERIOD_EXPIRED, "메모",
+				LocalDateTime.now().minusDays(1));
+		given(scholarshipApiClient.fetchScholarships()).willReturn(List.of(item()));
+		given(rawScholarshipRepository.findBySourceAndSourceId(any(), any())).willReturn(Optional.of(raw));
+
+		scholarshipSyncService.sync();
+
+		assertThat(raw.getParseStatus()).isEqualTo(ParseStatus.FAILED);
+		assertThat(raw.getParseError()).isEqualTo("이전 실패");
+		assertThat(raw.isDismissed()).isTrue();
+		assertThat(raw.getDismissedNote()).isEqualTo("메모");
+		assertThat(raw.getRawJson()).containsEntry("상품명", "미래인재 장학금");
+		assertThat(raw.getScholarship()).isSameAs(linked);
+		verify(scholarshipMapper, never()).toScholarship(any(), any(), any());
+		verify(scholarshipRepository, never()).save(any(Scholarship.class));
+		verify(rawScholarshipRepository).save(raw);
+	}
 }

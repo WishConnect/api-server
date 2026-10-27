@@ -164,7 +164,8 @@ public class ScholarshipAdminOverviewService {
 		Long scholarshipId = raw.getScholarship() == null ? null : raw.getScholarship().getId();
 		return new AdminRawDetailResponse(raw.getId(), scholarshipId, raw.getSource(), raw.getSourceId(),
 				raw.getSourceUrl(), raw.getRawJson(), raw.getRawHtml(), raw.getParseStatus().name(),
-				raw.getParseError(), raw.getCrawledAt(), scholarshipId == null ? null : detail(scholarshipId));
+				raw.getParseError(), raw.getCrawledAt(), scholarshipId == null ? null : detail(scholarshipId),
+				raw.getDismissedAt(), name(raw.getDismissedReason()), raw.getDismissedNote());
 	}
 
 	public AdminScholarshipDetailResponse detail(Long scholarshipId) {
@@ -215,17 +216,32 @@ public class ScholarshipAdminOverviewService {
 
 	public Page<AdminRawFailureResponse> failures(String keyword, String source, ParseStatus status,
 			boolean retryableOnly, Pageable pageable) {
+		return failures(keyword, source, status, retryableOnly, false, pageable);
+	}
+
+	/**
+	 * @param dismissed false(기본)면 만료 처리되지 않은 실패·건너뜀 원본(재처리 대기열 = 사이드바 배지·대시보드 수치),
+	 *                  true 면 만료 처리된 원본만(상태 무관, status 를 주면 그 상태만)
+	 */
+	public Page<AdminRawFailureResponse> failures(String keyword, String source, ParseStatus status,
+			boolean retryableOnly, boolean dismissed, Pageable pageable) {
 		Specification<RawScholarship> spec = (root, query, cb) -> {
 			List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
-			if (status == null) {
-				predicates.add(root.get("parseStatus").in(
-						ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY));
+			if (dismissed) {
+				predicates.add(cb.isNotNull(root.get("dismissedAt")));
+				if (status != null) predicates.add(cb.equal(root.get("parseStatus"), status));
 			} else {
-				predicates.add(cb.equal(root.get("parseStatus"), status));
+				predicates.add(cb.isNull(root.get("dismissedAt")));
+				if (status == null) {
+					predicates.add(root.get("parseStatus").in(
+							ParseStatus.FAILED, ParseStatus.SKIPPED, ParseStatus.IMAGE_ONLY));
+				} else {
+					predicates.add(cb.equal(root.get("parseStatus"), status));
+				}
+				// 마감 공고는 정상 제외 대상이며 재처리해도 결과가 같으므로 실패 큐에서 숨긴다.
+				predicates.add(cb.or(cb.isNull(root.get("parseError")),
+						cb.notLike(root.get("parseError"), "%모집%지난 장학금%")));
 			}
-			// 마감 공고는 정상 제외 대상이며 재처리해도 결과가 같으므로 실패 큐에서 숨긴다.
-			predicates.add(cb.or(cb.isNull(root.get("parseError")),
-					cb.notLike(root.get("parseError"), "%모집%지난 장학금%")));
 			if (StringUtils.hasText(source)) predicates.add(cb.equal(root.get("source"), source.trim()));
 			if (retryableOnly) predicates.add(cb.like(root.get("source"), "UNIV\\_%", '\\'));
 			if (StringUtils.hasText(keyword)) {
@@ -239,7 +255,10 @@ public class ScholarshipAdminOverviewService {
 				.map(raw -> new AdminRawFailureResponse(
 						raw.getId(), raw.getScholarship() == null ? null : raw.getScholarship().getId(),
 						raw.getSource(), raw.getSourceId(), raw.getSourceUrl(), raw.getParseStatus().name(),
-						raw.getParseError(), raw.getCrawledAt(), raw.getUpdatedAt()));
+						raw.getParseError(), raw.getCrawledAt(), raw.getUpdatedAt(), raw.getDismissedAt(),
+						name(raw.getDismissedReason()), raw.getDismissedNote(),
+						raw.getScholarship() == null ? null : name(raw.getScholarship().getRecruitmentStatus()),
+						raw.getScholarship() != null && raw.getScholarship().isDeleted()));
 	}
 
 	public Page<AdminRawFailureResponse> failures(Pageable pageable) {

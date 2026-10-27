@@ -211,6 +211,12 @@ public enum ErrorCode {
 	MERGE_BULK_CONFLICT(HttpStatus.BAD_REQUEST,
 			"함께 처리할 수 없는 후보가 있어 아무것도 처리하지 않았습니다. 표시된 후보를 빼고 다시 시도해주세요."),
 
+	// 관리자 콘솔 — 실패 재처리 원본 만료 처리
+	RAW_DISMISS_SIZE_INVALID(HttpStatus.BAD_REQUEST, "원본은 한 번에 1~100건까지 처리할 수 있습니다."),
+	RAW_DISMISS_REASON_REQUIRED(HttpStatus.BAD_REQUEST, "만료 처리 사유를 골라주세요."),
+	RAW_DISMISS_NOTE_REQUIRED(HttpStatus.BAD_REQUEST, "사유가 기타면 메모를 입력해주세요."),
+	RAW_DISMISS_NOTE_TOO_LONG(HttpStatus.BAD_REQUEST, "메모는 200자까지 입력할 수 있습니다."),
+
 	// 이메일 인증
 	EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해주세요."),
 	EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),

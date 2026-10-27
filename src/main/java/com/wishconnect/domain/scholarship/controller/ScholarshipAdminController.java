@@ -23,10 +23,15 @@ import com.wishconnect.domain.scholarship.dto.MergeBulkApproveRequest;
 import com.wishconnect.domain.scholarship.dto.MergeBulkRejectRequest;
 import com.wishconnect.domain.scholarship.dto.MergeBulkResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
+import com.wishconnect.domain.scholarship.dto.RawDismissRequest;
+import com.wishconnect.domain.scholarship.dto.RawDismissResultResponse;
+import com.wishconnect.domain.scholarship.dto.RawRestoreRequest;
+import com.wishconnect.domain.scholarship.dto.RawRestoreResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
+import com.wishconnect.domain.scholarship.service.RawScholarshipDismissService;
 import com.wishconnect.domain.scholarship.service.MergeAuditDetail;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
 import com.wishconnect.domain.scholarship.service.ScholarshipMergeBulkService;
@@ -133,6 +138,7 @@ public class ScholarshipAdminController {
 	private final AdminAuditLogService adminAuditLogService;
 	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
 	private final ScholarshipTakedownService scholarshipTakedownService;
+	private final RawScholarshipDismissService rawScholarshipDismissService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -214,16 +220,51 @@ public class ScholarshipAdminController {
 
 	@Operation(summary = "파싱 실패·건너뜀 원본 목록",
 			description = "FAILED, SKIPPED, IMAGE_ONLY 원본을 최근 실패 순으로 조회합니다. "
-					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다.")
+					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다. "
+					+ "dismissed=false(기본)면 만료 처리된 원본을 빼고(사이드바 배지·대시보드 수치와 같음), "
+					+ "dismissed=true 면 만료 처리된 원본만 상태와 무관하게 보여 줍니다.")
 	@GetMapping("/admin/failures")
 	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(
 			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) String source,
 			@RequestParam(required = false) ParseStatus status,
 			@RequestParam(defaultValue = "false") boolean retryableOnly,
+			@RequestParam(defaultValue = "false") boolean dismissed,
 			Pageable pageable) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.failures(
-				keyword, source, status, retryableOnly, pageable));
+				keyword, source, status, retryableOnly, dismissed, pageable));
+	}
+
+	@Operation(summary = "실패 원본 만료 처리",
+			description = """
+					더 처리할 필요가 없는 실패·건너뜀·이미지만 있는 원본(1~100건)을 실패 재처리 목록에서 숨긴다.
+					원본은 지우지 않고 dismissed_* 만 채우며, 매일 배치 파싱·LLM 재처리·공공데이터 동기화가 다시 처리하지 않는다.
+
+					- reason 필수(PERIOD_EXPIRED·NOT_SCHOLARSHIP·DUPLICATE·OTHER), OTHER 면 note 필수(200자 이하)
+					- closeLinkedScholarship=true 면 연결 장학금을 마감(CLOSED)으로 바꾼다(삭제 아님). 이미 마감·내려진 장학금은 건너뛴다.
+					  마감한 장학금은 SCHOLARSHIP_UPDATE 감사 기록(전후 스냅샷)으로도 남아 복구할 수 있다
+					- 연결 장학금이 OPEN/UPCOMING 이고 모집 마감 전이면 warningOpenScholarship=true(막지는 않는다)
+					- 건마다 따로 처리해 결과(DISMISSED·SKIPPED·FAILED)를 돌려준다. 요청 1회당 RAW_SCHOLARSHIP_DISMISS 감사 기록 1건
+					(ADMIN 전용)
+					""")
+	@PostMapping("/admin/failures/dismiss")
+	public ApiResponse<RawDismissResultResponse> dismissFailures(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody RawDismissRequest request) {
+		return ApiResponse.ok(rawScholarshipDismissService.dismiss(request.rawIds(), request.reason(), request.note(),
+				Boolean.TRUE.equals(request.closeLinkedScholarship()), UUID.fromString(actorId)));
+	}
+
+	@Operation(summary = "실패 원본 만료 처리 되돌리기",
+			description = """
+					만료 처리한 원본(1~100건)의 dismissed_* 를 비워 실패 재처리 목록에 다시 올린다. 연결 장학금의 모집 상태는
+					되돌리지 않는다(응답 notice). 요청 1회당 RAW_SCHOLARSHIP_RESTORE 감사 기록 1건. (ADMIN 전용)
+					""")
+	@PostMapping("/admin/failures/restore")
+	public ApiResponse<RawRestoreResultResponse> restoreFailures(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody RawRestoreRequest request) {
+		return ApiResponse.ok(rawScholarshipDismissService.restore(request.rawIds(), UUID.fromString(actorId)));
 	}
 
 	@Operation(summary = "장학금 데이터 이상 탐지",

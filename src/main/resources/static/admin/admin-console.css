@@ -471,6 +471,9 @@ dialog.modal::backdrop { background: rgba(14, 20, 38, .5); }
 .choice:hover { background: var(--c-surface-2); }
 .choice input { margin-top: 3px; }
 .choice small { display: block; color: var(--c-muted); }
+/* 실패 재처리 만료 처리 */
+.dismiss-info { margin-bottom: 2px; overflow-wrap: anywhere; }
+.result-counts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 
 /* ---------- 알림 서랍 ---------- */
 .drawer { position: fixed; top: var(--topbar-h); right: 0; bottom: 0; z-index: 40; width: min(440px, 100vw); background: var(--c-surface); border-left: 1px solid var(--c-border); box-shadow: var(--shadow-md); display: flex; flex-direction: column; }
