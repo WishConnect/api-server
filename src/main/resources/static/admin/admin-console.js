@@ -1607,8 +1607,8 @@
 				auditActionHtml(row),
 				auditTargetHtml(row),
 				'<span class="clamp-2" title="' + esc(row.detail || '') + '">' + esc(row.detail || '-') + '</span>',
-				'<div class="actions">' + (row.beforeJson || row.afterJson
-					? '<button type="button" class="btn btn-sm" data-audit-diff="' + row.id + '">전후 비교</button>'
+				'<div class="actions">' + (WC.audit.detailKind(row)
+					? '<button type="button" class="btn btn-sm" data-audit-diff="' + row.id + '">' + esc(WC.audit.detailKind(row).label) + '</button>'
 					: '<span class="text-muted text-sm" title="이 작업은 바뀐 값을 저장하지 않습니다">비교 기록 없음</span>') +
 					(row.restorable && !row.restoredAt ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-audit-restore="' + row.id + '">복구…</button>' : '') + '</div>'
 			]) + '</tr>').join('') : view.row(6, view.emptyHtml('기록이 없습니다.'));
@@ -1618,51 +1618,22 @@
 		bindOpenScholarship(body);
 	}
 
-	function parseJson(text) { try { return JSON.parse(text); } catch (ignored) { return text; } }
-	const showValue = value => value == null || value === '' ? '(비어 있음)' : typeof value === 'object' ? JSON.stringify(value, null, 1) : String(value);
-
-	/** 전후 비교: 바뀐 필드만 표로. 스냅샷이 객체가 아니면 원문 그대로 보여 준다. */
-	/** 스냅샷이 {scholarship: {...}, conditions: [...]} 처럼 한 단계 묶여 있으면 "scholarship.title" 로 펼친다. */
-	function flatten(value) {
-		if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-		const out = {};
-		Object.entries(value).forEach(([key, inner]) => {
-			if (inner && typeof inner === 'object' && !Array.isArray(inner)) Object.entries(inner).forEach(([k, v]) => out[key + '.' + k] = v);
-			else out[key] = inner;
-		});
-		return out;
-	}
-
+	/**
+	 * 기록 상세: 전후 비교(항목별 "이전 → 이후"), 등록 내용, 내리기 직전 내용, 병합 내용. 화면 조립은 admin-audit.js.
+	 * 복구 버튼과 복구 가능 여부는 목록의 기존 동작을 그대로 쓴다(여기서는 복구하지 않는다).
+	 */
 	function showAuditDiff(row) {
-		const before = flatten(parseJson(row.beforeJson)), after = flatten(parseJson(row.afterJson));
-		let html;
-		if (before && after && typeof before === 'object' && typeof after === 'object') {
-			// 선발 일정·기간 고정은 2026-10 이후 기록에만 있다. 한쪽에 없으면 비교하지 않는다(없음 ≠ 빈 일정).
-			const later = ['timeline', 'scholarship.periodLocked'];
-			const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
-				.filter(key => !later.includes(key) || (key in before && key in after));
-			const changed = keys.filter(key => key === 'timeline'
-				? Boolean(timelineDiff(before.timeline || [], after.timeline || []))
-				: JSON.stringify(before[key]) !== JSON.stringify(after[key]));
-			const cellsFor = key => {
-				if (key !== 'timeline') return [showValue(before[key]), showValue(after[key])];
-				const diff = timelineDiff(before.timeline || [], after.timeline || []);
-				return [diff.before || '(없음)', diff.after || '(없음)'];
-			};
-			html = changed.length ? '<table class="diff-table"><thead><tr><th>필드</th><th>이전</th><th>이후</th></tr></thead><tbody>' +
-				changed.map(key => {
-					const [from, to] = cellsFor(key);
-					const name = key === 'timeline' ? 'timeline (선발 일정 · 행 단위: + 추가 / − 삭제 / ~ 변경)' : key;
-					return '<tr><td class="mono">' + esc(name) + '</td><td class="val before">' + esc(from) +
-						'</td><td class="val after">' + esc(to) + '</td></tr>';
-				}).join('') + '</tbody></table>'
-				: view.emptyHtml('바뀐 필드가 없습니다.');
-		} else {
-			html = '<div class="grid-2"><div><p class="section-label">이전</p><div class="raw">' + esc(showValue(before)) + '</div></div>' +
-				'<div><p class="section-label">이후</p><div class="raw">' + esc(showValue(after)) + '</div></div></div>';
-		}
-		ui.notify(WC.audit.actionView(row.action).label + ' · ' + fmt.tsDay(row.createdAt), '<p class="text-sm text-muted" style="margin-bottom:var(--sp-3)">' +
-			esc(row.detail || '') + '</p>' + html);
+		const kind = WC.audit.detailKind(row);
+		if (!kind) return;
+		const actor = row.actorName || String(row.actorId || '-').slice(0, 8);
+		const body = document.createElement('div');
+		body.className = 'audit-detail';
+		body.innerHTML = '<div class="target-box"><span class="target-id">기록 #' + row.id + ' · ' + esc(fmt.tsDay(row.createdAt)) + ' · ' + esc(actor) +
+			'</span><span class="target-title">' + esc(row.detail || '') + '</span></div>' + kind.body(row);
+		ui.modal({title: WC.audit.actionView(row.action).label + ' · ' + kind.label, size: 'audit', body, onOpen: (root, ctx) => {
+			root.querySelectorAll('[data-open-scholarship]').forEach(el => el.onclick = () => { ctx.close(null); openScholarshipModal(Number(el.dataset.openScholarship)); });
+			root.querySelectorAll('[data-audit-open-current]').forEach(el => el.onclick = () => { ctx.close(null); openInAllPage(Number(el.dataset.auditOpenCurrent)); });
+		}});
 	}
 
 	/* ================================================================== 쓰기 작업 */
