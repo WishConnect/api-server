@@ -468,6 +468,7 @@ dialog.modal::backdrop { background: rgba(14, 20, 38, .5); }
 .diff-table tr.warn-row td { background: var(--c-warning-soft); }
 /* 작업 기록 목록 */
 .audit-action { font-weight: var(--fw-medium); }
+.audit-code { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 /* 작업 기록 상세(전후 비교·등록 내용) — 가로 표 대신 항목마다 세로 블록. 375px 에서도 같은 배치 */
 dialog.modal.audit { width: min(760px, calc(100vw - 32px)); }
 .chg-list { display: grid; gap: var(--sp-2); }

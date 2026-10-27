@@ -1866,7 +1866,8 @@
 			return scholarshipLink(row.targetId, '#' + row.targetId + (ref && ref.title ? ' ' + ref.title : '')) +
 				(ref && ref.deleted ? ' <span class="badge b-danger">내려짐</span>' : '');
 		}
-		if (!row.targetType) return '<span class="text-muted">전체 대상</span>';
+		// 실패한 요청은 대상이 경로에 들어 있어 따로 없다(내용 칸의 경로를 본다).
+		if (!row.targetType) return '<span class="text-muted">' + (row.action === 'ADMIN_REQUEST_FAILED' ? '-' : '전체 대상') + '</span>';
 		return esc((TARGET_NAMES[row.targetType] || label('targetType', row.targetType)) + (row.targetId ? ' #' + row.targetId : ''));
 	}
 
@@ -1875,7 +1876,7 @@
 		const view = WC.audit.actionView(row.action);
 		return (view.known ? '<span class="audit-action">' + esc(view.label) + '</span>'
 			: '<span class="audit-action mono" title="화면에 이름이 아직 없는 작업입니다">' + esc(view.code) + '</span>') +
-			'<span class="cell-sub mono">' + esc(view.known ? view.code : '이름 없는 작업 코드') + '</span>' +
+			'<span class="cell-sub mono audit-code" title="' + esc(view.code) + '">' + esc(view.known ? view.code : '이름 없는 작업 코드') + '</span>' +
 			(row.restoredAt ? '<span class="cell-sub text-success">복구됨 ' + esc(fmt.tsDay(row.restoredAt)) + '</span>' : '');
 	}
 
