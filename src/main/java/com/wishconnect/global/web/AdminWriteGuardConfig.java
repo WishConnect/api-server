@@ -27,6 +27,8 @@ public class AdminWriteGuardConfig implements WebMvcConfigurer {
 			"/api/v1/scholarships/merge/candidates/manual",
 			"/api/v1/scholarships/admin/failures/dismiss",
 			"/api/v1/scholarships/admin/failures/restore",
+			"/api/v1/scholarships/merge/candidates/bulk-approve",
+			"/api/v1/scholarships/merge/candidates/bulk-reject",
 			"/api/v1/scholarships/merge/detect",
 			"/api/v1/scholarships/sync",
 			"/api/v1/scholarships/collect/univ/*",
