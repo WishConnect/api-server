@@ -10,6 +10,7 @@ import com.wishconnect.domain.scholarship.dto.AdminRawDetailResponse;
 import com.wishconnect.domain.scholarship.dto.AdminRawFailureResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipAnomalyResponse;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipDetailResponse;
+import com.wishconnect.domain.scholarship.dto.AdminImageSnapshot;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipEditSnapshot;
 import com.wishconnect.domain.scholarship.dto.AdminScholarshipRow;
 import com.wishconnect.domain.scholarship.dto.AlwaysOpenScholarshipResponse;
@@ -298,10 +299,13 @@ public class ScholarshipAdminController {
 	@PutMapping("/admin/scholarships/{scholarshipId}/image-url")
 	public ApiResponse<String> replaceImageUrl(@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId, @Valid @RequestBody AdminImageUrlRequest request) {
-		String url = adminScholarshipImageService.replaceFromUrl(scholarshipId, request.imageUrl());
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
-				"SCHOLARSHIP", scholarshipId, "이미지 URL 등록·교체");
-		return ApiResponse.ok(url);
+		AdminImageSnapshot.Replaced replaced =
+				adminScholarshipImageService.replaceFromUrlWithSnapshot(scholarshipId, request.imageUrl());
+		// 이전 S3 객체는 지우지 않으므로, 전후 스냅샷(S3 키·원본 주소)으로 이전 이미지를 찾아 되돌릴 수 있다.
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
+				"SCHOLARSHIP", scholarshipId, replaced.before() == null ? "이미지 URL 등록" : "이미지 URL 교체",
+				replaced.before(), replaced.after());
+		return ApiResponse.ok(replaced.url());
 	}
 
 	@Operation(summary = "장학금 이미지 파일 등록·교체")
@@ -309,10 +313,11 @@ public class ScholarshipAdminController {
 			consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public ApiResponse<String> replaceImageFile(@AuthenticationPrincipal String actorId,
 			@PathVariable Long scholarshipId, @RequestPart("file") MultipartFile file) {
-		String url = adminScholarshipImageService.replaceFromUpload(scholarshipId, file);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
-				"SCHOLARSHIP", scholarshipId, "이미지 파일 등록·교체");
-		return ApiResponse.ok(url);
+		AdminImageSnapshot.Replaced replaced = adminScholarshipImageService.replaceFromUploadWithSnapshot(scholarshipId, file);
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_IMAGE_UPDATE,
+				"SCHOLARSHIP", scholarshipId, replaced.before() == null ? "이미지 파일 등록" : "이미지 파일 교체",
+				replaced.before(), replaced.after());
+		return ApiResponse.ok(replaced.url());
 	}
 
 	@Operation(summary = "장학금 엑셀 내보내기",
@@ -338,7 +343,14 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@RequestPart("file") MultipartFile file,
 			@RequestParam(defaultValue = "true") boolean dryRun) {
-		ExcelImportResult result = scholarshipExcelService.importFrom(file, dryRun);
+		UUID actor = UUID.fromString(actorId);
+		String fileName = file.getOriginalFilename();
+		// 행마다 장학금 수정 기록(전후 스냅샷)을 남긴다. 기존 복구 기능으로 한 행씩 되돌릴 수 있다.
+		ExcelImportResult result = scholarshipExcelService.importFrom(file, dryRun, (row, id, change) ->
+				adminAuditLogService.recordChange(actor, AdminAction.SCHOLARSHIP_UPDATE, "SCHOLARSHIP", id,
+						"엑셀 일괄 수정 %d행(파일=%s) · %s".formatted(row, fileName,
+								scholarshipChangeSummarizer.summarize(change.before(), change.after())),
+						change.before(), change.after()));
 		// dryRun 은 DB 를 건드리지 않으므로 남기지 않는다. 실제 반영만 기록한다.
 		if (!dryRun) {
 			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.EXCEL_IMPORT, null, null,
@@ -579,13 +591,21 @@ public class ScholarshipAdminController {
 					""")
 	@PostMapping("/parse/univ-llm")
 	public ApiResponse<NoticeParsingResponse> parseUnivNoticesWithLlm(
+			@AuthenticationPrincipal String actorId,
 			@RequestParam(defaultValue = "20") int limit,
 			@RequestParam(defaultValue = "false") boolean reparse,
 			@RequestParam(defaultValue = "false") boolean dryRun,
 			@RequestParam(required = false) List<Long> rawIds,
 			@RequestParam(defaultValue = "true") boolean skipComplete) {
-		return ApiResponse.ok(univNoticeLlmParsingService.parse(
-				limit, reparse, dryRun, rawIds == null ? List.of() : rawIds, skipComplete));
+		List<Long> picked = rawIds == null ? List.of() : rawIds;
+		NoticeParsingResponse result = univNoticeLlmParsingService.parse(limit, reparse, dryRun, picked, skipComplete);
+		// LLM 비용이 드는 수동 실행이다. dryRun 도 호출은 실제로 일어나므로 남긴다.
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.LLM_PARSE_TRIGGER,
+				picked.size() == 1 ? "RAW_SCHOLARSHIP" : null, picked.size() == 1 ? picked.get(0) : null,
+				llmRunDetail("대학 공지 LLM " + (picked.isEmpty() ? (reparse ? "재파싱" : "파싱") : "선택 재처리"),
+						result, "limit=" + limit + (reparse ? " · reparse" : "") + (skipComplete ? "" : " · 완료 건 포함")
+								+ (picked.isEmpty() ? "" : " · 원문 " + idList(picked))));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "공공데이터 장학금 조건 보강",
@@ -603,9 +623,13 @@ public class ScholarshipAdminController {
 					""")
 	@PostMapping("/parse/kosaf-conditions")
 	public ApiResponse<NoticeParsingResponse> parseKosafConditions(
+			@AuthenticationPrincipal String actorId,
 			@RequestParam(defaultValue = "20") int limit,
 			@RequestParam(defaultValue = "false") boolean dryRun) {
-		return ApiResponse.ok(univNoticeLlmParsingService.parseKosafConditions(limit, dryRun));
+		NoticeParsingResponse result = univNoticeLlmParsingService.parseKosafConditions(limit, dryRun);
+		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.KOSAF_CONDITION_TRIGGER, null, null,
+				llmRunDetail("공공데이터 조건 보강", result, "limit=" + limit));
+		return ApiResponse.ok(result);
 	}
 
 	@Operation(summary = "LLM 조건 구조화 추출",
@@ -785,7 +809,14 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@RequestPart("file") MultipartFile file,
 			@RequestParam(defaultValue = "true") boolean dryRun) {
-		ManualExcelImportResult result = scholarshipManualExcelService.importFile(file, dryRun);
+		UUID actor = UUID.fromString(actorId);
+		String fileName = file.getOriginalFilename();
+		// 행마다 장학금 등록 기록(등록 직후 스냅샷)을 남긴다. 작업 기록의 "등록 내용"으로 보인다.
+		ManualExcelImportResult result = scholarshipManualExcelService.importFile(file, dryRun, (row, clientKey, created) ->
+				adminAuditLogService.recordChange(actor, AdminAction.SCHOLARSHIP_CREATE, "SCHOLARSHIP",
+						created.scholarshipId(), "엑셀 신규 등록 %d행(임시키 %s, 파일=%s): 조건 %d, 서류 %d, 이미지 %s".formatted(
+								row, clientKey, fileName, created.conditionCount(), created.documentCount(),
+								created.imageSaved()), null, createdSnapshot(created.scholarshipId())));
 		if (!dryRun) {
 			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.EXCEL_IMPORT, null, null,
 					"통합 신규등록 %d건, 오류 %d건, 파일=%s".formatted(
@@ -878,7 +909,7 @@ public class ScholarshipAdminController {
 			@Valid @RequestBody ReportResolveRequest request) {
 		ScholarshipReportResponse result = scholarshipReportService.resolve(reportId, request);
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.REPORT_RESOLVE,
-				"REPORT", reportId, String.valueOf(request.status()));
+				"REPORT", reportId, com.wishconnect.global.audit.AdminAuditDetails.resolution(String.valueOf(request.status()), request.adminNote()));
 		return ApiResponse.ok(result);
 	}
 
@@ -894,5 +925,16 @@ public class ScholarshipAdminController {
 			log.warn("[AdminAudit] 등록 스냅샷 조회 실패 scholarshipId={} : {}", scholarshipId, e.toString());
 			return null;
 		}
+	}
+
+	/** LLM 수동 실행 요약. 예: "대학 공지 LLM 선택 재처리 · 대상 3 · 정제 2 · 건너뜀 0 · 실패 1 · limit=3 · 원문 #1, #2" */
+	private static String llmRunDetail(String what, NoticeParsingResponse result, String options) {
+		return "%s%s · 대상 %d · 정제 %d · 건너뜀 %d · 실패 %d · %s".formatted(what, result.dryRun() ? "(dryRun)" : "",
+				result.targetCount(), result.parsedCount(), result.skippedCount(), result.failedCount(), options);
+	}
+
+	private static String idList(List<Long> ids) {
+		List<String> shown = ids.stream().limit(30).map(id -> "#" + id).toList();
+		return String.join(", ", shown) + (ids.size() > 30 ? " 외 " + (ids.size() - 30) + "건" : "");
 	}
 }
