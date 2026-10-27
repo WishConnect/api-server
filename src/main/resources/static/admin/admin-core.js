@@ -177,7 +177,8 @@
 		jobStatus: {RUNNING: '실행 중', SUCCEEDED: '성공', WARNING: '부분 실패', PARTIAL_FAILURE: '부분 실패', FAILED: '실패'},
 		jobType: {DAILY_SCHOLARSHIP_PIPELINE: '일일 수집 파이프라인'},
 		trigger: {SCHEDULED: '자동(매일)', MANUAL: '수동'},
-		targetType: {RAW_SCHOLARSHIP: '원문', SCHOLARSHIP: '장학금', SOURCE: '출처', GROUP: '묶음', STEP: '단계'},
+		targetType: {RAW_SCHOLARSHIP: '원문', SCHOLARSHIP: '장학금', SOURCE: '출처', GROUP: '묶음', STEP: '단계', REPORT: '신고',
+			CONTENT_INQUIRY: '문의', ADMIN_LOGIN: '로그인'},
 		failureType: {LLM_CREDIT: 'LLM 크레딧 부족', LLM_AUTH: 'LLM 인증 오류', LLM_ERROR: 'LLM 호출 실패', COLLECT: '수집 실패', PARSE: '응답 해석 실패',
 			SAVE: '저장 실패', STEP_ERROR: '단계 전체 실패', OTHER: '기타'},
 		anomaly: {
@@ -196,7 +197,11 @@
 			COLLECT_TRIGGER: '대학 공지 수동 수집', CONDITION_EXTRACT_TRIGGER: '조건 추출 실행', CONDITION_REF_BACKFILL: '조건 참조 채우기',
 			ENRICH_TRIGGER: '상세·첨부·포스터 자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '중복 병합',
 			SCHOLARSHIP_MERGE_REJECT: '중복 아님 처리', MERGE_CANDIDATE_REOPEN: '중복 아님 취소', AUDIT_RESTORE: '작업 기록 복구',
-			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기'
+			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기',
+			ADMIN_LOGIN_SUCCESS: '관리자 로그인', ADMIN_LOGIN_FAILURE: '로그인 실패', ADMIN_LOGIN_LOCKED: '로그인 잠금', ADMIN_LOGOUT: '로그아웃',
+			LLM_PARSE_TRIGGER: '공지 LLM 파싱·재처리', KOSAF_CONDITION_TRIGGER: '공공데이터 조건 보강(LLM)',
+			ADMIN_REQUEST_FAILED: '실패한 요청', MERGE_CANDIDATE_FAILED: '일괄 처리 실패 후보',
+			INSIGHT_SYNC_TRIGGER: '인사이트 수동 수집', UNIVERSITY_SYNC_TRIGGER: '학교·전공 동기화'
 		},
 		/**
 		 * 장학금 스냅샷 필드 이름(작업 기록 전후 비교·등록 내용). 통합 수정 화면 라벨과 같은 말을 쓴다.
@@ -210,7 +215,10 @@
 			essayRequirement: '자기소개서', essayEvidence: '자기소개서 근거 문장', interviewRequirement: '면접', interviewEvidence: '면접 근거 문장',
 			periodLocked: '모집기간 수기 고정', timelineLocked: '선발 일정 수기 보호', verified: '검수 완료', active: '사용자 노출',
 			primarySource: '수집 출처', id: '장학금 ID', createdAt: '등록 시각', updatedAt: '마지막 수정 시각', deletedAt: '내린 시각',
-			conditions: '지원 조건', documents: '제출서류', timeline: '선발 일정', images: '이미지'
+			conditions: '지원 조건', documents: '제출서류', timeline: '선발 일정', images: '이미지',
+			// 포스터 교체 기록(AdminImageSnapshot)
+			imageId: '이미지 ID', s3Key: '저장 위치(S3 키)', originalName: '파일 이름', contentType: '파일 형식', fileSize: '파일 크기',
+			sourceUrl: '원본 주소'
 		},
 		dateType: {SINGLE: '하루', RANGE: '기간', TBD: '미정'}
 	};
