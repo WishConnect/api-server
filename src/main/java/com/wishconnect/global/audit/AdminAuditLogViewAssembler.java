@@ -37,7 +37,7 @@ public class AdminAuditLogViewAssembler {
 
 	/** 병합 요약 "중복 307 를 683 로 병합" (ScholarshipAdminController·일괄 병합이 남기는 형식). */
 	private static final Pattern MERGED = Pattern.compile("중복 (\\d+) 를 (\\d+) 로 병합");
-	/** 반려 요약 "중복 후보 12 반려 (683 vs 307)". */
+	/** 반려·실패 요약 "중복 후보 12 반려 (683 vs 307)", "중복 후보 12 (683 vs 307) 실패". */
 	private static final Pattern REJECTED = Pattern.compile("\\((\\d+) vs (\\d+)\\)");
 
 	private final UserRepository userRepository;
@@ -72,7 +72,8 @@ public class AdminAuditLogViewAssembler {
 		}
 		String detail = log.getDetail();
 		if (detail != null && (log.getAction() == AdminAction.SCHOLARSHIP_MERGE
-				|| log.getAction() == AdminAction.SCHOLARSHIP_MERGE_REJECT)) {
+				|| log.getAction() == AdminAction.SCHOLARSHIP_MERGE_REJECT
+				|| log.getAction() == AdminAction.MERGE_CANDIDATE_FAILED)) {
 			Matcher matcher = (log.getAction() == AdminAction.SCHOLARSHIP_MERGE ? MERGED : REJECTED).matcher(detail);
 			if (matcher.find()) {
 				ids.add(Long.valueOf(matcher.group(1)));

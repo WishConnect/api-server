@@ -75,6 +75,7 @@ public class ScholarshipMergeBulkService {
 				results.add(new Item(id, primaryId, duplicateId, Result.FAILED, ErrorCode.MERGE_FAILED.name(),
 						ErrorCode.MERGE_FAILED.getMessage()));
 			}
+			recordIfFailed(reviewer, "병합", ids.size(), i + 1, results.get(results.size() - 1));
 		}
 		MergeBulkResultResponse response = MergeBulkResultResponse.of(results);
 		log.info("[MergeBulk] 일괄 병합 요청={} 성공={} 건너뜀={} 실패={}",
@@ -107,11 +108,25 @@ public class ScholarshipMergeBulkService {
 				results.add(new Item(id, primaryId, duplicateId, Result.FAILED, ErrorCode.INTERNAL_SERVER_ERROR.name(),
 						ErrorCode.INTERNAL_SERVER_ERROR.getMessage()));
 			}
+			recordIfFailed(reviewer, "중복 아님", ids.size(), i + 1, results.get(results.size() - 1));
 		}
 		MergeBulkResultResponse response = MergeBulkResultResponse.of(results);
 		log.info("[MergeBulk] 일괄 반려 요청={} 성공={} 건너뜀={} 실패={}",
 				response.total(), response.succeeded(), response.skipped(), response.failed());
 		return response;
+	}
+
+	/**
+	 * 실패한 후보를 작업 기록에 남긴다(MERGE_CANDIDATE_FAILED). 그 건은 트랜잭션이 되돌아가 바뀐 것이 없다.
+	 * 일괄 요청은 200 으로 끝나므로 실패한 요청 기록(ADMIN_REQUEST_FAILED)에는 잡히지 않는다. 건너뜀(선처리)은 남기지 않는다.
+	 */
+	private void recordIfFailed(UUID reviewer, String verb, int total, int position, Item item) {
+		if (item.result() != Result.FAILED) {
+			return;
+		}
+		adminAuditLogService.record(reviewer, AdminAction.MERGE_CANDIDATE_FAILED, "SCHOLARSHIP", item.primaryId(),
+				MergeAuditDetail.bulkPrefix(verb, total, position) + "중복 후보 %d (%d vs %d) 실패: %s · %s".formatted(
+						item.candidateId(), item.primaryId(), item.duplicateId(), item.errorCode(), item.message()));
 	}
 
 	/**
