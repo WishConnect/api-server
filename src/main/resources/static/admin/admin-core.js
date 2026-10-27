@@ -116,9 +116,30 @@
 			const pad = n => String(n).padStart(2, '0');
 			return (h ? h + ':' + pad(m) : m) + ':' + pad(sec);
 		},
+		/**
+		 * 기록 시각을 KST "2026.10.25 (일) 03:05" 로(작업 기록 목록·전후 비교). withSeconds 면 ":07" 까지.
+		 */
+		tsDay(value, withSeconds = false) {
+			const epoch = toEpoch(value);
+			if (epoch == null || Number.isNaN(epoch)) return '-';
+			const p = kstParts(epoch);
+			return dayText(p.year, p.month, p.day) + ' ' + p.hour + ':' + p.minute + (withSeconds ? ':' + p.second : '');
+		},
+		/** 공고에 적힌 날짜·시각(모집 시작·마감, 선발 일정)을 "2026.11.11 (수) 23:59" 로. 시간대 변환은 하지 않는다. */
+		bizDay(value, withSeconds = false) {
+			const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(value || ''));
+			if (!m) return value ? String(value) : '-';
+			return dayText(m[1], m[2], m[3]) + (m[4] ? ' ' + m[4] + ':' + m[5] + (withSeconds ? ':' + (m[6] || '00') : '') : '');
+		},
 		/** "2026-10-03T14:05" 로 input[type=datetime-local] 에 넣는다(공고 날짜용). */
 		inputDate(value) { return value ? String(value).slice(0, 16) : ''; }
 	};
+	const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+	/** "2026.10.25 (일)". 요일은 그 날짜 자체로 계산한다(시간대와 무관). */
+	function dayText(year, month, day) {
+		const weekday = WEEKDAYS[new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))).getUTCDay()];
+		return year + '.' + month + '.' + day + ' (' + weekday + ')';
+	}
 	WC.fmt = fmt;
 
 	/* ------------------------------------------------------------------ 라벨 */
@@ -156,7 +177,8 @@
 		jobStatus: {RUNNING: '실행 중', SUCCEEDED: '성공', WARNING: '부분 실패', PARTIAL_FAILURE: '부분 실패', FAILED: '실패'},
 		jobType: {DAILY_SCHOLARSHIP_PIPELINE: '일일 수집 파이프라인'},
 		trigger: {SCHEDULED: '자동(매일)', MANUAL: '수동'},
-		targetType: {RAW_SCHOLARSHIP: '원문', SCHOLARSHIP: '장학금', SOURCE: '출처', GROUP: '묶음', STEP: '단계'},
+		targetType: {RAW_SCHOLARSHIP: '원문', SCHOLARSHIP: '장학금', SOURCE: '출처', GROUP: '묶음', STEP: '단계', REPORT: '신고',
+			CONTENT_INQUIRY: '문의', ADMIN_LOGIN: '로그인'},
 		failureType: {LLM_CREDIT: 'LLM 크레딧 부족', LLM_AUTH: 'LLM 인증 오류', LLM_ERROR: 'LLM 호출 실패', COLLECT: '수집 실패', PARSE: '응답 해석 실패',
 			SAVE: '저장 실패', STEP_ERROR: '단계 전체 실패', OTHER: '기타'},
 		anomaly: {
@@ -164,15 +186,41 @@
 			OPEN_BUT_ENDED: '마감 지난 모집 중', MISSING_LINK: '링크 없음', MISSING_CONDITION: '조건 없음'
 		},
 		deleteKind: {ADMIN: '관리자가 내림', MERGE: '병합으로 내림', SYSTEM: '수집 배치가 내림'},
+		/** 실패 재처리 원문 만료 처리 사유(서버 RawDismissReason). */
+		dismissReason: {PERIOD_EXPIRED: '모집기간 경과', NOT_SCHOLARSHIP: '장학금 공고 아님', DUPLICATE: '중복', OTHER: '기타'},
+		/** 작업 기록의 행위 이름. 모르는 코드는 화면이 코드를 그대로 보여 준다(WC.audit.actionView). */
 		action: {
-			EXCEL_IMPORT: '엑셀 일괄 수정', SCHOLARSHIP_CREATE: '장학금 등록', SCHOLARSHIP_UPDATE: '장학금 수정',
-			SCHOLARSHIP_AGGREGATE_UPDATE: '통합 수정', SCHOLARSHIP_IMAGE_UPDATE: '이미지 등록·교체',
-			MERGE_CANDIDATE_MANUAL_CREATE: '수기 중복 후보 생성', SCHOLARSHIP_DELETE: '내리기', SCHOLARSHIP_RESTORE: '복원',
-			REPORT_RESOLVE: '신고 처리', CONTENT_INQUIRY_RESOLVE: '문의 처리', SYNC_TRIGGER: '공공데이터 수동 동기화',
-			COLLECT_TRIGGER: '수동 수집', CONDITION_EXTRACT_TRIGGER: '조건 추출 실행', CONDITION_REF_BACKFILL: '조건 참조 채우기',
-			ENRICH_TRIGGER: '자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '병합 승인',
-			SCHOLARSHIP_MERGE_REJECT: '중복 아님(반려)', MERGE_CANDIDATE_REOPEN: '반려 취소', AUDIT_RESTORE: '감사 복구'
-		}
+			EXCEL_IMPORT: '엑셀 반영', SCHOLARSHIP_CREATE: '장학금 등록', SCHOLARSHIP_UPDATE: '장학금 수정',
+			SCHOLARSHIP_AGGREGATE_UPDATE: '장학금 통합 수정', SCHOLARSHIP_IMAGE_UPDATE: '포스터 이미지 등록·교체',
+			MERGE_CANDIDATE_MANUAL_CREATE: '수기 중복 후보 생성', SCHOLARSHIP_DELETE: '장학금 내리기', SCHOLARSHIP_RESTORE: '내린 장학금 복원',
+			REPORT_RESOLVE: '신고 처리', CONTENT_INQUIRY_RESOLVE: '콘텐츠 문의 처리', SYNC_TRIGGER: '공공데이터 수동 동기화',
+			COLLECT_TRIGGER: '대학 공지 수동 수집', CONDITION_EXTRACT_TRIGGER: '조건 추출 실행', CONDITION_REF_BACKFILL: '조건 참조 채우기',
+			ENRICH_TRIGGER: '상세·첨부·포스터 자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '중복 병합',
+			SCHOLARSHIP_MERGE_REJECT: '중복 아님 처리', MERGE_CANDIDATE_REOPEN: '중복 아님 취소', AUDIT_RESTORE: '작업 기록 복구',
+			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기',
+			ADMIN_LOGIN_SUCCESS: '관리자 로그인', ADMIN_LOGIN_FAILURE: '로그인 실패', ADMIN_LOGIN_LOCKED: '로그인 잠금', ADMIN_LOGOUT: '로그아웃',
+			LLM_PARSE_TRIGGER: '공지 LLM 파싱·재처리', KOSAF_CONDITION_TRIGGER: '공공데이터 조건 보강(LLM)',
+			ADMIN_REQUEST_FAILED: '실패한 요청', MERGE_CANDIDATE_FAILED: '일괄 처리 실패 후보',
+			INSIGHT_SYNC_TRIGGER: '인사이트 수동 수집', UNIVERSITY_SYNC_TRIGGER: '학교·전공 동기화'
+		},
+		/**
+		 * 장학금 스냅샷 필드 이름(작업 기록 전후 비교·등록 내용). 통합 수정 화면 라벨과 같은 말을 쓴다.
+		 * 서버 ScholarshipChangeFields 의 라벨과 뜻이 같다.
+		 */
+		field: {
+			title: '장학금명', provider: '운영 기관', summary: '한 줄 요약', description: '상세 설명', scholarshipType: '장학금 유형',
+			recruitmentStatus: '모집 상태', applicationStartAt: '모집 시작', applicationEndAt: '모집 마감', selectionCount: '선발 인원',
+			amount: '지원 금액', homepageUrl: '홈페이지 URL', detailUrl: '상세(원문) URL', noticeKind: '공지 종류', combined: '통합 공고',
+			submissionMethod: '제출 방법', submissionChannel: '제출 경로', submissionEvidence: '제출 근거 문장', contact: '문의처',
+			essayRequirement: '자기소개서', essayEvidence: '자기소개서 근거 문장', interviewRequirement: '면접', interviewEvidence: '면접 근거 문장',
+			periodLocked: '모집기간 수기 고정', timelineLocked: '선발 일정 수기 보호', verified: '검수 완료', active: '사용자 노출',
+			primarySource: '수집 출처', id: '장학금 ID', createdAt: '등록 시각', updatedAt: '마지막 수정 시각', deletedAt: '내린 시각',
+			conditions: '지원 조건', documents: '제출서류', timeline: '선발 일정', images: '이미지',
+			// 포스터 교체 기록(AdminImageSnapshot)
+			imageId: '이미지 ID', s3Key: '저장 위치(S3 키)', originalName: '파일 이름', contentType: '파일 형식', fileSize: '파일 크기',
+			sourceUrl: '원본 주소'
+		},
+		dateType: {SINGLE: '하루', RANGE: '기간', TBD: '미정'}
 	};
 	const label = (group, code, fallback = '-') => code == null || code === '' ? fallback : ((L[group] || {})[code] || code);
 	const TONES = {

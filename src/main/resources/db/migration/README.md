@@ -74,9 +74,19 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20261003_02__admin_audit_actions.sql` | 감사 로그 action CHECK 에 새 작업 추가(복구 기록 등) | ✅ 2026-10-04 |
 | `V20261003_03__scholarship_deleted_by.sql` | `scholarship.deleted_by`·`delete_reason` 추가 + 기존 관리자 내리기·병합 백필 (수집 배치 부활 차단) | ✅ 2026-10-04 |
 | `V20261006_01__scholarship_timeline_manual_schedule.sql` | 선발 일정 수기 입력(`scholarship_timeline` 에 단계·날짜 모양·미정 문구·비고·근거·출처·`updated_at` + CHECK 4개 + 인덱스) + `scholarship.period_locked`(모집기간 수기 고정) | ✅ 2026-10-06 |
-| `V20261008_01__scholarship_timeline_locked.sql` | 자동 일정 추출 시 수기 일정·수기 삭제 보호(`timeline_locked`), 기존 MANUAL 행 백필 | 미적용 — 배포 전 적용 |
+| `V20261008_01__scholarship_timeline_locked.sql` | 자동 일정 추출 시 수기 일정·수기 삭제 보호(`timeline_locked`), 기존 MANUAL 행 백필 | ✅ 적용돼 있음(2026-10-27 운영 스키마로 확인, 적용일 미기록 — #207 배포 성공) |
+| `V20261026_01__raw_scholarship_dismiss.sql` | 실패 재처리 원본 만료 처리(`raw_scholarship.dismissed_at`·`dismissed_reason`(CHECK)·`dismissed_note`) + 감사 action CHECK 에 `RAW_SCHOLARSHIP_DISMISS`·`RAW_SCHOLARSHIP_RESTORE` | ✅ 2026-10-27 |
+| `V20261027_01__admin_audit_coverage.sql` | 작업 기록 확장: `admin_audit_log.actor_id` NULL 허용(로그인 실패), action CHECK 에 로그인·LLM 재처리·실패 요청·동기화 등 10개, 기간·관리자·대상 인덱스 3개 | ✅ 2026-10-27 |
 
 > ⚠️ **`V20261008_01`은 새 백엔드 배포 전에 적용한다.** 운영 SQL은 자동 실행되지 않는다.
+
+> 2026-10-27 운영 적용: 적용 전 `dismissed_*` 0개·`actor_id` NOT NULL·감사 action 값 13종(모두 새 CHECK 안) 확인 →
+> `lock_timeout 5s` 로 `V20261026_01`→`V20261027_01` 한 세션 적용 → 컬럼 3개·사유 CHECK·`actor_id` NULL 허용·새 CHECK·인덱스 3개 확인.
+> 적용 직후 이전 버전 앱 헬스 UP(추가만 하는 변경이라 호환). raw 11,005행·감사 446행 그대로.
+
+> ⚠️ **`V20261026_01`은 배포보다 먼저** 적용해야 한다. `RawScholarship` 에 컬럼 3개가 새로 생겨 없으면 `validate` 가
+> 실패해 **애플리케이션이 뜨지 않는다.** 감사 action CHECK 를 함께 바꾸지 않으면 만료 처리·되돌리기의 감사 기록만
+> 조용히 빠진다(감사 기록 실패는 삼킨다). 여러 번 실행해도 같고, 되돌리기 SQL 은 파일 끝 주석에 있다.
 
 > ⚠️ **`V20261006_01` 은 배포보다 먼저** 적용해야 한다. `ScholarshipTimeline` 에 컬럼 7개, `Scholarship` 에
 > `period_locked` 가 새로 생겨 없으면 `validate` 가 실패해 **애플리케이션이 뜨지 않는다.**

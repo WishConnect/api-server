@@ -321,4 +321,61 @@ class ScholarshipAdminOverviewServiceTest {
 		assertThat(response.anomalyTypes())
 				.containsExactly("MISSING_PROVIDER", "MISSING_LINK", "MISSING_CONDITION");
 	}
+
+	@Test
+	@DisplayName("실패 재처리 목록(=배지·대시보드 수치)은 기본으로 만료 처리 원본을 빼고, dismissed=true 면 그것만 본다")
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	void failuresFilterByDismissal() {
+		given(rawScholarshipRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.willReturn(new PageImpl<>(List.of()));
+		org.mockito.ArgumentCaptor<Specification> spec = org.mockito.ArgumentCaptor.forClass(Specification.class);
+
+		service.failures(Pageable.ofSize(1));
+		service.failures(null, null, null, false, true, Pageable.ofSize(1));
+		verify(rawScholarshipRepository, org.mockito.Mockito.times(2)).findAll(spec.capture(), any(Pageable.class));
+
+		for (int i = 0; i < 2; i++) {
+			jakarta.persistence.criteria.Root root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class,
+					org.mockito.Mockito.RETURNS_MOCKS);
+			jakarta.persistence.criteria.Path dismissedAt = org.mockito.Mockito.mock(
+					jakarta.persistence.criteria.Path.class, org.mockito.Mockito.RETURNS_MOCKS);
+			given(root.get("dismissedAt")).willReturn(dismissedAt);
+			jakarta.persistence.criteria.CriteriaBuilder cb = org.mockito.Mockito.mock(
+					jakarta.persistence.criteria.CriteriaBuilder.class, org.mockito.Mockito.RETURNS_MOCKS);
+			spec.getAllValues().get(i).toPredicate(root, org.mockito.Mockito.mock(
+					jakarta.persistence.criteria.CriteriaQuery.class), cb);
+			if (i == 0) {
+				verify(cb).isNull(dismissedAt);
+				verify(cb, never()).isNotNull(dismissedAt);
+				// 모집기간 경과 제외(오류 문구) 조건은 기본 목록에만 건다.
+				verify(cb).notLike(any(), anyString());
+			} else {
+				verify(cb).isNotNull(dismissedAt);
+				verify(cb, never()).isNull(dismissedAt);
+				verify(cb, never()).notLike(any(), anyString());
+			}
+		}
+	}
+
+	@Test
+	@DisplayName("실패 재처리 행에 만료 처리 정보와 연결 장학금 상태가 실린다")
+	void failuresExposeDismissal() {
+		Scholarship linked = Scholarship.builder().title("연결").scholarshipType(ScholarshipType.EXTERNAL).build();
+		ReflectionTestUtils.setField(linked, "id", 5L);
+		linked.updateRecruitmentStatusByAdmin(RecruitmentStatus.OPEN);
+		RawScholarship raw = RawScholarship.builder().source("UNIV_KHU").sourceId("n").parseStatus(ParseStatus.FAILED)
+				.scholarship(linked).build();
+		ReflectionTestUtils.setField(raw, "id", 11L);
+		raw.dismiss(com.wishconnect.domain.scholarship.entity.RawDismissReason.OTHER, "메모", LocalDateTime.now());
+		given(rawScholarshipRepository.findAll(any(Specification.class), any(Pageable.class)))
+				.willReturn(new PageImpl<>(List.of(raw)));
+
+		var row = service.failures(null, null, null, false, true, Pageable.ofSize(20)).getContent().get(0);
+
+		assertThat(row.dismissedAt()).isNotNull();
+		assertThat(row.dismissedReason()).isEqualTo("OTHER");
+		assertThat(row.dismissedNote()).isEqualTo("메모");
+		assertThat(row.linkedRecruitmentStatus()).isEqualTo("OPEN");
+		assertThat(row.linkedScholarshipDeleted()).isFalse();
+	}
 }

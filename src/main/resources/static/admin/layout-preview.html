@@ -36,7 +36,7 @@
 		<nav class="nav">
 			<button type="button" data-page="system"><span class="ico">◉</span>시스템 상태</button>
 			<button type="button" data-page="batches"><span class="ico">◷</span>배치 실행 이력<span class="count" data-count="batches" title="확인이 필요한 배치 실행 수"></span></button>
-			<button type="button" data-page="audit"><span class="ico">⌁</span>감사·복구</button>
+			<button type="button" data-page="audit"><span class="ico">⌁</span>작업 기록</button>
 		</nav>
 		<div class="sidebar-foot">모든 시각은 한국 시간(KST)입니다.</div>
 	</aside>
@@ -74,7 +74,7 @@
 				<div class="stats" id="dashStats">
 					<div class="stat"><div class="label">오늘 신규 등록</div><div class="value" data-stat="createdToday">-</div><div class="sub">오늘(KST) 새로 만들어진 장학금</div></div>
 					<div class="stat"><div class="label">전체 장학금</div><div class="value" data-stat="total">-</div><div class="sub" data-stat-sub="total">-</div></div>
-					<div class="stat"><div class="label">재처리 대기 <i class="tip" tabindex="0" data-tip="파싱에 실패했거나 건너뛴 원문 수입니다. 마감 지난 공고는 빼고 셉니다. [실패 재처리]에서 처리합니다.">?</i></div><div class="value" data-stat="failures">-</div><div class="sub">실패·건너뜀·이미지만</div></div>
+					<div class="stat"><div class="label">재처리 대기 <i class="tip" tabindex="0" data-tip="파싱에 실패했거나 건너뛴 원문 수입니다. 마감 지난 공고와 관리자가 만료 처리한 원문은 빼고 셉니다. [실패 재처리]에서 처리합니다.">?</i></div><div class="value" data-stat="failures">-</div><div class="sub">실패·건너뜀·이미지만</div></div>
 					<div class="stat"><div class="label">모집 중</div><div class="value" data-stat="open">-</div><div class="sub">사용자에게 보이는 모집 공고</div></div>
 					<div class="stat"><div class="label">모집 예정</div><div class="value" data-stat="upcoming">-</div><div class="sub">시작일 전</div></div>
 					<div class="stat"><div class="label">내려진 장학금 <i class="tip" tabindex="0" data-tip="관리자가 내렸거나 병합·수집 배치로 목록에서 빠진 장학금입니다. 데이터는 남아 있어 복원할 수 있습니다(병합으로 내린 것 제외).">?</i></div><div class="value" data-stat="softDeleted">-</div><div class="sub">사용자 목록에서 숨김</div></div>
@@ -154,21 +154,22 @@
 					<div>
 						<h1>실패 재처리</h1>
 						<p class="page-desc">파싱에 실패했거나 건너뛴 원문입니다. 대학 공지는 LLM으로 다시 파싱할 수 있고(건마다 비용 발생), 모든 원문은 직접 보며 수기로 정제할 수 있습니다.</p>
-						<p class="page-desc">LLM 크레딧 문제가 풀린 뒤나 수집기를 고친 뒤에 씁니다. 모집이 끝난 공고는 정상 제외라 여기 나오지 않습니다.</p>
+						<p class="page-desc">LLM 크레딧 문제가 풀린 뒤나 수집기를 고친 뒤에 씁니다. 모집이 끝난 공고는 정상 제외라 여기 나오지 않습니다. 기간을 몰라 남아 있지만 더 볼 필요가 없는 원문은 [만료 처리]로 숨깁니다.</p>
 					</div>
-					<div class="page-actions"><button type="button" class="btn" id="refreshFailures">새로고침</button><button type="button" class="btn btn-primary" id="retryFailures" disabled>선택 LLM 재처리</button></div>
+					<div class="page-actions"><button type="button" class="btn" id="refreshFailures">새로고침</button><button type="button" class="btn btn-primary" id="retryFailures" disabled>선택 LLM 재처리</button><button type="button" class="btn" id="dismissFailures" disabled>선택 만료 처리</button><button type="button" class="btn btn-primary" id="restoreFailures" disabled hidden>선택 되돌리기</button></div>
 				</div>
 				<div class="toolbar">
 					<input id="failureKeyword" class="grow" type="search" placeholder="원문 ID(숫자) · 게시물 번호 · 오류 문구" data-enter="searchFailures">
 					<input id="failureSource" type="search" placeholder="출처 코드" data-enter="searchFailures">
 					<select id="failureStatus" aria-label="상태"><option value="">모든 상태</option><option value="FAILED">파싱 실패</option><option value="SKIPPED">건너뜀</option><option value="IMAGE_ONLY">이미지만 있음</option></select>
 					<label class="check"><input id="failureRetryable" type="checkbox"> LLM 재처리 가능만 <i class="tip" tabindex="0" data-tip="대학 공지(UNIV_ 로 시작하는 출처)만 LLM 재처리를 지원합니다. 나머지는 수기 정제로 처리합니다.">?</i></label>
+					<label class="check"><input id="failureDismissed" type="checkbox"> 만료 처리됨 보기 <i class="tip" tabindex="0" data-tip="만료 처리해 목록에서 숨긴 원문만 봅니다. 여기서 [되돌리기]를 누르면 재처리 대기 목록에 다시 올라옵니다.">?</i></label>
 					<button type="button" class="btn btn-primary" id="searchFailures">검색</button>
 				</div>
 				<div class="card">
 					<div class="table-wrap tall">
 						<table>
-							<thead><tr><th class="check-col"><input type="checkbox" id="failureCheckAll" aria-label="이 페이지 전체 선택"></th><th>상태</th><th class="nowrap">원문</th><th>출처</th><th>오류</th><th class="nowrap">최근 변경(KST)</th><th>작업</th></tr></thead>
+							<thead><tr><th class="check-col"><input type="checkbox" id="failureCheckAll" aria-label="이 페이지 전체 선택"></th><th>상태</th><th class="nowrap">원문</th><th>출처</th><th id="failureErrorHead">오류</th><th class="nowrap" id="failureTimeHead">최근 변경(KST)</th><th>작업</th></tr></thead>
 							<tbody id="failureRows"></tbody>
 						</table>
 					</div>
@@ -278,8 +279,20 @@
 						<select id="duplicateOrigin" aria-label="생성 경로"></select>
 						<button type="button" class="btn btn-primary" id="searchDuplicates">검색</button>
 					</div>
+					<div class="select-row" id="duplicateSelectRow" hidden>
+						<label class="check"><input type="checkbox" id="duplicateCheckAll"> 이 페이지 전체 선택</label>
+						<span class="text-sm text-muted">여러 후보를 골라 한 번에 병합하거나 [중복 아님] 처리할 수 있습니다. 페이지를 옮기거나 검색하면 선택이 풀립니다.</span>
+					</div>
 					<div id="duplicateList"></div>
 					<div class="card"><div class="pager" id="duplicatePager"></div></div>
+					<div class="bulk-bar" id="duplicateBulkBar" role="region" aria-label="선택한 중복 후보 작업" hidden>
+						<span class="bulk-info" id="duplicateBulkInfo" aria-live="polite"></span>
+						<div class="actions">
+							<button type="button" class="btn btn-primary" id="bulkMerge">선택 병합</button>
+							<button type="button" class="btn" id="bulkReject">선택 중복 아님</button>
+							<button type="button" class="btn btn-ghost" id="bulkClear">선택 해제</button>
+						</div>
+					</div>
 				</div>
 				<div data-dup-panel="manual" hidden>
 					<div class="card">
@@ -479,34 +492,41 @@
 				</div>
 			</section>
 
-			<!-- ============================== 감사·복구 ============================== -->
+			<!-- ============================== 작업 기록(감사 로그) ============================== -->
 			<section class="page" id="audit">
 				<div class="page-head">
 					<div>
-						<h1>감사·복구</h1>
-						<p class="page-desc">관리자가 바꾼 모든 기록(감사 로그<i class="tip" tabindex="0" data-tip="누가 언제 무엇을 바꿨는지 남긴 기록입니다. 조회는 남지 않고 쓰기 작업만 남습니다.">?</i>)입니다. 잘못 바꾼 값은 여기서 되돌립니다.</p>
-						<p class="page-desc">[전후 비교]로 무엇이 바뀌었는지 보고, 되돌려야 하면 [복구]를 누르세요.</p>
+						<h1>관리자 작업 기록</h1>
+						<p class="page-desc">누가 언제 무엇을 바꿨는지 확인하고, 필요하면 되돌립니다.<i class="tip" tabindex="0" data-tip="관리자의 쓰기 작업만 남습니다(조회는 남지 않습니다). 예전 이름은 '감사·복구'입니다.">?</i></p>
+						<p class="page-desc">[전후 비교]·[등록 내용]으로 무엇이 바뀌었는지 보고, 되돌려야 하면 [복구]를 누르세요.</p>
 					</div>
 					<div class="page-actions"><button type="button" class="btn" id="refreshAudit">새로고침</button></div>
 				</div>
 				<div class="toolbar">
-					<select id="auditAction" aria-label="작업 종류"></select>
-					<select id="auditSize" aria-label="개수"><option value="50">최근 50건</option><option value="100">최근 100건</option><option value="200">최근 200건</option></select>
+					<select id="auditAction" aria-label="행위"></select>
+					<select id="auditActor" aria-label="관리자"><option value="">모든 관리자</option></select>
+					<select id="auditTargetType" aria-label="대상 종류"><option value="">모든 대상</option><option value="SCHOLARSHIP">장학금</option><option value="RAW_SCHOLARSHIP">원문</option><option value="REPORT">신고</option><option value="CONTENT_INQUIRY">문의</option><option value="ADMIN_LOGIN">로그인</option></select>
+					<input id="auditTargetId" type="number" min="1" placeholder="대상 ID" aria-label="대상 ID" data-enter="searchAudit" style="width:110px">
+					<label class="text-sm text-muted" for="auditFrom">기간(KST)</label>
+					<input id="auditFrom" type="date" aria-label="시작일"><span class="text-muted">~</span><input id="auditTo" type="date" aria-label="종료일">
+					<select id="auditSize" aria-label="쪽당 건수"><option value="50">50건씩</option><option value="100">100건씩</option></select>
 					<button type="button" class="btn btn-primary" id="searchAudit">조회</button>
 				</div>
 				<div class="card">
 					<div class="table-wrap tall">
 						<table>
-							<thead><tr><th class="nowrap">시각(KST)</th><th>관리자 <i class="tip" tabindex="0" data-tip="관리자 계정 ID 앞 8자리입니다. 이름 표시는 서버 지원이 필요합니다.">?</i></th><th>작업</th><th>대상</th><th>내용</th><th></th></tr></thead>
+							<thead><tr><th class="nowrap">시각(KST)</th><th>관리자 <i class="tip" tabindex="0" data-tip="관리자 이름(없으면 로그인 아이디)입니다. 마우스를 올리면 계정 ID 앞 8자리가 보입니다.">?</i></th><th>행위</th><th>대상</th><th>내용</th><th></th></tr></thead>
 							<tbody id="auditRows"></tbody>
 						</table>
 					</div>
+					<div class="pager" id="auditPager"></div>
 				</div>
 			</section>
 		</main>
 	</div>
 </div>
 <script src="/admin/admin-core.js"></script>
+<script src="/admin/admin-audit.js"></script>
 <script src="/admin/admin-console.js"></script>
 </body>
 </html>

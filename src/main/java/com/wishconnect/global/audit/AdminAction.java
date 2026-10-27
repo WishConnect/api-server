@@ -51,5 +51,44 @@ public enum AdminAction {
 	 * 감사 로그 복구 자체. before/after 에 복구 직전·직후 스냅샷이 남아, 이 기록으로 복구를 다시 되돌릴 수 있다.
 	 * detail 에 원래 기록 ID 와 되돌린 필드가 남는다.
 	 */
-	AUDIT_RESTORE
+	AUDIT_RESTORE,
+
+	/**
+	 * 실패 재처리 원본 만료 처리(목록에서 숨기기). 요청 1회당 1건. detail 에 건수·사유·연결 장학금 마감 건수가 남는다.
+	 * 연결 장학금을 마감했으면 장학금마다 SCHOLARSHIP_UPDATE(전후 스냅샷)가 따로 남는다.
+	 */
+	RAW_SCHOLARSHIP_DISMISS,
+
+	/** 원본 만료 처리 되돌리기. 장학금 상태는 되돌리지 않는다. */
+	RAW_SCHOLARSHIP_RESTORE,
+
+	/** 관리자 로그인 성공. detail 에 IP. */
+	ADMIN_LOGIN_SUCCESS,
+	/**
+	 * 관리자 로그인 실패(없는 아이디·비밀번호 오류·ADMIN 아님 — 응답은 모두 같다). 계정을 알면 actor 를, 모르면 null.
+	 * detail 에 가린 아이디·IP·실패 횟수. 비밀번호는 남기지 않는다.
+	 */
+	ADMIN_LOGIN_FAILURE,
+	/** 실패가 쌓여 잠겼거나, 잠긴 상태에서 다시 시도함. */
+	ADMIN_LOGIN_LOCKED,
+	/** 관리자 로그아웃(토큰으로 누군지 알 수 있을 때만). */
+	ADMIN_LOGOUT,
+
+	/** 대학 공지 LLM 파싱·재처리 수동 실행. LLM 비용이 든다. detail 에 조건·처리 건수. */
+	LLM_PARSE_TRIGGER,
+	/** 공공데이터 조건 보강(LLM) 수동 실행. */
+	KOSAF_CONDITION_TRIGGER,
+
+	/**
+	 * 관리자의 쓰기 요청이 400·500 으로 실패함(성공한 작업만 남던 빈틈). detail 에 메서드·경로·상태·오류 코드.
+	 * 아무것도 바뀌지 않은 시도의 기록이다.
+	 */
+	ADMIN_REQUEST_FAILED,
+	/** 일괄 병합·반려 중 실패한 후보(그 건은 바뀌지 않음). 200 응답 안의 실패라 ADMIN_REQUEST_FAILED 로는 잡히지 않는다. */
+	MERGE_CANDIDATE_FAILED,
+
+	/** 인사이트 수동 수집(외부 검색 API). */
+	INSIGHT_SYNC_TRIGGER,
+	/** 학교·전공 마스터 수동 동기화(추천 결과에 영향). */
+	UNIVERSITY_SYNC_TRIGGER
 }

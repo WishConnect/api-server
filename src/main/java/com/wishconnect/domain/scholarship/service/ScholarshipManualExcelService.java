@@ -74,6 +74,17 @@ public class ScholarshipManualExcelService {
 	}
 
 	public ManualExcelImportResult importFile(MultipartFile file, boolean dryRun) {
+		return importFile(file, dryRun, null);
+	}
+
+	/** 등록된 행마다 불린다(dryRun 이면 불리지 않는다). 작업 기록에 행별 등록 내용을 남기는 데 쓴다. */
+	@FunctionalInterface
+	public interface RowCreateListener {
+		void created(int excelRow, String clientKey,
+				com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse result);
+	}
+
+	public ManualExcelImportResult importFile(MultipartFile file, boolean dryRun, RowCreateListener listener) {
 		validateFile(file);
 		List<ManualExcelImportResult.RowError> errors = new ArrayList<>();
 		int total = 0;
@@ -96,7 +107,11 @@ public class ScholarshipManualExcelService {
 				String clientKey = text(row, 0);
 				try {
 					ScholarshipManualFullRequest request = request(row, clientKey, conditions, documents, images);
-					if (!dryRun) aggregateService.create(request);
+					if (!dryRun) {
+						com.wishconnect.domain.scholarship.dto.ScholarshipManualFullResponse result =
+								aggregateService.create(request);
+						if (listener != null && result != null) listener.created(index + 1, clientKey, result);
+					}
 					created++;
 				} catch (RuntimeException e) {
 					errors.add(new ManualExcelImportResult.RowError(index + 1, clientKey, reason(e)));

@@ -29,6 +29,7 @@ public class UniversityController {
 
 	private final UniversitySearchService universitySearchService;
 	private final AcademicInfoSyncService academicInfoSyncService;
+	private final com.wishconnect.global.audit.AdminAuditLogService adminAuditLogService;
 
 	/** 학교명을 키워드로 검색한다(온보딩 학교 선택용). */
 	@GetMapping("/search")
@@ -48,8 +49,15 @@ public class UniversityController {
 			description = "백그라운드로 실행하고 즉시 202 를 반환한다. 이미 실행 중이면 진행 중인 작업 상태를 그대로 돌려준다.")
 	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping("/sync")
-	public ResponseEntity<ApiResponse<AcademicInfoSyncStatusResponse>> syncAcademicInfo() {
-		return ResponseEntity.accepted().body(ApiResponse.ok(academicInfoSyncService.start()));
+	public ResponseEntity<ApiResponse<AcademicInfoSyncStatusResponse>> syncAcademicInfo(
+			@org.springframework.security.core.annotation.AuthenticationPrincipal String actorId) {
+		AcademicInfoSyncStatusResponse status = academicInfoSyncService.start();
+		// 학교·전공 마스터를 바꿔 추천 결과에 영향을 준다. 비동기라 시작 사실과 그때 상태만 남긴다(결과는 상태 조회 API).
+		adminAuditLogService.record(java.util.UUID.fromString(actorId),
+				com.wishconnect.global.audit.AdminAction.UNIVERSITY_SYNC_TRIGGER, null, null,
+				"학교·전공 마스터 동기화 시작 · 상태 " + status.state()
+						+ (status.message() == null ? "" : " · " + status.message()));
+		return ResponseEntity.accepted().body(ApiResponse.ok(status));
 	}
 
 	/** 마지막(또는 진행 중) 동기화 상태를 조회한다. */

@@ -31,19 +31,54 @@ public class AdminAuditLogController {
 
 	/** 화면에서 훑는 용도라 한 번에 많이 줄 이유가 없다. */
 	private static final int MAX_SIZE = 200;
+	/** 페이지 목록 한 쪽 최대 건수. */
+	private static final int MAX_PAGE_SIZE = 100;
 
 	private final AdminAuditLogService adminAuditLogService;
 	private final AdminAuditRestoreService adminAuditRestoreService;
+	private final AdminAuditLogViewAssembler adminAuditLogViewAssembler;
 
-	@Operation(summary = "감사 로그 조회", description = "관리자 쓰기 작업을 최신순으로 준다. (ADMIN 전용)")
+	@Operation(summary = "감사 로그 조회(작업 기록)",
+			description = "관리자 쓰기 작업을 최신순으로 준다. 행마다 관리자 이름(actorName, 없으면 로그인 아이디)과 "
+					+ "대상·요약에 적힌 장학금의 지금 제목(scholarships)을 함께 준다. 이메일·연락처는 주지 않는다. (ADMIN 전용)")
 	@GetMapping("/audit-log")
 	public ApiResponse<List<AdminAuditLogResponse>> auditLog(
 			@RequestParam(required = false) AdminAction action,
 			@RequestParam(defaultValue = "50") int size) {
 		int safeSize = Math.min(Math.max(size, 1), MAX_SIZE);
-		return ApiResponse.ok(adminAuditLogService.find(action, PageRequest.of(0, safeSize))
-				.map(AdminAuditLogResponse::from)
-				.getContent());
+		return ApiResponse.ok(adminAuditLogViewAssembler.assemble(
+				adminAuditLogService.find(action, PageRequest.of(0, safeSize)).getContent()));
+	}
+
+	@Operation(summary = "작업 기록 목록(페이지·필터)",
+			description = """
+					관리자 쓰기 작업을 최신순으로 페이지 단위로 준다(size 1~100, 기본 50). 응답은 Spring Page 모양이다.
+					필터(모두 선택): action, actorId(관리자 UUID), targetType(SCHOLARSHIP·RAW_SCHOLARSHIP·REPORT·CONTENT_INQUIRY·ADMIN_LOGIN),
+					targetId, from·to(한국 날짜 yyyy-MM-dd, 둘 다 포함). 행마다 actorName·scholarships 가 붙는다. (ADMIN 전용)
+					""")
+	@GetMapping("/audit-log/page")
+	public ApiResponse<org.springframework.data.domain.Page<AdminAuditLogResponse>> auditLogPage(
+			@RequestParam(required = false) AdminAction action,
+			@RequestParam(required = false) UUID actorId,
+			@RequestParam(required = false) String targetType,
+			@RequestParam(required = false) Long targetId,
+			@RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(
+					iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+			@RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(
+					iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "50") int size) {
+		PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
+		org.springframework.data.domain.Page<AdminAuditLog> logs = adminAuditLogService.search(
+				new AdminAuditLogSearch(action, actorId, targetType, targetId, from, to), pageable);
+		return ApiResponse.ok(new org.springframework.data.domain.PageImpl<>(
+				adminAuditLogViewAssembler.assemble(logs.getContent()), logs.getPageable(), logs.getTotalElements()));
+	}
+
+	@Operation(summary = "작업 기록의 관리자 목록", description = "관리자 필터용. 기록에 나온 관리자의 ID 와 이름(없으면 로그인 아이디). (ADMIN 전용)")
+	@GetMapping("/audit-log/actors")
+	public ApiResponse<List<AdminAuditLogViewAssembler.Actor>> auditLogActors() {
+		return ApiResponse.ok(adminAuditLogViewAssembler.actors(adminAuditLogService.actorIds()));
 	}
 
 	@Operation(summary = "감사 로그 복구 미리보기",
