@@ -142,7 +142,7 @@ public class UnivNoticeLlmParsingService {
 								UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page)
 						: rawScholarshipRepository.findReparseTargets(
 								UNIV_SOURCE_PREFIX, UnivNoticeLlmParser.PROMPT_VERSION, page))
-				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusOrderByIdAsc(
+				: rawScholarshipRepository.findBySourceStartingWithAndParseStatusAndDismissedAtIsNullOrderByIdAsc(
 						UNIV_SOURCE_PREFIX, ParseStatus.PENDING, page);
 		return run(targets, reparse, dryRun);
 	}
@@ -173,6 +173,13 @@ public class UnivNoticeLlmParsingService {
 		List<NoticeParsingResponse.Item> items = new ArrayList<>();
 
 		for (RawScholarship raw : targets) {
+			if (raw.isDismissed()) {
+				// 대상 쿼리가 이미 빼지만, 조회와 처리 사이에 만료 처리된 경우까지 막는다.
+				log.info("[KosafConditions] 만료 처리된 원본 건너뜀 rawId={}", raw.getId());
+				skipped++;
+				items.add(item(raw, ParseStatus.SKIPPED.name(), null, null, "만료 처리된 원본이라 건너뛰었습니다."));
+				continue;
+			}
 			try {
 				String body = KosafNoticeText.bodyOf(raw.getRawJson());
 				String title = KosafNoticeText.titleOf(raw.getRawJson());
@@ -238,6 +245,14 @@ public class UnivNoticeLlmParsingService {
 		List<NoticeParsingResponse.Item> items = new ArrayList<>();
 
 		for (RawScholarship raw : targets) {
+			if (raw.isDismissed()) {
+				// 관리자가 만료 처리한 원본. rawIds 로 직접 골라 보내도(선택 LLM 재처리) 다시 파싱하지 않는다.
+				log.info("[UnivLlmParsing] 만료 처리된 원본 건너뜀 rawId={}", raw.getId());
+				skipped++;
+				items.add(item(raw, ParseStatus.SKIPPED.name(), null, describePeriod(raw.getScholarship()),
+						"만료 처리된 원본이라 건너뛰었습니다. 다시 처리하려면 먼저 되돌리세요."));
+				continue;
+			}
 			try {
 				Outcome outcome = parseOne(raw, dryRun);
 				items.add(outcome.item());

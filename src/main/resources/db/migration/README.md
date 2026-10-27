@@ -75,8 +75,13 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20261003_03__scholarship_deleted_by.sql` | `scholarship.deleted_by`·`delete_reason` 추가 + 기존 관리자 내리기·병합 백필 (수집 배치 부활 차단) | ✅ 2026-10-04 |
 | `V20261006_01__scholarship_timeline_manual_schedule.sql` | 선발 일정 수기 입력(`scholarship_timeline` 에 단계·날짜 모양·미정 문구·비고·근거·출처·`updated_at` + CHECK 4개 + 인덱스) + `scholarship.period_locked`(모집기간 수기 고정) | ✅ 2026-10-06 |
 | `V20261008_01__scholarship_timeline_locked.sql` | 자동 일정 추출 시 수기 일정·수기 삭제 보호(`timeline_locked`), 기존 MANUAL 행 백필 | 미적용 — 배포 전 적용 |
+| `V20261026_01__raw_scholarship_dismiss.sql` | 실패 재처리 원본 만료 처리(`raw_scholarship.dismissed_at`·`dismissed_reason`(CHECK)·`dismissed_note`) + 감사 action CHECK 에 `RAW_SCHOLARSHIP_DISMISS`·`RAW_SCHOLARSHIP_RESTORE` | ⬜ 미적용 — 배포 전 적용 |
 
 > ⚠️ **`V20261008_01`은 새 백엔드 배포 전에 적용한다.** 운영 SQL은 자동 실행되지 않는다.
+
+> ⚠️ **`V20261026_01`은 배포보다 먼저** 적용해야 한다. `RawScholarship` 에 컬럼 3개가 새로 생겨 없으면 `validate` 가
+> 실패해 **애플리케이션이 뜨지 않는다.** 감사 action CHECK 를 함께 바꾸지 않으면 만료 처리·되돌리기의 감사 기록만
+> 조용히 빠진다(감사 기록 실패는 삼킨다). 여러 번 실행해도 같고, 되돌리기 SQL 은 파일 끝 주석에 있다.
 
 > ⚠️ **`V20261006_01` 은 배포보다 먼저** 적용해야 한다. `ScholarshipTimeline` 에 컬럼 7개, `Scholarship` 에
 > `period_locked` 가 새로 생겨 없으면 `validate` 가 실패해 **애플리케이션이 뜨지 않는다.**

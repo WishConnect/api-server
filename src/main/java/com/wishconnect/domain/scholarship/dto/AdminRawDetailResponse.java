@@ -15,6 +15,10 @@ public record AdminRawDetailResponse(
 		String parseStatus,
 		String parseError,
 		LocalDateTime crawledAt,
-		AdminScholarshipDetailResponse scholarship
+		AdminScholarshipDetailResponse scholarship,
+		/** 실패 재처리에서 만료 처리한 시각(안 했으면 null). */
+		LocalDateTime dismissedAt,
+		String dismissedReason,
+		String dismissedNote
 ) {
 }

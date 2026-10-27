@@ -185,6 +185,8 @@
 			OPEN_BUT_ENDED: '마감 지난 모집 중', MISSING_LINK: '링크 없음', MISSING_CONDITION: '조건 없음'
 		},
 		deleteKind: {ADMIN: '관리자가 내림', MERGE: '병합으로 내림', SYSTEM: '수집 배치가 내림'},
+		/** 실패 재처리 원문 만료 처리 사유(서버 RawDismissReason). */
+		dismissReason: {PERIOD_EXPIRED: '모집기간 경과', NOT_SCHOLARSHIP: '장학금 공고 아님', DUPLICATE: '중복', OTHER: '기타'},
 		/** 작업 기록의 행위 이름. 모르는 코드는 화면이 코드를 그대로 보여 준다(WC.audit.actionView). */
 		action: {
 			EXCEL_IMPORT: '엑셀 반영', SCHOLARSHIP_CREATE: '장학금 등록', SCHOLARSHIP_UPDATE: '장학금 수정',
@@ -193,7 +195,8 @@
 			REPORT_RESOLVE: '신고 처리', CONTENT_INQUIRY_RESOLVE: '콘텐츠 문의 처리', SYNC_TRIGGER: '공공데이터 수동 동기화',
 			COLLECT_TRIGGER: '대학 공지 수동 수집', CONDITION_EXTRACT_TRIGGER: '조건 추출 실행', CONDITION_REF_BACKFILL: '조건 참조 채우기',
 			ENRICH_TRIGGER: '상세·첨부·포스터 자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '중복 병합',
-			SCHOLARSHIP_MERGE_REJECT: '중복 아님 처리', MERGE_CANDIDATE_REOPEN: '중복 아님 취소', AUDIT_RESTORE: '작업 기록 복구'
+			SCHOLARSHIP_MERGE_REJECT: '중복 아님 처리', MERGE_CANDIDATE_REOPEN: '중복 아님 취소', AUDIT_RESTORE: '작업 기록 복구',
+			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기'
 		},
 		/**
 		 * 장학금 스냅샷 필드 이름(작업 기록 전후 비교·등록 내용). 통합 수정 화면 라벨과 같은 말을 쓴다.

@@ -19,12 +19,22 @@ import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateNoteRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkApproveRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkRejectRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
+import com.wishconnect.domain.scholarship.dto.RawDismissRequest;
+import com.wishconnect.domain.scholarship.dto.RawDismissResultResponse;
+import com.wishconnect.domain.scholarship.dto.RawRestoreRequest;
+import com.wishconnect.domain.scholarship.dto.RawRestoreResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
+import com.wishconnect.domain.scholarship.service.RawScholarshipDismissService;
+import com.wishconnect.domain.scholarship.service.MergeAuditDetail;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
+import com.wishconnect.domain.scholarship.service.ScholarshipMergeBulkService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionRefBackfillResponse;
@@ -118,6 +128,7 @@ public class ScholarshipAdminController {
 	private final RegionConditionBackfillService regionConditionBackfillService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
+	private final ScholarshipMergeBulkService scholarshipMergeBulkService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipManualAggregateService scholarshipManualAggregateService;
 	private final ScholarshipManualExcelService scholarshipManualExcelService;
@@ -129,6 +140,7 @@ public class ScholarshipAdminController {
 	private final AdminAuditLogService adminAuditLogService;
 	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
 	private final ScholarshipTakedownService scholarshipTakedownService;
+	private final RawScholarshipDismissService rawScholarshipDismissService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -210,16 +222,51 @@ public class ScholarshipAdminController {
 
 	@Operation(summary = "파싱 실패·건너뜀 원본 목록",
 			description = "FAILED, SKIPPED, IMAGE_ONLY 원본을 최근 실패 순으로 조회합니다. "
-					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다.")
+					+ "선택한 rawId는 대학 공지 LLM 파싱 API의 rawIds로 재처리할 수 있습니다. "
+					+ "dismissed=false(기본)면 만료 처리된 원본을 빼고(사이드바 배지·대시보드 수치와 같음), "
+					+ "dismissed=true 면 만료 처리된 원본만 상태와 무관하게 보여 줍니다.")
 	@GetMapping("/admin/failures")
 	public ApiResponse<Page<AdminRawFailureResponse>> adminFailures(
 			@RequestParam(required = false) String keyword,
 			@RequestParam(required = false) String source,
 			@RequestParam(required = false) ParseStatus status,
 			@RequestParam(defaultValue = "false") boolean retryableOnly,
+			@RequestParam(defaultValue = "false") boolean dismissed,
 			Pageable pageable) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.failures(
-				keyword, source, status, retryableOnly, pageable));
+				keyword, source, status, retryableOnly, dismissed, pageable));
+	}
+
+	@Operation(summary = "실패 원본 만료 처리",
+			description = """
+					더 처리할 필요가 없는 실패·건너뜀·이미지만 있는 원본(1~100건)을 실패 재처리 목록에서 숨긴다.
+					원본은 지우지 않고 dismissed_* 만 채우며, 매일 배치 파싱·LLM 재처리·공공데이터 동기화가 다시 처리하지 않는다.
+
+					- reason 필수(PERIOD_EXPIRED·NOT_SCHOLARSHIP·DUPLICATE·OTHER), OTHER 면 note 필수(200자 이하)
+					- closeLinkedScholarship=true 면 연결 장학금을 마감(CLOSED)으로 바꾼다(삭제 아님). 이미 마감·내려진 장학금은 건너뛴다.
+					  마감한 장학금은 SCHOLARSHIP_UPDATE 감사 기록(전후 스냅샷)으로도 남아 복구할 수 있다
+					- 연결 장학금이 OPEN/UPCOMING 이고 모집 마감 전이면 warningOpenScholarship=true(막지는 않는다)
+					- 건마다 따로 처리해 결과(DISMISSED·SKIPPED·FAILED)를 돌려준다. 요청 1회당 RAW_SCHOLARSHIP_DISMISS 감사 기록 1건
+					(ADMIN 전용)
+					""")
+	@PostMapping("/admin/failures/dismiss")
+	public ApiResponse<RawDismissResultResponse> dismissFailures(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody RawDismissRequest request) {
+		return ApiResponse.ok(rawScholarshipDismissService.dismiss(request.rawIds(), request.reason(), request.note(),
+				Boolean.TRUE.equals(request.closeLinkedScholarship()), UUID.fromString(actorId)));
+	}
+
+	@Operation(summary = "실패 원본 만료 처리 되돌리기",
+			description = """
+					만료 처리한 원본(1~100건)의 dismissed_* 를 비워 실패 재처리 목록에 다시 올린다. 연결 장학금의 모집 상태는
+					되돌리지 않는다(응답 notice). 요청 1회당 RAW_SCHOLARSHIP_RESTORE 감사 기록 1건. (ADMIN 전용)
+					""")
+	@PostMapping("/admin/failures/restore")
+	public ApiResponse<RawRestoreResultResponse> restoreFailures(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody RawRestoreRequest request) {
+		return ApiResponse.ok(rawScholarshipDismissService.restore(request.rawIds(), UUID.fromString(actorId)));
 	}
 
 	@Operation(summary = "장학금 데이터 이상 탐지",
@@ -423,10 +470,48 @@ public class ScholarshipAdminController {
 		UUID reviewer = UUID.fromString(actorId);
 		MergeResultResponse result = scholarshipDedupService.approve(candidateId, reviewer);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE,
-				"SCHOLARSHIP", result.primaryId(),
-				"중복 %d 를 %d 로 병합. %s".formatted(
-						result.duplicateId(), result.primaryId(), result.moved()));
+				"SCHOLARSHIP", result.primaryId(), MergeAuditDetail.merged(result));
 		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 후보 일괄 병합",
+			description = """
+					선택한 후보(1~50건)를 요청 순서대로 병합한다. **되돌릴 수 없는 작업이다.**
+
+					실행 전에 선택 전체를 검사해, 하나라도 걸리면 아무것도 병합하지 않고 400(MERGE_BULK_CONFLICT)을
+					돌려준다. 실패 응답 data.conflicts 에 후보 ID·관련 장학금 ID·사유 코드가 담긴다.
+					- NOT_FOUND / NOT_PENDING / DUPLICATE_ID
+					- SAME_DUPLICATE: 같은 장학금이 두 후보 이상에서 내릴 쪽
+					- CHAINED_MERGE: 한 후보의 내릴 쪽이 다른 선택 후보의 유지 쪽
+					- SCHOLARSHIP_DELETED: 유지 쪽이나 내릴 쪽이 이미 내려진 장학금
+
+					검사를 통과하면 후보마다 단건 병합과 같은 로직을 **별도 트랜잭션**으로 실행한다. 한 건이 실패해도
+					나머지는 계속 진행하고, 실행 중 다른 관리자가 먼저 처리한 후보는 SKIPPED 로 남긴다.
+					성공한 건마다 단건 병합과 같은 감사 기록(SCHOLARSHIP_MERGE)을 남기고 요약 앞에 "일괄 병합 N건 중 k번째"를
+					붙인다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/bulk-approve")
+	public ApiResponse<MergeBulkResultResponse> bulkApproveMerge(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody MergeBulkApproveRequest request) {
+		return ApiResponse.ok(scholarshipMergeBulkService.approve(request.candidateIds(), UUID.fromString(actorId)));
+	}
+
+	@Operation(summary = "중복 후보 일괄 반려(중복 아님)",
+			description = """
+					선택한 후보(1~50건)를 "중복 아님"으로 반려한다. 사유 note 는 필수(공백 불가, 500자 이하)이며
+					선택한 후보 전부에 같은 사유가 남는다. 단건 반려와 달리 사유를 본문으로만 받는다.
+
+					없는 후보·이미 처리된 후보·같은 ID 중복이 있으면 아무것도 반려하지 않고 400(MERGE_BULK_CONFLICT).
+					검사를 통과하면 후보마다 별도 트랜잭션으로 처리하고, 실행 중 다른 관리자가 먼저 처리한 후보는 SKIPPED.
+					성공한 건마다 SCHOLARSHIP_MERGE_REJECT 감사 기록을 남긴다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/bulk-reject")
+	public ApiResponse<MergeBulkResultResponse> bulkRejectMerge(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody MergeBulkRejectRequest request) {
+		return ApiResponse.ok(scholarshipMergeBulkService.reject(
+				request.candidateIds(), request.note(), UUID.fromString(actorId)));
 	}
 
 	@Operation(summary = "중복 장학금 후보 반려",
@@ -446,10 +531,7 @@ public class ScholarshipAdminController {
 		String note = request != null && request.note() != null ? request.note() : legacyNote;
 		MergeResultResponse result = scholarshipDedupService.reject(candidateId, reviewer, note);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE_REJECT,
-				"SCHOLARSHIP", result.primaryId(),
-				"중복 후보 %d 반려 (%d vs %d). %s".formatted(
-						candidateId, result.primaryId(), result.duplicateId(),
-						note == null ? "" : note));
+				"SCHOLARSHIP", result.primaryId(), MergeAuditDetail.rejected(candidateId, result, note));
 		return ApiResponse.ok(result);
 	}
 

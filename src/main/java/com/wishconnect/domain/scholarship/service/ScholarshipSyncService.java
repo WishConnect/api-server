@@ -116,6 +116,13 @@ public class ScholarshipSyncService {
 				.parseStatus(ParseStatus.PENDING)
 				.build());
 
+		if (rawScholarship.isDismissed()) {
+			// 관리자가 만료 처리한 원본: 본문만 최신으로 두고 상태·만료 표시·연결 장학금은 건드리지 않는다.
+			rawScholarship.refreshDismissedBody(sourceUrl, rawJson);
+			rawScholarshipRepository.save(rawScholarship);
+			log.info("[ScholarshipSync] 만료 처리된 원본 건너뜀 rawId={}", rawScholarship.getId());
+			return;
+		}
 		rawScholarship.updateRawData(sourceUrl, rawJson);
 		if (scholarshipMapper.isClosed(item.payload())) {
 			deactivateParsedData(rawScholarship.getScholarship());

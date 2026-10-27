@@ -51,5 +51,14 @@ public enum AdminAction {
 	 * 감사 로그 복구 자체. before/after 에 복구 직전·직후 스냅샷이 남아, 이 기록으로 복구를 다시 되돌릴 수 있다.
 	 * detail 에 원래 기록 ID 와 되돌린 필드가 남는다.
 	 */
-	AUDIT_RESTORE
+	AUDIT_RESTORE,
+
+	/**
+	 * 실패 재처리 원본 만료 처리(목록에서 숨기기). 요청 1회당 1건. detail 에 건수·사유·연결 장학금 마감 건수가 남는다.
+	 * 연결 장학금을 마감했으면 장학금마다 SCHOLARSHIP_UPDATE(전후 스냅샷)가 따로 남는다.
+	 */
+	RAW_SCHOLARSHIP_DISMISS,
+
+	/** 원본 만료 처리 되돌리기. 장학금 상태는 되돌리지 않는다. */
+	RAW_SCHOLARSHIP_RESTORE
 }
