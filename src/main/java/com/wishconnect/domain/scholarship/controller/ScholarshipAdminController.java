@@ -19,12 +19,17 @@ import com.wishconnect.domain.scholarship.dto.MergeDetectionResponse;
 import com.wishconnect.domain.scholarship.dto.ManualExcelImportResult;
 import com.wishconnect.domain.scholarship.dto.ManualMergeCandidateRequest;
 import com.wishconnect.domain.scholarship.dto.MergeCandidateNoteRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkApproveRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkRejectRequest;
+import com.wishconnect.domain.scholarship.dto.MergeBulkResultResponse;
 import com.wishconnect.domain.scholarship.dto.MergeResultResponse;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateStatus;
 import com.wishconnect.domain.scholarship.entity.MergeCandidateOrigin;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
 import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
+import com.wishconnect.domain.scholarship.service.MergeAuditDetail;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
+import com.wishconnect.domain.scholarship.service.ScholarshipMergeBulkService;
 import com.wishconnect.domain.scholarship.dto.NoticeParsingResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionExtractionResponse;
 import com.wishconnect.domain.scholarship.dto.ConditionRefBackfillResponse;
@@ -116,6 +121,7 @@ public class ScholarshipAdminController {
 	private final RegionConditionBackfillService regionConditionBackfillService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
+	private final ScholarshipMergeBulkService scholarshipMergeBulkService;
 	private final ScholarshipManualService scholarshipManualService;
 	private final ScholarshipManualAggregateService scholarshipManualAggregateService;
 	private final ScholarshipManualExcelService scholarshipManualExcelService;
@@ -421,10 +427,48 @@ public class ScholarshipAdminController {
 		UUID reviewer = UUID.fromString(actorId);
 		MergeResultResponse result = scholarshipDedupService.approve(candidateId, reviewer);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE,
-				"SCHOLARSHIP", result.primaryId(),
-				"중복 %d 를 %d 로 병합. %s".formatted(
-						result.duplicateId(), result.primaryId(), result.moved()));
+				"SCHOLARSHIP", result.primaryId(), MergeAuditDetail.merged(result));
 		return ApiResponse.ok(result);
+	}
+
+	@Operation(summary = "중복 후보 일괄 병합",
+			description = """
+					선택한 후보(1~50건)를 요청 순서대로 병합한다. **되돌릴 수 없는 작업이다.**
+
+					실행 전에 선택 전체를 검사해, 하나라도 걸리면 아무것도 병합하지 않고 400(MERGE_BULK_CONFLICT)을
+					돌려준다. 실패 응답 data.conflicts 에 후보 ID·관련 장학금 ID·사유 코드가 담긴다.
+					- NOT_FOUND / NOT_PENDING / DUPLICATE_ID
+					- SAME_DUPLICATE: 같은 장학금이 두 후보 이상에서 내릴 쪽
+					- CHAINED_MERGE: 한 후보의 내릴 쪽이 다른 선택 후보의 유지 쪽
+					- SCHOLARSHIP_DELETED: 유지 쪽이나 내릴 쪽이 이미 내려진 장학금
+
+					검사를 통과하면 후보마다 단건 병합과 같은 로직을 **별도 트랜잭션**으로 실행한다. 한 건이 실패해도
+					나머지는 계속 진행하고, 실행 중 다른 관리자가 먼저 처리한 후보는 SKIPPED 로 남긴다.
+					성공한 건마다 단건 병합과 같은 감사 기록(SCHOLARSHIP_MERGE)을 남기고 요약 앞에 "일괄 병합 N건 중 k번째"를
+					붙인다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/bulk-approve")
+	public ApiResponse<MergeBulkResultResponse> bulkApproveMerge(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody MergeBulkApproveRequest request) {
+		return ApiResponse.ok(scholarshipMergeBulkService.approve(request.candidateIds(), UUID.fromString(actorId)));
+	}
+
+	@Operation(summary = "중복 후보 일괄 반려(중복 아님)",
+			description = """
+					선택한 후보(1~50건)를 "중복 아님"으로 반려한다. 사유 note 는 필수(공백 불가, 500자 이하)이며
+					선택한 후보 전부에 같은 사유가 남는다. 단건 반려와 달리 사유를 본문으로만 받는다.
+
+					없는 후보·이미 처리된 후보·같은 ID 중복이 있으면 아무것도 반려하지 않고 400(MERGE_BULK_CONFLICT).
+					검사를 통과하면 후보마다 별도 트랜잭션으로 처리하고, 실행 중 다른 관리자가 먼저 처리한 후보는 SKIPPED.
+					성공한 건마다 SCHOLARSHIP_MERGE_REJECT 감사 기록을 남긴다. (ADMIN 전용)
+					""")
+	@PostMapping("/merge/candidates/bulk-reject")
+	public ApiResponse<MergeBulkResultResponse> bulkRejectMerge(
+			@AuthenticationPrincipal String actorId,
+			@RequestBody MergeBulkRejectRequest request) {
+		return ApiResponse.ok(scholarshipMergeBulkService.reject(
+				request.candidateIds(), request.note(), UUID.fromString(actorId)));
 	}
 
 	@Operation(summary = "중복 장학금 후보 반려",
@@ -444,10 +488,7 @@ public class ScholarshipAdminController {
 		String note = request != null && request.note() != null ? request.note() : legacyNote;
 		MergeResultResponse result = scholarshipDedupService.reject(candidateId, reviewer, note);
 		adminAuditLogService.record(reviewer, AdminAction.SCHOLARSHIP_MERGE_REJECT,
-				"SCHOLARSHIP", result.primaryId(),
-				"중복 후보 %d 반려 (%d vs %d). %s".formatted(
-						candidateId, result.primaryId(), result.duplicateId(),
-						note == null ? "" : note));
+				"SCHOLARSHIP", result.primaryId(), MergeAuditDetail.rejected(candidateId, result, note));
 		return ApiResponse.ok(result);
 	}
 
