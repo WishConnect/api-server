@@ -479,6 +479,12 @@ dialog.modal.audit { width: min(760px, calc(100vw - 32px)); }
 .sys-box { padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--c-border-strong); border-radius: var(--radius); }
 .sys-box .chg { margin-top: var(--sp-2); }
 .raw-toggle summary { color: var(--c-muted); }
+/* 등록 내용·내리기 직전 내용·병합 내용 */
+.audit-section { padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border); }
+.audit-section:last-of-type { border-bottom: 0; }
+.audit-section h3 { font-size: var(--fs-md); color: var(--c-text-2); margin-bottom: var(--sp-1); }
+.moved-list { list-style: none; margin: 0 0 var(--sp-2); padding: 0; display: grid; gap: 4px; font-size: var(--fs-md); }
+.moved-list li { display: flex; justify-content: space-between; gap: var(--sp-2); padding: 4px var(--sp-2); border-radius: var(--radius-sm); background: var(--c-surface-2); }
 .choice-list { display: grid; gap: var(--sp-1); }
 .choice { display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); cursor: pointer; font-size: var(--fs-md); }
 .choice:hover { background: var(--c-surface-2); }

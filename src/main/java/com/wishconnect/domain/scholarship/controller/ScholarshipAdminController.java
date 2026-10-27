@@ -71,6 +71,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ContentDisposition;
@@ -100,6 +101,7 @@ import org.springframework.web.multipart.MultipartFile;
  * 공공데이터 쿼터 소진, 대상 사이트 부하, LLM 과금으로 이어질 수 있어
  * 로그인만으로는 호출할 수 없어야 한다.
  */
+@Slf4j
 @Tag(name = "장학금 - 관리", description = "수집·동기화·조건추출 수동 트리거 (ADMIN 전용)")
 @RestController
 @RequestMapping("/api/v1/scholarships")
@@ -601,8 +603,8 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@Valid @RequestBody ScholarshipManualRequest.Create request) {
 		ScholarshipManualResponse result = scholarshipManualService.create(request);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
-				"SCHOLARSHIP", result.scholarshipId(), result.title());
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(), result.title(), null, createdSnapshot(result.scholarshipId()));
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
@@ -622,11 +624,11 @@ public class ScholarshipAdminController {
 			@AuthenticationPrincipal String actorId,
 			@Valid @RequestBody ScholarshipManualFullRequest request) {
 		ScholarshipManualFullResponse result = scholarshipManualAggregateService.create(request);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
 				"SCHOLARSHIP", result.scholarshipId(),
 				"통합 수기 등록: 원문 1, 조건 %d, 참조 %d, 서류 %d, 이미지 %s".formatted(
 						result.conditionCount(), result.conditionRefCount(), result.documentCount(),
-						result.imageSaved()));
+						result.imageSaved()), null, createdSnapshot(result.scholarshipId()));
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
@@ -638,8 +640,9 @@ public class ScholarshipAdminController {
 			@PathVariable Long rawId,
 			@Valid @RequestBody ScholarshipManualFullRequest request) {
 		ScholarshipManualFullResponse result = scholarshipManualAggregateService.createFromRaw(rawId, request);
-		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
-				"SCHOLARSHIP", result.scholarshipId(), "원본 #" + rawId + " 수기 정제");
+		adminAuditLogService.recordChange(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_CREATE,
+				"SCHOLARSHIP", result.scholarshipId(), "원본 #" + rawId + " 수기 정제", null,
+				createdSnapshot(result.scholarshipId()));
 		return ResponseEntity.status(201).body(ApiResponse.ok(result));
 	}
 
@@ -795,5 +798,19 @@ public class ScholarshipAdminController {
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.REPORT_RESOLVE,
 				"REPORT", reportId, String.valueOf(request.status()));
 		return ApiResponse.ok(result);
+	}
+
+	/**
+	 * 등록 직후 내용(통합 수정 기록과 같은 모양). 작업 기록의 "등록 내용" 화면이 쓴다. 이전 값이 없으므로 before 는 null 이고,
+	 * 그래서 복구 대상도 아니다(AdminAuditRestoreService 는 before 가 있는 수정·내리기만 복구한다). 조회가 실패해도 등록은 이미
+	 * 끝났으므로 감사 기록만 스냅샷 없이 남긴다.
+	 */
+	private AdminScholarshipEditSnapshot createdSnapshot(Long scholarshipId) {
+		try {
+			return AdminScholarshipEditSnapshot.from(scholarshipAdminOverviewService.detail(scholarshipId));
+		} catch (RuntimeException e) {
+			log.warn("[AdminAudit] 등록 스냅샷 조회 실패 scholarshipId={} : {}", scholarshipId, e.toString());
+			return null;
+		}
 	}
 }

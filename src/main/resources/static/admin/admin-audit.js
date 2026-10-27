@@ -211,6 +211,71 @@
 		return {known: Boolean(name), label: name || String(code || '-'), code: String(code || '')};
 	}
 
+	const MOVED_LABELS = {
+		'scrap.deletedDuplicate': '양쪽에 겹친 스크랩 정리', 'scrap.moved': '스크랩', 'essay.moved': '자기소개서', 'report.moved': '신고',
+		'dispatchLog.moved': '알림 발송 이력', 'recommendation.moved': '추천 기록', 'event.moved': '노출·클릭 기록', 'rawScholarship.moved': '수집 원문',
+		'image.moved': '포스터 이미지', 'image.keptOnDuplicate': '내린 쪽에 남긴 이미지', 'interviewPrep.moved': '면접 예상 질문',
+		'interviewPrep.keptOnDuplicate': '내린 쪽에 남긴 면접 질문', 'timeline.moved': '선발 일정', 'timeline.deletedOnDuplicate': '내린 쪽 선발 일정 삭제',
+		'conditionRef.deleted': '내린 쪽 조건 참조 삭제', 'condition.deleted': '내린 쪽 조건 삭제', 'document.deleted': '내린 쪽 서류 삭제'
+	};
+
+	/**
+	 * 병합·중복 아님 기록의 요약 문구를 읽는다. 서버 MergeAuditDetail 형식:
+	 *   "[일괄 병합 12건 중 3번째 · ]중복 307 를 683 로 병합. {scrap.moved=2, ...}"
+	 *   "[일괄 중복 아님 2건 중 1번째 · ]중복 후보 12 반려 (683 vs 307). 사유"
+	 * 요약은 1000자에서 잘릴 수 있어 옮긴 건수는 읽힌 만큼만 준다.
+	 */
+	function parseMergeDetail(action, detail) {
+		const text = String(detail || '');
+		const bulk = /^일괄 [^·]+ (\d+)건 중 (\d+)번째 · /.exec(text);
+		const result = {bulk: bulk ? {total: Number(bulk[1]), position: Number(bulk[2])} : null};
+		if (action === 'SCHOLARSHIP_MERGE') {
+			const m = /중복 (\d+) 를 (\d+) 로 병합/.exec(text);
+			if (!m) return null;
+			Object.assign(result, {dropId: Number(m[1]), keepId: Number(m[2]), moved: []});
+			const map = /\{([^}]*)\}?/.exec(text.slice(m.index));
+			if (map) {
+				map[1].split(',').map(part => part.trim().split('=')).filter(kv => kv.length === 2 && /^\d+$/.test(kv[1]))
+					.forEach(([key, count]) => result.moved.push({key, label: MOVED_LABELS[key] || key, count: Number(count)}));
+			}
+			return result;
+		}
+		if (action === 'SCHOLARSHIP_MERGE_REJECT') {
+			const m = /중복 후보 (\d+) 반려 \((\d+) vs (\d+)\)\.\s?(.*)$/s.exec(text);
+			if (!m) return null;
+			return Object.assign(result, {candidateId: Number(m[1]), keepId: Number(m[2]), dropId: Number(m[3]), note: m[4].trim() || null});
+		}
+		return null;
+	}
+
+	/* ================================================================== 등록·내리기 내용 */
+
+	/** 등록 내용 화면의 구성(오른쪽 상세 패널과 같은 묶음). */
+	const SECTIONS = [
+		['기본 정보', ['title', 'provider', 'scholarshipType', 'recruitmentStatus', 'noticeKind', 'combined', 'contact', 'homepageUrl', 'detailUrl']],
+		['모집기간', ['applicationStartAt', 'applicationEndAt', 'periodLocked']],
+		['금액·인원', ['amount', 'selectionCount']],
+		['요약·설명', ['summary', 'description']],
+		['제출·자기소개서·면접', ['submissionChannel', 'submissionMethod', 'submissionEvidence', 'essayRequirement', 'essayEvidence',
+			'interviewRequirement', 'interviewEvidence']]
+	];
+	/** 비어 있으면 "입력하지 않은 항목"으로 알릴 필드(선택 입력이라도 사용자 화면에 빈 칸으로 보이는 것). */
+	const EXPECTED = ['provider', 'applicationStartAt', 'applicationEndAt', 'amount', 'selectionCount', 'summary', 'description',
+		'homepageUrl', 'detailUrl', 'contact', 'submissionChannel', 'submissionMethod'];
+
+	/** 스냅샷 하나를 섹션별 [라벨, 값] 목록과 빈 항목으로. 스냅샷에 없는 필드는 건너뛴다(옛 기록). */
+	function snapshotSections(snapshot) {
+		const snap = normalizeSnapshot(snapshot);
+		if (!snap) return null;
+		const sections = SECTIONS.map(([title, keys]) => ({title, rows: keys.filter(key => key in snap.fields && !isEmpty(snap.fields[key]))
+			.map(key => ({key, label: fieldLabel(key), value: formatValue(key, snap.fields[key])}))})).filter(section => section.rows.length);
+		const lists = LIST_FIELDS.filter(key => key in snap.lists).map(key => ({key, label: fieldLabel(key),
+			rows: snap.lists[key].map(row => ({text: (LIST_RULES[key] || LIST_RULES.documents).sentence(row), autoExtracted: Boolean(row.autoExtracted)}))}));
+		const missing = EXPECTED.filter(key => key in snap.fields && isEmpty(snap.fields[key])).map(fieldLabel)
+			.concat(lists.filter(list => !list.rows.length && list.key !== 'images').map(list => list.label));
+		return {sections, lists, missing, deletedAt: snap.fields.deletedAt || null};
+	}
+
 	/* ================================================================== HTML */
 
 	const AUTO_TIP = 'autoExtracted=true. LLM 조건 재추출 대상에서 뺀다는 표시입니다. 수기로 저장한 조건도 true 로 저장되므로 "LLM 이 만든 조건"이라는 뜻은 아닙니다.';
@@ -288,13 +353,70 @@
 		return '<div class="chg-list">' + main + '</div>' + system + rawToggle(row);
 	}
 
+	function sectionsHtml(view) {
+		return view.sections.map(section => '<div class="audit-section"><h3>' + esc(section.title) + '</h3><dl class="kv">' +
+			section.rows.map(r => '<dt>' + esc(r.label) + '</dt><dd>' + esc(r.value) + '</dd>').join('') + '</dl></div>').join('') +
+			view.lists.map(list => '<div class="audit-section"><h3>' + esc(list.label) + ' ' + list.rows.length + '개</h3>' + (list.rows.length
+				? '<ul class="row-diff">' + list.rows.map(r => '<li class="row-same"><span class="row-sign">·</span><span>' + esc(r.text) + autoBadge(r) + '</span></li>').join('') + '</ul>'
+				: '<p class="text-muted text-sm">없음</p>') + '</div>').join('');
+	}
+
+	/** 등록 기록: 등록 직후 스냅샷으로 "무엇을 어떻게 등록했는지". 옛 기록은 스냅샷이 없다. */
+	function createBodyHtml(row) {
+		let snapshot = null;
+		try { snapshot = JSON.parse(row.afterJson); } catch (ignored) { snapshot = null; }
+		const view = snapshotSections(snapshot);
+		if (!view) {
+			return '<div class="notice neutral"><b>등록 당시 내용이 기록되지 않았습니다.</b> 이 기능 전에 남은 기록이라 등록 요약만 있습니다.</div>' +
+				(row.targetId ? '<div class="actions"><button type="button" class="btn btn-sm btn-primary" data-audit-open-current="' + row.targetId + '">현재 내용 보기</button>' +
+					'<span class="text-sm text-muted">전체 장학금에서 지금 상태를 엽니다(그 뒤 수정됐을 수 있음).</span></div>' : '');
+		}
+		return (view.missing.length ? '<div class="notice warn"><b>입력하지 않은 항목:</b> ' + esc(view.missing.join(', ')) + '</div>' : '') +
+			sectionsHtml(view) + '<p class="field-help">포스터 이미지는 등록 기록에 담기지 않습니다. 요약의 "이미지" 값과 [이미지 관리]를 보세요.</p>' + rawToggle(row);
+	}
+
+	/** 내리기 기록: 내려가기 직전 스냅샷(장학금 기본 필드만 있다). */
+	function deleteBodyHtml(row) {
+		let snapshot = null;
+		try { snapshot = JSON.parse(row.beforeJson); } catch (ignored) { snapshot = null; }
+		const view = snapshotSections(snapshot);
+		const reason = /사유: (.*)$/s.exec(String(row.detail || ''));
+		const head = reason ? '<div class="notice warn"><b>내린 사유:</b> ' + esc(reason[1]) + '</div>' : '';
+		if (!view) return head + '<div class="notice neutral">내려가기 직전 내용이 기록되지 않았습니다.</div>';
+		return head + '<p class="section-label">내려가기 직전 내용</p>' + sectionsHtml(view) +
+			'<p class="field-help">내리기 기록에는 기본 정보만 남습니다(조건·서류·선발 일정은 그대로 장학금에 남아 있습니다).</p>' + rawToggle(row);
+	}
+
 	const scholarshipName = (row, id) => {
 		const ref = (row.scholarships || {})[id];
 		return '#' + id + ' ' + (ref && ref.title ? ref.title : '(제목을 찾지 못함)') + (ref && ref.deleted ? ' (내려짐)' : '');
 	};
 
+	/** 병합·중복 아님 기록: 유지 대상·내린 대상, 사유, 옮긴 참조 건수. */
+	function mergeBodyHtml(row) {
+		const info = parseMergeDetail(row.action, row.detail);
+		if (!info) return '<div class="notice neutral">요약 문구를 읽지 못했습니다.</div><p class="text-sm">' + esc(row.detail || '') + '</p>';
+		const merge = row.action === 'SCHOLARSHIP_MERGE';
+		const pair = '<dl class="kv"><dt>유지 대상</dt><dd>' + scholarshipLinkHtml(info.keepId, scholarshipName(row, info.keepId)) + '</dd>' +
+			'<dt>' + (merge ? '내린 대상' : '다른 쪽') + '</dt><dd>' + scholarshipLinkHtml(info.dropId, scholarshipName(row, info.dropId)) + '</dd>' +
+			(info.candidateId ? '<dt>후보</dt><dd>#' + info.candidateId + '</dd>' : '') +
+			(info.bulk ? '<dt>처리 방식</dt><dd>일괄 처리 ' + info.bulk.total + '건 중 ' + info.bulk.position + '번째</dd>' : '') + '</dl>';
+		const note = !merge ? '<div class="notice neutral"><b>중복이 아닌 근거:</b> ' + esc(info.note || '(사유 없음)') + '</div>' : '';
+		const movedRows = (info.moved || []).filter(m => m.count > 0);
+		const moved = merge ? '<p class="section-label">옮기거나 정리한 데이터</p>' + (movedRows.length
+			? '<ul class="moved-list">' + movedRows.map(m => '<li><span>' + esc(m.label) + '</span><b>' + m.count.toLocaleString('ko-KR') + '건</b></li>').join('') + '</ul>'
+			: '<p class="text-muted text-sm">옮긴 사용자 데이터가 없습니다' + ((info.moved || []).length ? '' : '(요약에 건수가 남지 않았거나 잘렸습니다)') + '.</p>') : '';
+		return pair + note + moved + '<p class="field-help">제목은 지금 값입니다. 병합 뒤 바뀌었을 수 있습니다.</p>';
+	}
+
+	const scholarshipLinkHtml = (id, text) => '<button type="button" class="btn-link" data-open-scholarship="' + id + '">' + esc(text) + '</button>';
+
 	/** 기록 종류별로 어떤 상세를 열지. 버튼 문구와 본문을 함께 정한다. */
 	function detailKind(row) {
+		if (row.action === 'SCHOLARSHIP_CREATE') return {label: '등록 내용', body: createBodyHtml};
+		if (row.action === 'SCHOLARSHIP_DELETE') return {label: row.beforeJson ? '내리기 직전 내용' : '내리기 내용', body: deleteBodyHtml};
+		if (row.action === 'SCHOLARSHIP_MERGE') return {label: '병합 내용', body: mergeBodyHtml};
+		if (row.action === 'SCHOLARSHIP_MERGE_REJECT') return {label: '처리 내용', body: mergeBodyHtml};
 		if (row.beforeJson || row.afterJson) return {label: '전후 비교', body: diffBodyHtml};
 		return null;
 	}
@@ -302,8 +424,8 @@
 	WC.audit = {
 		// 순수 함수(테스트 대상)
 		normalizeSnapshot, formatValue, diffSnapshots, listDiff, wordDiff, conditionSentence, documentSentence, timelineSentence,
-		actionView, SYSTEM_FIELDS,
+		actionView, parseMergeDetail, snapshotSections, SYSTEM_FIELDS,
 		// 화면
-		diffBodyHtml, detailKind, scholarshipName
+		diffBodyHtml, createBodyHtml, deleteBodyHtml, mergeBodyHtml, detailKind, scholarshipName
 	};
 })(typeof window !== 'undefined' ? window : globalThis);
