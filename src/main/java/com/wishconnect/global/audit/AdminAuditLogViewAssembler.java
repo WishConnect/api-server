@@ -64,6 +64,19 @@ public class AdminAuditLogViewAssembler {
 		}).toList();
 	}
 
+	/** 관리자 필터 항목. 이름이 없으면 로그인 아이디, 계정이 없어졌으면 UUID 앞 8자리. */
+	public record Actor(UUID actorId, String name) {
+	}
+
+	@Transactional(readOnly = true)
+	public List<Actor> actors(Collection<UUID> actorIds) {
+		Map<UUID, String> names = actorNames(actorIds);
+		return actorIds.stream().distinct()
+				.map(id -> new Actor(id, names.getOrDefault(id, id.toString().substring(0, 8))))
+				.sorted(java.util.Comparator.comparing(Actor::name))
+				.toList();
+	}
+
 	/** 기록이 가리키는 장학금 ID: 대상(장학금일 때) + 병합·반려 요약에 적힌 두 장학금. */
 	static Set<Long> scholarshipIds(AdminAuditLog log) {
 		Set<Long> ids = new LinkedHashSet<>();
