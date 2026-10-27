@@ -4,8 +4,15 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 
-public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, Long> {
+public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, Long>,
+		JpaSpecificationExecutor<AdminAuditLog> {
+
+	/** 작업 기록에 한 번이라도 나온 관리자(관리자 필터 목록). 로그인 실패처럼 행위자가 없는 행은 뺀다. */
+	@Query("select distinct a.actorId from AdminAuditLog a where a.actorId is not null")
+	List<java.util.UUID> findDistinctActorIds();
 
 	Page<AdminAuditLog> findAllByOrderByIdDesc(Pageable pageable);
 

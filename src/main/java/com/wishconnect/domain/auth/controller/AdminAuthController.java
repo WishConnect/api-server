@@ -54,6 +54,7 @@ public class AdminAuthController {
 	@Operation(summary = "관리자 로그아웃", description = "관리자 화면 접근 쿠키를 삭제합니다.")
 	@PostMapping("/logout")
 	public ResponseEntity<ApiResponse<Void>> logout(HttpServletRequest servletRequest) {
+		adminAuthService.logout(AdminSessionSlidingFilter.resolveToken(servletRequest), servletRequest.getRemoteAddr());
 		return ResponseEntity.ok()
 				.header(HttpHeaders.SET_COOKIE, createCookie("", 0, servletRequest.isSecure()).toString())
 				.body(ApiResponse.ok());

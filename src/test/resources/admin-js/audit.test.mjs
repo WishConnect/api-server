@@ -147,3 +147,21 @@ test('기록 종류별 상세 버튼', () => {
 	assert.equal(A.detailKind({action: 'SCHOLARSHIP_AGGREGATE_UPDATE', beforeJson: '{}', afterJson: '{}'}).label, '전후 비교');
 	assert.equal(A.detailKind({action: 'SYNC_TRIGGER'}), null);
 });
+
+test('포스터 교체 기록: 이미지 필드 라벨·파일 크기, 처음 등록은 빈 값에서 새 값으로', () => {
+	assert.equal(A.formatValue('fileSize', 1536), '2 KB');
+	const before = {imageId: 3, s3Key: 'scholarships/admin/a.png', originalName: 'a.png', contentType: 'image/png', fileSize: 1024, sourceUrl: null};
+	const after = {imageId: 3, s3Key: 'scholarships/admin/b.png', originalName: 'b.png', contentType: 'image/png', fileSize: 2048, sourceUrl: 'https://x.test/b.png'};
+	const changed = plain(A.diffSnapshots(before, after)).changes.map(c => c.label);
+	assert.deepEqual(changed.sort(), ['원본 주소', '저장 위치(S3 키)', '파일 이름', '파일 크기'].sort());
+	const first = A.diffBodyHtml({beforeJson: null, afterJson: JSON.stringify(after)});
+	assert.match(first, /저장 위치\(S3 키\)/);
+	assert.match(first, /\(비어 있음\)/);
+});
+
+test('새로 남기는 작업 이름(로그인·LLM·실패 요청·동기화)', () => {
+	for (const [code, name] of [['ADMIN_LOGIN_FAILURE', '로그인 실패'], ['LLM_PARSE_TRIGGER', '공지 LLM 파싱·재처리'],
+		['ADMIN_REQUEST_FAILED', '실패한 요청'], ['MERGE_CANDIDATE_FAILED', '일괄 처리 실패 후보'], ['UNIVERSITY_SYNC_TRIGGER', '학교·전공 동기화']]) {
+		assert.deepEqual(plain(A.actionView(code)), {known: true, label: name, code});
+	}
+});

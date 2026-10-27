@@ -74,6 +74,7 @@
 		if (BOOLS.includes(key)) return value === true || value === 'true' ? '예' : '아니오';
 		if (key === 'amount') return Number(value).toLocaleString('ko-KR') + '원';
 		if (key === 'selectionCount') return Number(value).toLocaleString('ko-KR') + '명';
+		if (key === 'fileSize') return fmt.bytes(Number(value));
 		if (ENUMS[key]) return label(ENUMS[key], value);
 		if (typeof value === 'object') return JSON.stringify(value);
 		return String(value);
@@ -344,7 +345,9 @@
 	/** 전후 비교 본문. */
 	function diffBodyHtml(row) {
 		const parse = text => { try { return JSON.parse(text); } catch (ignored) { return null; } };
-		const result = diffSnapshots(parse(row.beforeJson), parse(row.afterJson));
+		// 처음 등록(포스터 첫 등록 등)은 이전 값이 없다. 빈 기록과 비교해 새로 생긴 값으로 보여 준다.
+		const after = parse(row.afterJson), before = parse(row.beforeJson) || (after && typeof after === 'object' && !Array.isArray(after) ? {} : null);
+		const result = diffSnapshots(before, after);
 		if (!result) return '<div class="notice neutral">이 기록은 비교할 수 있는 형식이 아닙니다. 아래 원본 데이터를 보세요.</div>' + rawToggle(row);
 		const main = result.changes.length ? result.changes.map(changeHtml).join('')
 			: '<div class="state compact"><b>내용이 바뀐 항목이 없습니다.</b><div>저장만 하고 값은 그대로였거나, 자동으로 바뀌는 항목만 달라졌습니다.</div></div>';

@@ -14,7 +14,7 @@
 
 	const PAGE_SIZE = 20;
 	const pageNo = {intake: 0, failures: 0, anomaly: 0, scholarship: 0, always: 0, duplicate: 0, image: 0,
-		report: 0, inquiry: 0, jobs: 0, jobFailures: 0};
+		report: 0, inquiry: 0, jobs: 0, jobFailures: 0, audit: 0};
 	let currentPage = null;
 
 	/* ================================================================== 공통 도우미 */
@@ -1866,7 +1866,8 @@
 			return scholarshipLink(row.targetId, '#' + row.targetId + (ref && ref.title ? ' ' + ref.title : '')) +
 				(ref && ref.deleted ? ' <span class="badge b-danger">내려짐</span>' : '');
 		}
-		if (!row.targetType) return '<span class="text-muted">전체 대상</span>';
+		// 실패한 요청은 대상이 경로에 들어 있어 따로 없다(내용 칸의 경로를 본다).
+		if (!row.targetType) return '<span class="text-muted">' + (row.action === 'ADMIN_REQUEST_FAILED' ? '-' : '전체 대상') + '</span>';
 		return esc((TARGET_NAMES[row.targetType] || label('targetType', row.targetType)) + (row.targetId ? ' #' + row.targetId : ''));
 	}
 
@@ -1875,20 +1876,38 @@
 		const view = WC.audit.actionView(row.action);
 		return (view.known ? '<span class="audit-action">' + esc(view.label) + '</span>'
 			: '<span class="audit-action mono" title="화면에 이름이 아직 없는 작업입니다">' + esc(view.code) + '</span>') +
-			'<span class="cell-sub mono">' + esc(view.known ? view.code : '이름 없는 작업 코드') + '</span>' +
+			'<span class="cell-sub mono audit-code" title="' + esc(view.code) + '">' + esc(view.known ? view.code : '이름 없는 작업 코드') + '</span>' +
 			(row.restoredAt ? '<span class="cell-sub text-success">복구됨 ' + esc(fmt.tsDay(row.restoredAt)) + '</span>' : '');
 	}
 
 	function auditActorHtml(row) {
+		if (!row.actorId) return '<span class="text-muted" title="로그인 실패처럼 누군지 모르는 시도입니다">(알 수 없음)</span>';
 		const short = String(row.actorId || '-').slice(0, 8);
 		return row.actorName ? '<span title="계정 ID ' + esc(short) + '">' + esc(row.actorName) + '</span>'
 			: '<span class="mono" title="이름을 찾지 못한 계정(삭제됐을 수 있음)">' + esc(short) + '</span>';
 	}
 
+	let auditActorsLoaded = false;
+	/** 관리자 필터 목록은 처음 한 번만 불러온다(기록에 나온 관리자). */
+	async function loadAuditActors() {
+		if (auditActorsLoaded) return;
+		try {
+			const actors = await api('/api/v1/admin/audit-log/actors', {background: true});
+			$('auditActor').innerHTML = '<option value="">모든 관리자</option>' + actors.map(a =>
+				'<option value="' + esc(a.actorId) + '">' + esc(a.name) + '</option>').join('');
+			auditActorsLoaded = true;
+		} catch (ignored) { /* 목록 없이도 조회는 된다 */ }
+	}
+
 	async function loadAudit() {
 		const body = $('auditRows');
+		loadAuditActors();
 		await view.load(body, async () => {
-			const rows = await api(qs('/api/v1/admin/audit-log', {action: $('auditAction').value, size: $('auditSize').value}));
+			const page = await api(qs('/api/v1/admin/audit-log/page', {action: $('auditAction').value, actorId: $('auditActor').value,
+				targetType: $('auditTargetType').value, targetId: val('auditTargetId'), from: $('auditFrom').value, to: $('auditTo').value,
+				page: pageNo.audit, size: $('auditSize').value}));
+			renderPager('auditPager', page, 'audit', loadAudit);
+			const rows = page.content;
 			auditRows = new Map(rows.map(row => [row.id, row]));
 			return rows.length ? rows.map(row => '<tr>' + cells([
 				'<span class="nowrap">' + esc(fmt.tsDay(row.createdAt)) + '</span>',
@@ -1900,7 +1919,7 @@
 					? '<button type="button" class="btn btn-sm" data-audit-diff="' + row.id + '">' + esc(WC.audit.detailKind(row).label) + '</button>'
 					: '<span class="text-muted text-sm" title="이 작업은 바뀐 값을 저장하지 않습니다">비교 기록 없음</span>') +
 					(row.restorable && !row.restoredAt ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-audit-restore="' + row.id + '">복구…</button>' : '') + '</div>'
-			]) + '</tr>').join('') : view.row(6, view.emptyHtml('기록이 없습니다.'));
+			]) + '</tr>').join('') : view.row(6, view.emptyHtml('기록이 없습니다.', '필터를 풀거나 기간을 넓혀 보세요.'));
 		}, {colspan: 6, what: '작업 기록을'});
 		body.querySelectorAll('[data-audit-diff]').forEach(b => b.onclick = () => showAuditDiff(auditRows.get(Number(b.dataset.auditDiff))));
 		body.querySelectorAll('[data-audit-restore]').forEach(b => b.onclick = () => restoreAudit(auditRows.get(Number(b.dataset.auditRestore)), b));
@@ -2514,7 +2533,8 @@
 		click('closeAlertDrawer', () => toggleAlertDrawer(false));
 		document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('alertDrawer').hidden && !document.querySelector('dialog[open]')) toggleAlertDrawer(false); });
 		click('refreshAudit', () => loadAudit());
-		click('searchAudit', () => loadAudit());
+		click('searchAudit', () => { pageNo.audit = 0; loadAudit(); });
+		['auditAction', 'auditActor', 'auditTargetType', 'auditSize'].forEach(id => $(id).addEventListener('change', () => { pageNo.audit = 0; loadAudit(); }));
 
 		resetManualForm();
 		$('manualAddCondition').onclick = () => $('manualConditions').appendChild(conditionRow());

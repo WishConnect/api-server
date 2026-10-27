@@ -76,6 +76,7 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20261006_01__scholarship_timeline_manual_schedule.sql` | 선발 일정 수기 입력(`scholarship_timeline` 에 단계·날짜 모양·미정 문구·비고·근거·출처·`updated_at` + CHECK 4개 + 인덱스) + `scholarship.period_locked`(모집기간 수기 고정) | ✅ 2026-10-06 |
 | `V20261008_01__scholarship_timeline_locked.sql` | 자동 일정 추출 시 수기 일정·수기 삭제 보호(`timeline_locked`), 기존 MANUAL 행 백필 | 미적용 — 배포 전 적용 |
 | `V20261026_01__raw_scholarship_dismiss.sql` | 실패 재처리 원본 만료 처리(`raw_scholarship.dismissed_at`·`dismissed_reason`(CHECK)·`dismissed_note`) + 감사 action CHECK 에 `RAW_SCHOLARSHIP_DISMISS`·`RAW_SCHOLARSHIP_RESTORE` | ⬜ 미적용 — 배포 전 적용 |
+| `V20261027_01__admin_audit_coverage.sql` | 작업 기록 확장: `admin_audit_log.actor_id` NULL 허용(로그인 실패), action CHECK 에 로그인·LLM 재처리·실패 요청·동기화 등 10개, 기간·관리자·대상 인덱스 3개 | ⬜ 미적용 — `V20261026_01` 다음, 배포 전 적용 |
 
 > ⚠️ **`V20261008_01`은 새 백엔드 배포 전에 적용한다.** 운영 SQL은 자동 실행되지 않는다.
 

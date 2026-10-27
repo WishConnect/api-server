@@ -67,6 +67,19 @@ public class AdminAuditLogService {
 				: adminAuditLogRepository.findAllByActionOrderByIdDesc(action, pageable);
 	}
 
+	/** 작업 기록 목록(필터·페이지). 늘 최신순(id 내림차순)이다. */
+	@Transactional(readOnly = true)
+	public Page<AdminAuditLog> search(AdminAuditLogSearch search, Pageable pageable) {
+		Pageable byIdDesc = org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+				org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "id"));
+		return adminAuditLogRepository.findAll(search.toSpecification(java.time.ZoneId.systemDefault()), byIdDesc);
+	}
+
+	@Transactional(readOnly = true)
+	public java.util.List<UUID> actorIds() {
+		return adminAuditLogRepository.findDistinctActorIds();
+	}
+
 	/** detail 이 길어 컬럼을 넘치면 저장 자체가 실패한다. 기록이 사라지느니 잘라서 남긴다. */
 	private String truncate(String detail) {
 		if (detail == null || detail.length() <= DETAIL_MAX) {

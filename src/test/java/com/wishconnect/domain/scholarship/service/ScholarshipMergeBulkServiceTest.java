@@ -305,6 +305,24 @@ class ScholarshipMergeBulkServiceTest {
 						+ a.getPrimary().getId() + " vs " + a.getDuplicate().getId() + "). 캠퍼스가 다름");
 	}
 
+	@Test
+	@DisplayName("실패한 후보는 MERGE_CANDIDATE_FAILED 로 남긴다(건너뜀은 남기지 않음)")
+	void auditsFailures() {
+		ScholarshipMergeCandidate failed = candidate(scholarship(), scholarship());
+		ScholarshipMergeCandidate skipped = candidate(scholarship(), scholarship());
+		willThrow(new CustomException(ErrorCode.MERGE_FAILED)).given(dedupService).approve(eq(failed.getId()), any());
+		willThrow(new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING))
+				.given(dedupService).approve(eq(skipped.getId()), any());
+
+		service.approve(List.of(failed.getId(), skipped.getId()), reviewer);
+
+		ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+		verify(auditLogService, times(1)).record(eq(reviewer), eq(AdminAction.MERGE_CANDIDATE_FAILED), eq("SCHOLARSHIP"),
+				eq(failed.getPrimary().getId()), detail.capture());
+		assertThat(detail.getValue()).startsWith("일괄 병합 2건 중 1번째 · 중복 후보 " + failed.getId() + " (")
+				.contains("실패: MERGE_FAILED");
+	}
+
 	// --- 도우미 ---
 
 	private MergeResultResponse merged(Long candidateId) {

@@ -29,6 +29,9 @@ class UniversityControllerTest {
 	private MockMvc mockMvc;
 
 	@MockBean
+	private com.wishconnect.global.audit.AdminAuditLogService adminAuditLogService;
+
+	@MockBean
 	private UniversitySearchService universitySearchService;
 
 	@MockBean

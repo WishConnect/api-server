@@ -37,7 +37,7 @@ public class AdminAuditLogViewAssembler {
 
 	/** 병합 요약 "중복 307 를 683 로 병합" (ScholarshipAdminController·일괄 병합이 남기는 형식). */
 	private static final Pattern MERGED = Pattern.compile("중복 (\\d+) 를 (\\d+) 로 병합");
-	/** 반려 요약 "중복 후보 12 반려 (683 vs 307)". */
+	/** 반려·실패 요약 "중복 후보 12 반려 (683 vs 307)", "중복 후보 12 (683 vs 307) 실패". */
 	private static final Pattern REJECTED = Pattern.compile("\\((\\d+) vs (\\d+)\\)");
 
 	private final UserRepository userRepository;
@@ -64,6 +64,19 @@ public class AdminAuditLogViewAssembler {
 		}).toList();
 	}
 
+	/** 관리자 필터 항목. 이름이 없으면 로그인 아이디, 계정이 없어졌으면 UUID 앞 8자리. */
+	public record Actor(UUID actorId, String name) {
+	}
+
+	@Transactional(readOnly = true)
+	public List<Actor> actors(Collection<UUID> actorIds) {
+		Map<UUID, String> names = actorNames(actorIds);
+		return actorIds.stream().distinct()
+				.map(id -> new Actor(id, names.getOrDefault(id, id.toString().substring(0, 8))))
+				.sorted(java.util.Comparator.comparing(Actor::name))
+				.toList();
+	}
+
 	/** 기록이 가리키는 장학금 ID: 대상(장학금일 때) + 병합·반려 요약에 적힌 두 장학금. */
 	static Set<Long> scholarshipIds(AdminAuditLog log) {
 		Set<Long> ids = new LinkedHashSet<>();
@@ -72,7 +85,8 @@ public class AdminAuditLogViewAssembler {
 		}
 		String detail = log.getDetail();
 		if (detail != null && (log.getAction() == AdminAction.SCHOLARSHIP_MERGE
-				|| log.getAction() == AdminAction.SCHOLARSHIP_MERGE_REJECT)) {
+				|| log.getAction() == AdminAction.SCHOLARSHIP_MERGE_REJECT
+				|| log.getAction() == AdminAction.MERGE_CANDIDATE_FAILED)) {
 			Matcher matcher = (log.getAction() == AdminAction.SCHOLARSHIP_MERGE ? MERGED : REJECTED).matcher(detail);
 			if (matcher.find()) {
 				ids.add(Long.valueOf(matcher.group(1)));

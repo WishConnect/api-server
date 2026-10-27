@@ -102,6 +102,20 @@ public class ScholarshipExcelService {
 	 * 오류 행은 건너뛰고 계속 진행해, 한 줄이 잘못됐다고 전체가 막히지 않게 한다.
 	 */
 	public ExcelImportResult importFrom(MultipartFile file, boolean dryRun) {
+		return importFrom(file, dryRun, null);
+	}
+
+	/** 반영된 행마다 불린다(dryRun 이면 불리지 않는다). 작업 기록에 행별 전후 값을 남기는 데 쓴다. */
+	@FunctionalInterface
+	public interface RowUpdateListener {
+		void updated(int excelRow, Long scholarshipId,
+				com.wishconnect.domain.scholarship.dto.ScholarshipAdminChangeResult change);
+	}
+
+	/**
+	 * @param listener 반영된 행마다 불린다(null 이면 무시). 행 하나가 반영되면 그 행은 이미 저장된 상태다.
+	 */
+	public ExcelImportResult importFrom(MultipartFile file, boolean dryRun, RowUpdateListener listener) {
 		validateFile(file);
 
 		List<ExcelImportResult.RowError> errors = new ArrayList<>();
@@ -124,7 +138,7 @@ public class ScholarshipExcelService {
 				// 엑셀 화면의 행번호(1-based)로 보고해야 사람이 찾을 수 있다.
 				int displayRow = i + 1;
 				try {
-					if (applyRow(row, dryRun)) {
+					if (applyRow(row, dryRun, displayRow, listener)) {
 						applied++;
 					}
 				} catch (CustomException e) {
@@ -157,7 +171,7 @@ public class ScholarshipExcelService {
 	}
 
 	/** 한 행 반영. 바뀐 값이 하나도 없으면 false 를 돌려 "반영 건수"에서 뺀다. */
-	private boolean applyRow(Row row, boolean dryRun) {
+	private boolean applyRow(Row row, boolean dryRun, int displayRow, RowUpdateListener listener) {
 		Long id = readLong(row.getCell(COL_ID));
 		if (id == null) {
 			// 내보내기 파일에는 ID 가 항상 채워져 있다. 비어 있다면 사람이 새로 추가한 행이다.
@@ -187,7 +201,11 @@ public class ScholarshipExcelService {
 			}
 			return true;
 		}
-		scholarshipManualService.update(id, request);
+		com.wishconnect.domain.scholarship.dto.ScholarshipAdminChangeResult change =
+				scholarshipManualService.updateWithSnapshot(id, request);
+		if (listener != null && change != null) {
+			listener.updated(displayRow, id, change);
+		}
 		return true;
 	}
 

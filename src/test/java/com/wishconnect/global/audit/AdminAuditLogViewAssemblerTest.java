@@ -115,6 +115,25 @@ class AdminAuditLogViewAssemblerTest {
 				.contains("actorName", "scholarships");
 	}
 
+	@Test
+	@DisplayName("관리자 필터 목록: 이름(없으면 로그인 아이디, 계정이 없으면 UUID 앞 8자리)으로 정렬")
+	void actorList() {
+		var actors = assembler.actors(List.of(named, gone, loginOnly, named));
+
+		assertThat(actors).extracting(AdminAuditLogViewAssembler.Actor::actorId).containsExactlyInAnyOrder(named, gone, loginOnly);
+		assertThat(actors).extracting(AdminAuditLogViewAssembler.Actor::name)
+				.contains("김관리", "admin2", gone.toString().substring(0, 8)).isSorted();
+	}
+
+	@Test
+	@DisplayName("일괄 병합 실패 기록도 요약의 두 장학금 제목을 붙인다")
+	void mergeFailureScholarships() {
+		List<AdminAuditLogResponse> rows = assembler.assemble(List.of(log(1L, named, AdminAction.MERGE_CANDIDATE_FAILED,
+				"SCHOLARSHIP", 683L, "일괄 병합 3건 중 2번째 · 중복 후보 12 (683 vs 307) 실패: MERGE_FAILED · ...")));
+
+		assertThat(rows.get(0).scholarships()).containsOnlyKeys(683L, 307L);
+	}
+
 	private static AdminAuditLog log(Long id, UUID actor, AdminAction action, String targetType, Long targetId,
 			String detail) {
 		AdminAuditLog log = AdminAuditLog.builder().actorId(actor).action(action).targetType(targetType)

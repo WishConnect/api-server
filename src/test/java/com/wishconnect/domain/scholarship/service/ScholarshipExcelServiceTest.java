@@ -122,7 +122,7 @@ class ScholarshipExcelServiceTest {
 		assertThat(result.dryRun()).isTrue();
 		assertThat(result.appliedRows()).isEqualTo(1);
 		assertThat(result.errorCount()).isZero();
-		verify(scholarshipManualService, never()).update(anyLong(), any());
+		verify(scholarshipManualService, never()).updateWithSnapshot(anyLong(), any());
 	}
 
 	@Test
@@ -133,7 +133,7 @@ class ScholarshipExcelServiceTest {
 		assertThat(result.appliedRows()).isEqualTo(1);
 		ArgumentCaptor<ScholarshipManualRequest> captor =
 				ArgumentCaptor.forClass(ScholarshipManualRequest.class);
-		verify(scholarshipManualService).update(anyLong(), captor.capture());
+		verify(scholarshipManualService).updateWithSnapshot(anyLong(), captor.capture());
 		assertThat(captor.getValue().title()).isEqualTo("수정된 제목");
 	}
 
@@ -145,7 +145,7 @@ class ScholarshipExcelServiceTest {
 
 		ArgumentCaptor<ScholarshipManualRequest> captor =
 				ArgumentCaptor.forClass(ScholarshipManualRequest.class);
-		verify(scholarshipManualService).update(anyLong(), captor.capture());
+		verify(scholarshipManualService).updateWithSnapshot(anyLong(), captor.capture());
 		ScholarshipManualRequest request = captor.getValue();
 		assertThat(request.title()).isEqualTo("제목만 수정");
 		assertThat(request.provider()).isNull();
@@ -160,7 +160,7 @@ class ScholarshipExcelServiceTest {
 		ExcelImportResult result = service.importFrom(xlsx(101L), false);
 
 		assertThat(result.appliedRows()).isZero();
-		verify(scholarshipManualService, never()).update(anyLong(), any());
+		verify(scholarshipManualService, never()).updateWithSnapshot(anyLong(), any());
 	}
 
 	@Test
@@ -193,7 +193,7 @@ class ScholarshipExcelServiceTest {
 
 		ArgumentCaptor<ScholarshipManualRequest> captor =
 				ArgumentCaptor.forClass(ScholarshipManualRequest.class);
-		verify(scholarshipManualService).update(anyLong(), captor.capture());
+		verify(scholarshipManualService).updateWithSnapshot(anyLong(), captor.capture());
 		assertThat(captor.getValue().amount()).isEqualTo(1_500_000L);
 	}
 

@@ -62,7 +62,7 @@ class MigrationCheckConstraintTest {
 	@Test
 	@DisplayName("admin_audit_log.action CHECK = AdminAction")
 	void auditAction() throws IOException {
-		assertThat(checkValues("V20261026_01__raw_scholarship_dismiss.sql", "admin_audit_log_action_check"))
+		assertThat(checkValues("V20261027_01__admin_audit_coverage.sql", "admin_audit_log_action_check"))
 				.containsExactlyInAnyOrderElementsOf(enumNames(com.wishconnect.global.audit.AdminAction.class));
 	}
 

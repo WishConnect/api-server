@@ -55,7 +55,9 @@ public class ContentInquiryAdminController {
 			@Valid @RequestBody ContentInquiryResolveRequest request) {
 		ContentInquiryResponse response = contentInquiryService.resolve(inquiryId, request);
 		adminAuditLogService.record(UUID.fromString(actorId), AdminAction.CONTENT_INQUIRY_RESOLVE,
-				"CONTENT_INQUIRY", inquiryId, String.valueOf(request.status()));
+				"CONTENT_INQUIRY", inquiryId,
+				com.wishconnect.global.audit.AdminAuditDetails.resolution(
+						String.valueOf(request.status()), request.adminNote()));
 		return ApiResponse.ok(response);
 	}
 }
