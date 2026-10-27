@@ -34,16 +34,18 @@ public class AdminAuditLogController {
 
 	private final AdminAuditLogService adminAuditLogService;
 	private final AdminAuditRestoreService adminAuditRestoreService;
+	private final AdminAuditLogViewAssembler adminAuditLogViewAssembler;
 
-	@Operation(summary = "감사 로그 조회", description = "관리자 쓰기 작업을 최신순으로 준다. (ADMIN 전용)")
+	@Operation(summary = "감사 로그 조회(작업 기록)",
+			description = "관리자 쓰기 작업을 최신순으로 준다. 행마다 관리자 이름(actorName, 없으면 로그인 아이디)과 "
+					+ "대상·요약에 적힌 장학금의 지금 제목(scholarships)을 함께 준다. 이메일·연락처는 주지 않는다. (ADMIN 전용)")
 	@GetMapping("/audit-log")
 	public ApiResponse<List<AdminAuditLogResponse>> auditLog(
 			@RequestParam(required = false) AdminAction action,
 			@RequestParam(defaultValue = "50") int size) {
 		int safeSize = Math.min(Math.max(size, 1), MAX_SIZE);
-		return ApiResponse.ok(adminAuditLogService.find(action, PageRequest.of(0, safeSize))
-				.map(AdminAuditLogResponse::from)
-				.getContent());
+		return ApiResponse.ok(adminAuditLogViewAssembler.assemble(
+				adminAuditLogService.find(action, PageRequest.of(0, safeSize)).getContent()));
 	}
 
 	@Operation(summary = "감사 로그 복구 미리보기",

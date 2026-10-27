@@ -36,7 +36,7 @@
 		<nav class="nav">
 			<button type="button" data-page="system"><span class="ico">◉</span>시스템 상태</button>
 			<button type="button" data-page="batches"><span class="ico">◷</span>배치 실행 이력<span class="count" data-count="batches" title="확인이 필요한 배치 실행 수"></span></button>
-			<button type="button" data-page="audit"><span class="ico">⌁</span>감사·복구</button>
+			<button type="button" data-page="audit"><span class="ico">⌁</span>작업 기록</button>
 		</nav>
 		<div class="sidebar-foot">모든 시각은 한국 시간(KST)입니다.</div>
 	</aside>
@@ -479,13 +479,13 @@
 				</div>
 			</section>
 
-			<!-- ============================== 감사·복구 ============================== -->
+			<!-- ============================== 작업 기록(감사 로그) ============================== -->
 			<section class="page" id="audit">
 				<div class="page-head">
 					<div>
-						<h1>감사·복구</h1>
-						<p class="page-desc">관리자가 바꾼 모든 기록(감사 로그<i class="tip" tabindex="0" data-tip="누가 언제 무엇을 바꿨는지 남긴 기록입니다. 조회는 남지 않고 쓰기 작업만 남습니다.">?</i>)입니다. 잘못 바꾼 값은 여기서 되돌립니다.</p>
-						<p class="page-desc">[전후 비교]로 무엇이 바뀌었는지 보고, 되돌려야 하면 [복구]를 누르세요.</p>
+						<h1>관리자 작업 기록</h1>
+						<p class="page-desc">누가 언제 무엇을 바꿨는지 확인하고, 필요하면 되돌립니다.<i class="tip" tabindex="0" data-tip="관리자의 쓰기 작업만 남습니다(조회는 남지 않습니다). 예전 이름은 '감사·복구'입니다.">?</i></p>
+						<p class="page-desc">[전후 비교]·[등록 내용]으로 무엇이 바뀌었는지 보고, 되돌려야 하면 [복구]를 누르세요.</p>
 					</div>
 					<div class="page-actions"><button type="button" class="btn" id="refreshAudit">새로고침</button></div>
 				</div>
@@ -497,7 +497,7 @@
 				<div class="card">
 					<div class="table-wrap tall">
 						<table>
-							<thead><tr><th class="nowrap">시각(KST)</th><th>관리자 <i class="tip" tabindex="0" data-tip="관리자 계정 ID 앞 8자리입니다. 이름 표시는 서버 지원이 필요합니다.">?</i></th><th>작업</th><th>대상</th><th>내용</th><th></th></tr></thead>
+							<thead><tr><th class="nowrap">시각(KST)</th><th>관리자 <i class="tip" tabindex="0" data-tip="관리자 이름(없으면 로그인 아이디)입니다. 마우스를 올리면 계정 ID 앞 8자리가 보입니다.">?</i></th><th>행위</th><th>대상</th><th>내용</th><th></th></tr></thead>
 							<tbody id="auditRows"></tbody>
 						</table>
 					</div>
@@ -507,6 +507,7 @@
 	</div>
 </div>
 <script src="/admin/admin-core.js"></script>
+<script src="/admin/admin-audit.js"></script>
 <script src="/admin/admin-console.js"></script>
 </body>
 </html>

@@ -1042,7 +1042,7 @@
 			title: mode === 'edit' ? '#' + scholarshipId + ' 통합 수정' : '원문 #' + raw.rawId + ' 수기 정제',
 			subtitle: mode === 'edit' ? '장학금 본문·조건·서류·선발 일정·자소서/면접 분기를 함께 저장합니다.' : '이 원문으로 새 장학금을 만듭니다.',
 			size: 'xl', body, confirmLabel: mode === 'edit' ? '저장' : '장학금 만들기',
-			footNote: mode === 'edit' ? '저장 기록은 [감사·복구]에 남아 되돌릴 수 있습니다.' : '',
+			footNote: mode === 'edit' ? '저장 기록은 [작업 기록]에 남아 되돌릴 수 있습니다.' : '',
 			onConfirm: async () => {
 				const payload = collectForm(body, mode, sourceExtra);
 				const path = mode === 'edit' ? '/api/v1/scholarships/manual/' + scholarshipId + '/full' : '/api/v1/scholarships/admin/raw/' + raw.rawId + '/manual';
@@ -1066,7 +1066,7 @@
 								'<tr' + (r[3] === 'recruitmentStatus' ? ' class="warn-row"' : '') + '><td class="nowrap"><b>' + esc(r[0]) + '</b></td><td class="val before">' +
 								esc(r[1]) + '</td><td class="val after">' + esc(r[2]) + '</td></tr>').join('') + '</tbody></table>' +
 							'<p class="field-help" style="margin:var(--sp-2) 0 var(--sp-3)">모집 상태는 날짜로 자동 계산되지 않습니다. 고른 값 그대로 저장됩니다.</p>',
-						reversible: 'yes', reversibleText: '[감사·복구]에서 이 저장 기록을 열어 필드별로 되돌릴 수 있습니다.',
+						reversible: 'yes', reversibleText: '[작업 기록]에서 이 저장 기록을 열어 필드별로 되돌릴 수 있습니다.',
 						onConfirm: () => save()
 					});
 					if (!result) return false;
@@ -1467,7 +1467,7 @@
 		return name === 'inquiry' ? loadInquiries() : loadReports();
 	}
 
-	/* ---------- 시스템·배치·감사 */
+	/* ---------- 시스템·배치·작업 기록 */
 
 	async function loadSystem() {
 		const target = $('systemStats');
@@ -1568,25 +1568,51 @@
 	}
 
 	let auditRows = new Map();
+	const TARGET_NAMES = {RAW_SCHOLARSHIP: '원문', REPORT: '신고', CONTENT_INQUIRY: '문의'};
+
+	/** 대상 칸: 장학금이면 "#725 장학금 제목"(지금 제목, 없으면 ID 만), 그 밖은 "원문 #12" 처럼. */
+	function auditTargetHtml(row) {
+		if (row.targetType === 'SCHOLARSHIP' && row.targetId) {
+			const ref = (row.scholarships || {})[row.targetId];
+			return scholarshipLink(row.targetId, '#' + row.targetId + (ref && ref.title ? ' ' + ref.title : '')) +
+				(ref && ref.deleted ? ' <span class="badge b-danger">내려짐</span>' : '');
+		}
+		if (!row.targetType) return '<span class="text-muted">전체 대상</span>';
+		return esc((TARGET_NAMES[row.targetType] || label('targetType', row.targetType)) + (row.targetId ? ' #' + row.targetId : ''));
+	}
+
+	/** 행위 칸: 한글 행위명 + 작은 코드. 모르는 코드(새 작업)는 코드를 그대로 보여 준다. */
+	function auditActionHtml(row) {
+		const view = WC.audit.actionView(row.action);
+		return (view.known ? '<span class="audit-action">' + esc(view.label) + '</span>'
+			: '<span class="audit-action mono" title="화면에 이름이 아직 없는 작업입니다">' + esc(view.code) + '</span>') +
+			'<span class="cell-sub mono">' + esc(view.known ? view.code : '이름 없는 작업 코드') + '</span>' +
+			(row.restoredAt ? '<span class="cell-sub text-success">복구됨 ' + esc(fmt.tsDay(row.restoredAt)) + '</span>' : '');
+	}
+
+	function auditActorHtml(row) {
+		const short = String(row.actorId || '-').slice(0, 8);
+		return row.actorName ? '<span title="계정 ID ' + esc(short) + '">' + esc(row.actorName) + '</span>'
+			: '<span class="mono" title="이름을 찾지 못한 계정(삭제됐을 수 있음)">' + esc(short) + '</span>';
+	}
+
 	async function loadAudit() {
 		const body = $('auditRows');
 		await view.load(body, async () => {
 			const rows = await api(qs('/api/v1/admin/audit-log', {action: $('auditAction').value, size: $('auditSize').value}));
 			auditRows = new Map(rows.map(row => [row.id, row]));
 			return rows.length ? rows.map(row => '<tr>' + cells([
-				'<span class="nowrap">' + esc(fmt.ts(row.createdAt)) + '</span>',
-				'<span class="mono" title="' + esc(row.actorId || '') + '">' + esc(String(row.actorId || '-').slice(0, 8)) + '</span>',
-				'<span class="badge b-brand" title="' + esc(row.action) + '">' + esc(label('action', row.action)) + '</span>' +
-					(row.restoredAt ? '<span class="cell-sub text-success">복구됨 ' + esc(fmt.ts(row.restoredAt)) + '</span>' : ''),
-				row.targetType === 'SCHOLARSHIP' && row.targetId ? scholarshipLink(row.targetId, '장학금 #' + row.targetId)
-					: esc(row.targetType ? label('targetType', row.targetType) + ' #' + row.targetId : '-'),
+				'<span class="nowrap">' + esc(fmt.tsDay(row.createdAt)) + '</span>',
+				auditActorHtml(row),
+				auditActionHtml(row),
+				auditTargetHtml(row),
 				'<span class="clamp-2" title="' + esc(row.detail || '') + '">' + esc(row.detail || '-') + '</span>',
 				'<div class="actions">' + (row.beforeJson || row.afterJson
 					? '<button type="button" class="btn btn-sm" data-audit-diff="' + row.id + '">전후 비교</button>'
 					: '<span class="text-muted text-sm" title="이 작업은 바뀐 값을 저장하지 않습니다">비교 기록 없음</span>') +
 					(row.restorable && !row.restoredAt ? '<button type="button" class="btn btn-sm btn-danger-ghost" data-audit-restore="' + row.id + '">복구…</button>' : '') + '</div>'
 			]) + '</tr>').join('') : view.row(6, view.emptyHtml('기록이 없습니다.'));
-		}, {colspan: 6, what: '감사 기록을'});
+		}, {colspan: 6, what: '작업 기록을'});
 		body.querySelectorAll('[data-audit-diff]').forEach(b => b.onclick = () => showAuditDiff(auditRows.get(Number(b.dataset.auditDiff))));
 		body.querySelectorAll('[data-audit-restore]').forEach(b => b.onclick = () => restoreAudit(auditRows.get(Number(b.dataset.auditRestore)), b));
 		bindOpenScholarship(body);
@@ -1635,7 +1661,7 @@
 			html = '<div class="grid-2"><div><p class="section-label">이전</p><div class="raw">' + esc(showValue(before)) + '</div></div>' +
 				'<div><p class="section-label">이후</p><div class="raw">' + esc(showValue(after)) + '</div></div></div>';
 		}
-		ui.notify(label('action', row.action) + ' · ' + fmt.tsKst(row.createdAt), '<p class="text-sm text-muted" style="margin-bottom:var(--sp-3)">' +
+		ui.notify(WC.audit.actionView(row.action).label + ' · ' + fmt.tsDay(row.createdAt), '<p class="text-sm text-muted" style="margin-bottom:var(--sp-3)">' +
 			esc(row.detail || '') + '</p>' + html);
 	}
 
@@ -1772,7 +1798,7 @@
 			title: '상시모집 마감 처리', confirmLabel: '마감 처리',
 			targets: [{id: '장학금 #' + id, title}],
 			summary: ['모집 상태: 상시모집 → <b>마감</b>', '사용자 목록에서 마감된 공고로 보입니다.'],
-			reversible: 'yes', reversibleText: '[감사·복구] 또는 통합 수정에서 모집 상태를 다시 바꿀 수 있습니다.',
+			reversible: 'yes', reversibleText: '[작업 기록] 또는 통합 수정에서 모집 상태를 다시 바꿀 수 있습니다.',
 			extraHtml: '<div class="notice neutral">원문에서 모집이 실제로 끝났는지 먼저 확인하세요.</div>',
 			onConfirm: async () => {
 				await api('/api/v1/scholarships/manual/' + id, {method: 'PATCH', body: {recruitmentStatus: 'CLOSED'}});
@@ -1884,7 +1910,7 @@
 		const fields = preview.fields || [];
 		const later = preview.laterChanges || [];
 		const body = '<div class="target-box"><span class="target-id">' + esc(label('targetType', preview.targetType, '대상')) + ' #' + esc(preview.targetId) + ' · 기록 #' +
-			preview.logId + ' · ' + esc(fmt.tsKst(preview.recordedAt)) + ' · 관리자 ' + esc(String(preview.recordedBy || '-').slice(0, 8)) + '</span><span class="target-title">' +
+			preview.logId + ' · ' + esc(fmt.tsKst(preview.recordedAt)) + ' · 관리자 ' + esc(row.actorName || String(preview.recordedBy || '-').slice(0, 8)) + '</span><span class="target-title">' +
 			esc(label('action', preview.action)) + (row.detail ? ' — ' + esc(row.detail) : '') + '</span></div>' +
 			(preview.changedSinceRecord ? '<div class="notice warn"><b>이 기록 이후 같은 장학금에 다른 변경이 있었습니다.</b> 노란 줄의 필드를 복구하면 그 뒤의 변경(다른 관리자 수정, 배치 마감 처리 등)을 덮어씁니다.' +
 				(later.length ? '<ul>' + later.map(c => '<li>' + esc(fmt.ts(c.createdAt)) + ' KST · ' + esc(label('action', c.action)) + (c.detail ? ' · ' + esc(c.detail) : '') + '</li>').join('') + '</ul>' : '') + '</div>' : '') +
@@ -1899,7 +1925,7 @@
 					'</td><td class="val after" title="' + esc(recorded.full) + '">' + esc(recorded.text) + '</td><td class="val" title="' + esc(logged.full) + '">' + esc(logged.text) +
 					'</td><td class="val' + (f.changedSinceRecord ? ' text-warning' : '') + '" title="' + esc(current.full) + '">' + esc(current.text) + '</td></tr>';
 			}).join('') : '<tr><td colspan="5">' + view.emptyHtml('이 기록에 되돌릴 필드가 없습니다.') + '</td></tr>') + '</tbody></table></div>' +
-			'<div class="revert yes" style="margin-top:var(--sp-3)"><b>되돌릴 수 있습니다.</b> 복구도 감사 기록으로 남아, 그 기록으로 복구를 다시 되돌릴 수 있습니다.</div>' +
+			'<div class="revert yes" style="margin-top:var(--sp-3)"><b>되돌릴 수 있습니다.</b> 복구도 작업 기록으로 남아, 그 기록으로 복구를 다시 되돌릴 수 있습니다.</div>' +
 			'<div class="form-field"><label for="restoreReason">복구 사유 <span class="text-muted">(선택)</span></label><textarea id="restoreReason" class="textarea" maxlength="300" placeholder="예: 잘못 바꾼 제목 되돌림"></textarea></div>';
 		const checked = root => [...root.querySelectorAll('[data-field]:checked')].map(box => box.dataset.field);
 		return ui.modal({
@@ -1965,7 +1991,7 @@
 				'다음 날 수집 배치가 다시 살리지 않습니다.'],
 			extraHtml: mergeBlock + warnings,
 			reversible: 'yes', reversibleText: '[전체 장학금]에서 "내린 장학금 포함"을 켜고 [복원]을 누르면 되돌릴 수 있습니다.',
-			reason: {label: '내리는 사유', required: true, placeholder: '예: 장학금이 아닌 행사 안내 공고, 모집 취소 공고', help: '감사 기록과 장학금에 남고, 삭제 포함 목록에 보입니다.'},
+			reason: {label: '내리는 사유', required: true, placeholder: '예: 장학금이 아닌 행사 안내 공고, 모집 취소 공고', help: '작업 기록과 장학금에 남고, 삭제 포함 목록에 보입니다.'},
 			onOpen: (root, ctx) => {
 				root.querySelectorAll('[data-go-candidate]').forEach(b => b.onclick = () => {
 					ctx.close(null);
@@ -2085,7 +2111,7 @@
 			title: applyTitle, confirmLabel: '실제 반영',
 			targets: [{id: '파일', title: $(fileId).files[0] ? $(fileId).files[0].name : ''}],
 			summary: applySummary,
-			reversible: 'partial', reversibleText: '한 건씩 감사·복구나 통합 수정으로 고칠 수는 있지만, 한 번에 되돌리는 기능은 없습니다.',
+			reversible: 'partial', reversibleText: '한 건씩 [작업 기록]의 복구나 통합 수정으로 고칠 수는 있지만, 한 번에 되돌리는 기능은 없습니다.',
 			onConfirm: async () => {
 				const data = await run(false);
 				if (data) { ui.toast('엑셀을 반영했습니다 · ' + fmt.num(data[appliedKey]) + '행'); afterWrite({}); }
@@ -2109,7 +2135,7 @@
 		excel: {title: '수기·엑셀 등록', load: null},
 		system: {title: '시스템 상태', load: () => Promise.all([loadSystem(), loadLogs()])},
 		batches: {title: '배치 실행 이력', load: loadJobs},
-		audit: {title: '감사·복구', load: loadAudit}
+		audit: {title: '작업 기록', load: loadAudit}
 	};
 
 	function showPage(id, {load = true} = {}) {
