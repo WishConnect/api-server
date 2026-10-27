@@ -78,7 +78,8 @@ class AdminPageControllerTest {
 
 		givenAdminToken();
 		// 콘솔 HTML 이 불러오는 공통 부품·스타일까지 열려야 화면이 그려진다.
-		for (String asset : new String[] {"/admin/admin-console.js", "/admin/admin-core.js", "/admin/admin-console.css"}) {
+		for (String asset : new String[] {"/admin/admin-console.js", "/admin/admin-core.js", "/admin/admin-audit.js",
+				"/admin/admin-console.css"}) {
 			mockMvc.perform(get(asset)
 							.cookie(new Cookie(AdminAuthCookie.NAME, "admin-token")))
 					.andExpect(status().isOk());
