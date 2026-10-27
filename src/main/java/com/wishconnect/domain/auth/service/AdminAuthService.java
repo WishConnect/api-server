@@ -9,10 +9,13 @@ import com.wishconnect.domain.user.entity.LoginType;
 import com.wishconnect.domain.user.entity.User;
 import com.wishconnect.domain.user.entity.UserRole;
 import com.wishconnect.domain.user.repository.UserRepository;
+import com.wishconnect.global.audit.AdminAction;
+import com.wishconnect.global.audit.AdminAuditLogService;
 import com.wishconnect.global.exception.CustomDetailException;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
 import com.wishconnect.global.jwt.AdminSessionTokens;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,7 +33,12 @@ public class AdminAuthService {
 	private final PasswordEncoder passwordEncoder;
 	private final AdminLoginAttemptService loginAttemptService;
 	private final AdminSessionTokens sessionTokens;
+	/** 로그인 성공·실패·잠금·로그아웃을 작업 기록에 남긴다(보안 추적). 기록 실패는 로그인을 막지 않는다. */
+	private final AdminAuditLogService adminAuditLogService;
 	private volatile String dummyHash;
+
+	/** 작업 기록의 대상 종류. 로그인 기록은 특정 대상이 없어 종류만 둔다. */
+	static final String LOGIN_TARGET = "ADMIN_LOGIN";
 
 	/**
 	 * 관리자 로그인.
@@ -47,6 +55,9 @@ public class AdminAuthService {
 		AdminLoginAttemptResponse locked = loginAttemptService.lockedStatus(loginId, clientIp);
 		if (locked != null) {
 			log.warn("[AdminAuth] 잠금 상태에서 로그인 시도 거부 scope={} ip={}", locked.lockScope(), clientIp);
+			adminAuditLogService.record(null, AdminAction.ADMIN_LOGIN_LOCKED, LOGIN_TARGET, null,
+					"잠긴 상태에서 다시 시도 · 아이디 " + AdminLoginAttemptService.mask(loginId) + " · 잠금 범위 "
+							+ locked.lockScope() + " · IP " + clientIp);
 			throw new CustomDetailException(ErrorCode.ADMIN_LOGIN_LOCKED, locked);
 		}
 
@@ -57,6 +68,14 @@ public class AdminAuthService {
 				: passwordEncoder.matches(request.password(), dummyHash());
 		if (user == null || user.getRole() != UserRole.ADMIN || !passwordMatches) {
 			AdminLoginAttemptResponse attempt = loginAttemptService.recordFailure(loginId, clientIp);
+			// 계정이 있으면 그 계정으로(누구 계정을 노린 시도인지), 없으면 행위자 없이 남긴다. 사유는 구분하지 않는다
+			// (응답과 마찬가지로 기록에서도 계정 존재·비밀번호 오류·권한 없음을 가리지 않는다).
+			adminAuditLogService.record(user == null ? null : user.getId(),
+					attempt.locked() ? AdminAction.ADMIN_LOGIN_LOCKED : AdminAction.ADMIN_LOGIN_FAILURE, LOGIN_TARGET, null,
+					(attempt.locked() ? "로그인 실패가 쌓여 잠김" : "로그인 실패") + " · 아이디 "
+							+ AdminLoginAttemptService.mask(loginId) + " · 실패 " + attempt.failedCount() + "/"
+							+ attempt.maxFailures() + (attempt.locked() ? " · 잠금 범위 " + attempt.lockScope() : "")
+							+ " · IP " + clientIp);
 			throw new CustomDetailException(
 					attempt.locked() ? ErrorCode.ADMIN_LOGIN_LOCKED : ErrorCode.LOGIN_FAILED, attempt);
 		}
@@ -64,6 +83,8 @@ public class AdminAuthService {
 		loginAttemptService.reset(loginId);
 		AdminSessionTokens.Issued issued = sessionTokens.issueNew(user.getId());
 		log.info("[AdminAuth] 관리자 로그인 완료 (userId={}, ip={})", user.getId(), clientIp);
+		adminAuditLogService.record(user.getId(), AdminAction.ADMIN_LOGIN_SUCCESS, LOGIN_TARGET, null,
+				"로그인 · IP " + clientIp);
 		return new AdminLoginResponse(
 				issued.token(),
 				issued.expiresInSeconds(),
@@ -87,6 +108,16 @@ public class AdminAuthService {
 		return new AdminSessionResponse(issued.token(), issued.expiresAt(), issued.expiresInSeconds(),
 				issued.sessionStartedAt(), issued.sessionMaxExpiresAt(), issued.sessionMaxRemainingSeconds(),
 				issued.extendable(), sessionTokens.idleTimeoutSeconds());
+	}
+
+	/**
+	 * 로그아웃 기록. 쿠키 삭제는 컨트롤러가 한다. 토큰으로 누군지 알 수 있을 때만 남긴다(만료·위조 토큰이면 남기지 않음).
+	 */
+	public void logout(String token, String clientIp) {
+		UUID actor = token == null ? null : sessionTokens.parse(token).map(claims -> claims.userId()).orElse(null);
+		if (actor != null) {
+			adminAuditLogService.record(actor, AdminAction.ADMIN_LOGOUT, LOGIN_TARGET, null, "로그아웃 · IP " + clientIp);
+		}
 	}
 
 	/** 남은 시간 조회. 연장하지 않는다. */
