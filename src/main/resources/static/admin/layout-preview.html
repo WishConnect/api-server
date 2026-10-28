@@ -77,6 +77,7 @@
 					<div class="stat"><div class="label">재처리 대기 <i class="tip" tabindex="0" data-tip="파싱에 실패했거나 건너뛴 원문 수입니다. 마감 지난 공고와 관리자가 만료 처리한 원문은 빼고 셉니다. [실패 재처리]에서 처리합니다.">?</i></div><div class="value" data-stat="failures">-</div><div class="sub">실패·건너뜀·이미지만</div></div>
 					<div class="stat"><div class="label">모집 중</div><div class="value" data-stat="open">-</div><div class="sub">사용자에게 보이는 모집 공고</div></div>
 					<div class="stat"><div class="label">모집 예정</div><div class="value" data-stat="upcoming">-</div><div class="sub">시작일 전</div></div>
+					<div class="stat"><div class="label">검수 대기 <i class="tip" tabindex="0" data-tip="새로 수집돼 아직 사용자에게 보이지 않는 장학금입니다. 일일 배치 끝에 중복 검사를 마치고 이상이 없으면 자동 공개되고, 중복 후보는 병합·중복 아님 처리 때, 나머지는 상세에서 [공개]하면 풀립니다.">?</i></div><div class="value" data-stat="reviewHeld" data-go-held style="cursor:pointer">-</div><div class="sub">사용자에게 아직 안 보임</div></div>
 					<div class="stat"><div class="label">내려진 장학금 <i class="tip" tabindex="0" data-tip="관리자가 내렸거나 병합·수집 배치로 목록에서 빠진 장학금입니다. 데이터는 남아 있어 복원할 수 있습니다(병합으로 내린 것 제외).">?</i></div><div class="value" data-stat="softDeleted">-</div><div class="sub">사용자 목록에서 숨김</div></div>
 				</div>
 				<div class="grid-2">
@@ -219,6 +220,7 @@
 					<input id="scholarshipKeyword" class="grow" type="search" placeholder="장학금명 또는 기관" data-enter="searchScholarships">
 					<select id="scholarshipStatus" aria-label="모집 상태"></select>
 					<input id="scholarshipSource" type="search" placeholder="출처 코드" data-enter="searchScholarships">
+					<label class="check"><input id="reviewHeldOnly" type="checkbox"> 검수 대기만 <i class="tip" tabindex="0" data-tip="새로 수집돼 아직 사용자에게 보이지 않는 장학금만 봅니다.">?</i></label>
 					<label class="check"><input id="includeDeleted" type="checkbox"> 내린 장학금 포함 <i class="tip" tabindex="0" data-tip="목록에서 내린(숨긴) 장학금도 함께 봅니다. 내린 장학금에는 '내려짐' 배지가 붙습니다.">?</i></label>
 					<button type="button" class="btn btn-primary" id="searchScholarships">검색</button>
 				</div>

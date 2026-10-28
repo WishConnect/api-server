@@ -19,7 +19,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                     ) AS isScrapped
                 FROM scholarship s
                 LEFT JOIN essay e ON e.scholarship_id = s.id AND e.user_id = CAST(:userId AS uuid)
-                WHERE s.deleted_at IS NULL
+                WHERE s.deleted_at IS NULL AND s.review_held_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
                     OR e.id IS NOT NULL
@@ -36,7 +36,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                 SELECT COUNT(*)
                 FROM scholarship s
                 LEFT JOIN essay e ON e.scholarship_id = s.id AND e.user_id = CAST(:userId AS uuid)
-                WHERE s.deleted_at IS NULL
+                WHERE s.deleted_at IS NULL AND s.review_held_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
                     OR e.id IS NOT NULL
@@ -66,7 +66,7 @@ public interface ArchiveQueryRepository extends JpaRepository<Scholarship, Long>
                     COUNT(*) FILTER (WHERE e.status = 'COMPLETED') AS completedCount
                 FROM scholarship s
                 LEFT JOIN essay e ON e.scholarship_id = s.id AND e.user_id = CAST(:userId AS uuid)
-                WHERE s.deleted_at IS NULL
+                WHERE s.deleted_at IS NULL AND s.review_held_at IS NULL
                 AND (
                     EXISTS (SELECT 1 FROM scrap sc WHERE sc.scholarship_id = s.id AND sc.user_id = CAST(:userId AS uuid))
                     OR e.status IN ('IN_PROGRESS', 'COMPLETED')

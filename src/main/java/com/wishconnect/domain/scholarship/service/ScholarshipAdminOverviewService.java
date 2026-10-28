@@ -70,6 +70,7 @@ public class ScholarshipAdminOverviewService {
 	private final ScholarshipTimelineRepository scholarshipTimelineRepository;
 	private final ImageStorageService imageStorageService;
 	private final com.wishconnect.domain.user.repository.UserRepository userRepository;
+	private final ScholarshipReviewHoldService reviewHoldService;
 
 	public AdminOverviewResponse overview() {
 		Map<String, Long> posterCountBySource = posterCountBySource();
@@ -122,9 +123,17 @@ public class ScholarshipAdminOverviewService {
 
 	public Page<AdminScholarshipRow> search(
 			String keyword, String source, RecruitmentStatus status, boolean includeDeleted, Pageable pageable) {
+		return search(keyword, source, status, includeDeleted, null, pageable);
+	}
+
+	/** @param reviewHeld true 면 검수 대기 건만, false 면 공개된 건만, null 이면 모두 */
+	public Page<AdminScholarshipRow> search(String keyword, String source, RecruitmentStatus status,
+			boolean includeDeleted, Boolean reviewHeld, Pageable pageable) {
 		Set<Long> posterIds = posterScholarshipIds();
-		Page<Scholarship> page = scholarshipRepository.findAll(
-				scholarshipSpec(keyword, source, status, includeDeleted), pageable);
+		Specification<Scholarship> spec = scholarshipSpec(keyword, source, status, includeDeleted)
+				.and((root, query, cb) -> reviewHeld == null ? cb.conjunction()
+						: reviewHeld ? cb.isNotNull(root.get("reviewHeldAt")) : cb.isNull(root.get("reviewHeldAt")));
+		Page<Scholarship> page = scholarshipRepository.findAll(spec, pageable);
 		// "삭제 포함" 목록에서 누가 내렸는지 이름으로 보이게 한다. 한 페이지 분량만 조회한다.
 		Set<java.util.UUID> deleters = page.getContent().stream()
 				.map(Scholarship::getDeletedBy).filter(java.util.Objects::nonNull)
@@ -365,24 +374,8 @@ public class ScholarshipAdminOverviewService {
 	}
 
 	private List<String> anomalyTypes(Scholarship value) {
-		java.util.ArrayList<String> result = new java.util.ArrayList<>();
-		if (!StringUtils.hasText(value.getTitle())) result.add("EMPTY_TITLE");
-		if (!StringUtils.hasText(value.getProvider())) result.add("MISSING_PROVIDER");
-		if (value.getApplicationStartAt() != null && value.getApplicationEndAt() != null
-				&& value.getApplicationStartAt().isAfter(value.getApplicationEndAt())) result.add("DATE_REVERSED");
-		if (value.getRecruitmentStatus() == RecruitmentStatus.OPEN && value.getApplicationEndAt() != null
-				&& value.getApplicationEndAt().isBefore(LocalDateTime.now())) result.add("OPEN_BUT_ENDED");
-		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
-				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
-				&& !StringUtils.hasText(value.getHomepageUrl()) && !StringUtils.hasText(value.getDetailUrl())) {
-			result.add("MISSING_LINK");
-		}
-		if ((value.getRecruitmentStatus() == RecruitmentStatus.OPEN
-				|| value.getRecruitmentStatus() == RecruitmentStatus.ALWAYS_OPEN)
-				&& scholarshipConditionRepository.countByScholarshipId(value.getId()) == 0) {
-			result.add("MISSING_CONDITION");
-		}
-		return List.copyOf(result);
+		return com.wishconnect.domain.scholarship.util.ScholarshipAnomalies.of(value,
+				scholarshipConditionRepository.countByScholarshipId(value.getId()) > 0);
 	}
 
 	private AdminScholarshipDetailResponse.ScholarshipData scholarshipData(Scholarship value) {
@@ -395,7 +388,8 @@ public class ScholarshipAdminOverviewService {
 				name(value.getSubmissionChannel()), value.getSubmissionEvidence(), value.getContact(),
 				name(value.getEssayRequirement()), value.getEssayEvidence(), name(value.getInterviewRequirement()),
 				value.getInterviewEvidence(), value.getCreatedAt(), value.getUpdatedAt(), value.getDeletedAt(),
-                value.isPeriodLocked(), value.isTimelineLocked());
+                value.isPeriodLocked(), value.isTimelineLocked(),
+				value.isReviewHeld(), reviewHoldService.holdReasons(value));
 	}
 
 	private String name(Enum<?> value) {
@@ -423,7 +417,8 @@ public class ScholarshipAdminOverviewService {
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.CLOSED),
 				scholarshipRepository.countByRecruitmentStatusAndDeletedAtIsNull(RecruitmentStatus.ALWAYS_OPEN),
 				scholarshipRepository.countByCreatedAtGreaterThanEqual(LocalDate.now().atStartOfDay()),
-				scholarshipRepository.findLastSyncedAt());
+				scholarshipRepository.findLastSyncedAt(),
+				scholarshipRepository.countByReviewHeldAtIsNotNullAndDeletedAtIsNull());
 	}
 
 	/** 포스터가 붙은 장학금 id 집합. Image 는 엔티티 연관이 없어 조인 대신 집합 대조로 처리한다. */
@@ -491,6 +486,8 @@ public class ScholarshipAdminOverviewService {
 				scholarship.getDeletedBy(),
 				scholarship.getDeletedBy() == null ? null : deleterNames.get(scholarship.getDeletedBy()),
 				scholarship.getDeleteReason(),
-				deleteKind(scholarship));
+				deleteKind(scholarship),
+				scholarship.isReviewHeld(),
+				reviewHoldService.holdReasons(scholarship));
 	}
 }

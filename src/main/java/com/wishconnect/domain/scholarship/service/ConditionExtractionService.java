@@ -95,7 +95,8 @@ public class ConditionExtractionService {
 							+ condition.getValueString().replaceAll("\\s+", " ").trim())
 					.collect(Collectors.joining("\n"));
 			String rawResponse = llmClient.chat(LlmChatRequest.of(
-					LlmModel.INTERVIEW, SYSTEM_PROMPT, List.of(LlmMessage.user(input))));
+					// 데이터 처리라 파싱 키로 보낸다. INTERVIEW 와 PARSING 의 기본 모델은 둘 다 haiku 라 결과는 같다.
+					LlmModel.PARSING, SYSTEM_PROMPT, List.of(LlmMessage.user(input))));
 			int extracted = 0;
 			for (ExtractedCondition item : parse(rawResponse)) {
 				var condition = targetById.get(item.id());

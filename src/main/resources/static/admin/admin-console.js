@@ -55,6 +55,10 @@
 	};
 	const sourceHtml = source => '<span class="mono" title="수집 출처 코드">' + esc(source || 'MANUAL') + '</span>';
 	const deletedBadge = row => '<span class="badge b-danger" title="' + esc(label('deleteKind', row.deleteKind, '')) + '">내려짐</span>';
+	/** 검수 대기 사유를 사람이 읽는 말로. 데이터 이상 코드는 anomaly 사전에서 찾는다. */
+	const holdReasonText = codes => (codes || []).map(code => label('holdReason', code, '') || label('anomaly', code)).join(', ');
+	const heldBadge = row => row.reviewHeld ? ' <span class="badge b-warning" title="' +
+		esc(holdReasonText(row.holdReasons) || '배치 끝에 자동 공개 예정') + '">검수 대기</span>' : '';
 
 	/* ================================================================== 배지·대시보드 */
 
@@ -173,7 +177,7 @@
 		if (data.overview) {
 			const s = data.overview.scholarship;
 			const statValues = {createdToday: s.createdToday, total: s.total, open: s.open, upcoming: s.upcoming, softDeleted: s.softDeleted,
-				failures: data.failures ? data.failures.totalElements : null};
+				reviewHeld: s.reviewHeld, failures: data.failures ? data.failures.totalElements : null};
 			Object.entries(statValues).forEach(([key, value]) => {
 				const el = document.querySelector('[data-stat="' + key + '"]');
 				if (el) el.textContent = fmt.num(value);
@@ -227,7 +231,7 @@
 		body.innerHTML = rows.length ? rows.map(row => '<tr class="clickable' + (row.softDeleted ? ' is-deleted' : '') +
 			'" data-open-scholarship="' + row.scholarshipId + '">' + cells([
 			'<span class="cell-title">#' + row.scholarshipId + ' ' + esc(row.title || '(제목 없음)') + '</span>' +
-				(row.softDeleted ? ' ' + deletedBadge(row) : '') + '<span class="cell-sub">' + esc(row.provider || '기관 없음') + '</span>',
+				(row.softDeleted ? ' ' + deletedBadge(row) : heldBadge(row)) + '<span class="cell-sub">' + esc(row.provider || '기관 없음') + '</span>',
 			sourceHtml(row.source),
 			badge('recruitment', row.recruitmentStatus),
 			missingHtml(row),
@@ -259,17 +263,22 @@
 		const deleted = Boolean(s.deletedAt);
 		const head = '<div class="detail-head"><div class="badges">' + badge('recruitment', s.recruitmentStatus) +
 			(deleted ? '<span class="badge b-danger">내려짐</span>' : '') +
+			(!deleted && s.reviewHeld ? '<span class="badge b-warning">검수 대기</span>' : '') +
 			(s.noticeKind && s.noticeKind !== 'RECRUITMENT' ? badge('noticeKind', s.noticeKind, 'b-warning') : '') +
 			(s.verified ? '<span class="badge b-success" title="관리자가 확인한 장학금">검증됨</span>' : '') + '</div>' +
 			'<h2>#' + s.id + ' ' + esc(s.title || '(제목 없음)') + '</h2><div class="text-muted text-sm">' + esc(s.provider || '기관 없음') +
 			' · ' + sourceHtml(s.primarySource) + '</div><div class="actions">' +
-			(!deleted ? '<button type="button" class="btn btn-sm btn-primary" data-act="edit">통합 수정</button>' : '') +
+			(!deleted && s.reviewHeld ? '<button type="button" class="btn btn-sm btn-primary" data-act="publish">공개</button>' : '') +
+			(!deleted ? '<button type="button" class="btn btn-sm' + (s.reviewHeld ? '' : ' btn-primary') + '" data-act="edit">통합 수정</button>' : '') +
 			link(s.detailUrl || s.homepageUrl) +
 			(!deleted ? '<button type="button" class="btn btn-sm" data-act="report">신고 남기기</button>' : '') +
 			(deleted ? '<button type="button" class="btn btn-sm btn-primary" data-act="restore">복원</button>'
 				: '<button type="button" class="btn btn-sm btn-danger-ghost" data-act="takedown">내리기</button>') + '</div></div>';
 		const deletedNotice = deleted ? '<div class="notice danger banner"><b>목록에서 내린 장학금입니다.</b> 사용자에게 보이지 않습니다. 내린 시각 ' +
 			esc(fmt.tsKst(s.deletedAt)) + '</div>' : '';
+		const heldNotice = !deleted && s.reviewHeld ? '<div class="notice warn banner"><b>검수 대기 중인 새 장학금입니다.</b> 아직 사용자에게 보이지 않습니다.' +
+			((s.holdReasons || []).length ? ' 남은 사유: ' + esc(holdReasonText(s.holdReasons)) + '.' : ' 다음 일일 배치 끝에 자동 공개됩니다.') +
+			' 중복 후보는 병합·중복 아님 처리 때, 데이터 이상은 고친 뒤 다음 배치에서 풀립니다. 바로 내보내려면 [공개]를 누르세요.</div>' : '';
 		const checkNotice = check && !check.consistent && !deleted ? '<div class="notice warn banner"><b>모집 상태와 날짜가 맞지 않습니다.</b><ul>' +
 			check.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>' : '';
 		const info = '<div class="detail-section"><h3>기본 정보</h3><dl class="kv">' +
@@ -310,7 +319,7 @@
 			(safeUrl(r.sourceUrl) ? '<p style="margin-bottom:var(--sp-1)">' + link(r.sourceUrl, '원문 사이트') + '</p>' : '') +
 			'<div class="raw">' + esc(r.rawHtml || (r.rawJson ? JSON.stringify(r.rawJson, null, 2) : '원문 없음')) + '</div></details>').join('')
 			: '<p class="text-muted text-sm">수기 등록이라 원문이 없습니다.</p>') + '</div>';
-		return head + deletedNotice + checkNotice + info + scheduleHtml + text + imageHtml + conditionHtml + documentHtml + rawHtml;
+		return head + deletedNotice + heldNotice + checkNotice + info + scheduleHtml + text + imageHtml + conditionHtml + documentHtml + rawHtml;
 	}
 
 	function bindScholarshipActions(root, data) {
@@ -319,6 +328,7 @@
 		on('edit', () => openEdit({scholarshipId: id}));
 		on('report', () => reportScholarship(data.scholarship));
 		on('takedown', button => takedownScholarship(data.scholarship, button));
+		on('publish', () => publishHeldScholarship(data.scholarship));
 		on('restore', () => restoreScholarship(Object.assign({scholarshipId: id, title: data.scholarship.title,
 			deletedAt: data.scholarship.deletedAt}, scholarshipRows.get(id) || {})));
 		root.querySelectorAll('[data-open-scholarship]').forEach(el => el.onclick = () => openScholarshipModal(Number(el.dataset.openScholarship)));
@@ -1342,7 +1352,8 @@
 		await view.load(body, async () => {
 			const page = await api(qs('/api/v1/scholarships/admin/scholarships', {
 				page: pageNo.scholarship, size: PAGE_SIZE, sort: 'createdAt,desc', keyword: val('scholarshipKeyword'),
-				source: val('scholarshipSource'), status: $('scholarshipStatus').value, includeDeleted: $('includeDeleted').checked
+				source: val('scholarshipSource'), status: $('scholarshipStatus').value, includeDeleted: $('includeDeleted').checked,
+				reviewHeld: $('reviewHeldOnly').checked ? true : undefined
 			}));
 			renderPager('scholarshipPager', page, 'scholarship', loadScholarships);
 			page.content.forEach(row => scholarshipRows.set(row.scholarshipId, row));
@@ -1350,7 +1361,8 @@
 			return page.content.length ? page.content.map(row => '<tr class="clickable' + (row.softDeleted ? ' is-deleted' : '') +
 				(row.scholarshipId === selected ? ' selected' : '') + '" data-scholarship="' + row.scholarshipId + '">' + cells([
 				'#' + row.scholarshipId,
-				'<span class="cell-title">' + esc(row.title || '(제목 없음)') + '</span><span class="cell-sub">' + esc(row.provider || '기관 없음') + '</span>' +
+				'<span class="cell-title">' + esc(row.title || '(제목 없음)') + '</span>' + (row.softDeleted ? '' : heldBadge(row)) +
+					'<span class="cell-sub">' + esc(row.provider || '기관 없음') + '</span>' +
 					(row.softDeleted ? deletedRowInfo(row) : ''),
 				row.softDeleted ? deletedBadge(row) + '<div style="margin-top:4px">' + (row.deleteKind === 'MERGE'
 					? '<span class="text-muted text-sm" title="병합으로 내린 장학금은 사용자 데이터가 이미 옮겨져 복원할 수 없습니다">복원 불가</span>'
@@ -2296,6 +2308,25 @@
 		});
 	}
 
+	/** 검수 대기 공개. 남은 사유가 있어도 사람이 확인한 것으로 보고 푼다. */
+	function publishHeldScholarship(s) {
+		const reasons = holdReasonText(s.holdReasons);
+		return ui.confirmAction({
+			title: '검수 대기 공개', confirmLabel: '공개',
+			targets: [{id: '장학금 #' + s.id, title: s.title, meta: s.provider}],
+			summary: ['사용자 목록·검색·추천·알림에 바로 보이기 시작합니다.',
+				reasons ? '남아 있는 사유(<b>' + esc(reasons) + '</b>)가 있지만 확인한 것으로 보고 공개합니다.'
+					: '남은 사유가 없어 다음 배치에서도 자동 공개될 건입니다.',
+				'중복이 의심되면 공개하지 말고 [중복 판정]에서 병합하세요. 병합하면 남는 쪽만 공개됩니다.'],
+			reversible: 'yes', reversibleText: '공개 후 문제가 보이면 [내리기]로 숨길 수 있습니다.',
+			onConfirm: async () => {
+				await api('/api/v1/scholarships/admin/scholarships/' + s.id + '/publish', {method: 'POST'});
+				ui.toast('#' + s.id + ' 장학금을 공개했습니다.');
+				afterWrite({scholarshipId: s.id, reload: reloadCurrentList});
+			}
+		});
+	}
+
 	function restoreScholarship(row) {
 		if (!row) return;
 		if (row.deleteKind === 'MERGE') {
@@ -2465,6 +2496,14 @@
 		document.addEventListener('click', event => {
 			const go = event.target.closest('[data-go]');
 			if (go) showPage(go.dataset.go);
+			// 대시보드 [검수 대기] 수치 → 전체 장학금에서 검수 대기만
+			if (event.target.closest('[data-go-held]')) {
+				$('scholarshipKeyword').value = '';
+				$('includeDeleted').checked = false;
+				$('reviewHeldOnly').checked = true;
+				pageNo.scholarship = 0;
+				showPage('all');
+			}
 		});
 		window.addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== currentPage) showPage(id); });
 		$('menuToggle').onclick = () => $('app').classList.toggle('nav-open');
@@ -2481,6 +2520,7 @@
 			if (event.key !== 'Enter' || event.isComposing) return;
 			$('scholarshipKeyword').value = event.currentTarget.value.trim();
 			$('includeDeleted').checked = false;
+			$('reviewHeldOnly').checked = false;
 			pageNo.scholarship = 0;
 			showPage('all');
 		});
@@ -2503,6 +2543,7 @@
 		search('searchAnomalies', 'anomaly', loadAnomalies);
 		search('searchScholarships', 'scholarship', loadScholarships);
 		$('includeDeleted').addEventListener('change', () => { pageNo.scholarship = 0; loadScholarships(); });
+		$('reviewHeldOnly').addEventListener('change', () => { pageNo.scholarship = 0; loadScholarships(); });
 		click('refreshAlways', () => loadAlways());
 		click('refreshDuplicates', () => { loadDuplicates(); if (!document.querySelector('[data-dup-panel="reports"]').hidden) loadDuplicateReports(); });
 		search('searchDuplicates', 'duplicate', () => loadDuplicates('search'));

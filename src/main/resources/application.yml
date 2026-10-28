@@ -94,7 +94,7 @@ naver:
     client-id: ${NAVER_SEARCH_CLIENT_ID:}
     client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
 
-# LLM(Anthropic Claude) 공통 설정. API 키는 ANTHROPIC_API_KEY 환경변수로 주입.
+# LLM(Anthropic Claude) 공통 설정. API 키는 용도별 환경변수(ANTHROPIC_ESSAY_API_KEY / ANTHROPIC_PARSER_API_KEY)로 주입, 비어 있으면 ANTHROPIC_API_KEY.
 llm:
   anthropic:
     interview-model: claude-haiku-4-5   # STEP1 사전 인터뷰 세부 질문 생성 (빠르고 저렴)

@@ -13,7 +13,7 @@ public interface PopularKeywordRepository extends JpaRepository<Scholarship, Lon
             SELECT s.provider
             FROM scholarship s
             JOIN scholarship_event se ON se.scholarship_id = s.id
-            WHERE s.deleted_at IS NULL
+            WHERE s.deleted_at IS NULL AND s.review_held_at IS NULL
             AND s.provider IS NOT NULL
             AND s.provider != ''
             AND s.provider !~ '^[A-Z_]+$'

@@ -48,7 +48,8 @@ public class ScholarshipDetailService {
 	@Transactional(readOnly = true)
 	public ScholarshipDetailResponse getDetail(UUID userId, Long scholarshipId) {
 		Scholarship scholarship = scholarshipRepository.findById(scholarshipId)
-				.filter(found -> found.getDeletedAt() == null)
+				// 검수 대기 중인 새 공고는 내린 공고처럼 없는 것으로 본다.
+				.filter(Scholarship::isVisibleToUsers)
 				.orElseThrow(() -> new CustomException(ErrorCode.SCHOLARSHIP_NOT_FOUND));
 
 		List<ScholarshipCondition> conditions =

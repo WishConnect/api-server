@@ -98,6 +98,8 @@ public class ScholarshipDedupService {
 	private final ScholarshipMergeExecutor mergeExecutor;
 	private final LlmClient llmClient;
 	private final ObjectMapper objectMapper;
+	// 중복 후보를 처리하면 남는 쪽(반려면 양쪽)의 검수 대기를 바로 푼다.
+	private final ScholarshipReviewHoldService reviewHoldService;
 
 	/**
 	 * 중복 후보를 탐지해 승인 큐에 올린다. <b>이 단계에서는 아무것도 병합하지 않는다.</b>
@@ -117,6 +119,9 @@ public class ScholarshipDedupService {
 				mergeCandidateRepository.findScholarshipIdsByStatus(MergeCandidateStatus.PENDING));
 
 		Map<String, List<DedupScanRow>> groups = new LinkedHashMap<>();
+		// 비교할 짝이 없어 LLM 에 물을 필요가 없는 공고. 이것도 "검사 완료"로 찍는다 — 그래야 새로 들어온
+		// 단독 공고가 검수 대기에서 풀린다. 나중에 짝이 들어오면 그 짝이 미검사라 묶음이 다시 대상이 된다.
+		Set<Long> nothingToCompare = new HashSet<>();
 		for (DedupScanRow row : rows) {
 			if (alreadyQueued.contains(row.id())) {
 				continue;
@@ -124,6 +129,15 @@ public class ScholarshipDedupService {
 			String key = ScholarshipTitleBlocker.blockingKey(row.title());
 			if (key != null) {
 				groups.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
+			} else if (row.neverScanned()) {
+				nothingToCompare.add(row.id());
+			}
+		}
+		for (List<DedupScanRow> group : groups.values()) {
+			// 너무 큰 묶음은 LLM 에 넘기지 않으므로(아래 2단계) 영영 판정되지 않는다. 단독 공고와 같이 취급한다.
+			if (group.size() < 2 || group.size() > MAX_GROUP_SIZE) {
+				group.stream().filter(DedupScanRow::neverScanned).map(DedupScanRow::id)
+						.forEach(nothingToCompare::add);
 			}
 		}
 
@@ -155,7 +169,7 @@ public class ScholarshipDedupService {
 		int skipped = 0;
 		int failed = 0;
 		int scanned = 0;
-		Set<Long> scannedIds = new HashSet<>();
+		Set<Long> scannedIds = new HashSet<>(nothingToCompare);
 		List<MergeDetectionResponse.GroupFailure> failures = new ArrayList<>();
 
 		// 3) 판정 — 여기서만 LLM 을 쓴다. 묶음에 속한 공고만 엔티티로 읽는다.
@@ -305,6 +319,8 @@ public class ScholarshipDedupService {
 			ScholarshipMergeCandidate reattached = mergeCandidateRepository.findById(candidateId)
 					.orElseThrow(() -> new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_FOUND));
 			reattached.markMerged(reviewer, moved.toString());
+			// 남는 쪽이 새로 들어와 검수 대기 중이었다면 이제 공개한다(다른 문제가 없을 때).
+			reviewHoldService.releaseIfClear(primaryId);
 
 			return new MergeResultResponse(candidateId, MergeCandidateStatus.MERGED.name(),
 					primaryId, duplicateId, moved);
@@ -329,6 +345,9 @@ public class ScholarshipDedupService {
 			throw new CustomException(ErrorCode.MERGE_CANDIDATE_NOT_PENDING);
 		}
 		candidate.markRejected(reviewer, note);
+		// 중복이 아니므로 둘 다 각자 공개될 수 있다.
+		reviewHoldService.releaseIfClear(candidate.getPrimary().getId());
+		reviewHoldService.releaseIfClear(candidate.getDuplicate().getId());
 		return new MergeResultResponse(candidateId, MergeCandidateStatus.REJECTED.name(),
 				candidate.getPrimary().getId(), candidate.getDuplicate().getId(), Map.of());
 	}

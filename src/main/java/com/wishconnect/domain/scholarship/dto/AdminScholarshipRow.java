@@ -28,6 +28,10 @@ public record AdminScholarshipRow(
 		/** 내린 사유. 병합이면 "병합: #N 로 합쳐짐" */
 		String deleteReason,
 		/** 삭제 구분: ADMIN(관리자 내리기) / MERGE(병합) / SYSTEM(수집 배치) / null(삭제 아님) */
-		String deleteKind
+		String deleteKind,
+		/** 검수 대기(보류) 중이라 사용자에게 안 보이는지 */
+		boolean reviewHeld,
+		/** 보류 사유 코드(DEDUP_NOT_CHECKED, DUPLICATE_PENDING, 데이터 이상 코드). 공개된 건은 빈 목록 */
+		java.util.List<String> holdReasons
 ) {
 }

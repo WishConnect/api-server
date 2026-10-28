@@ -47,11 +47,30 @@ class ScrapServiceTest {
 	private ScrapService scrapService;
 
 	private Scholarship scholarship() {
-		return Scholarship.builder()
+		Scholarship scholarship = Scholarship.builder()
 				.title("테스트")
 				.scholarshipType(ScholarshipType.EXTERNAL)
 				.recruitmentStatus(RecruitmentStatus.OPEN)
 				.build();
+		// 수집으로 만든 장학금은 검수 대기로 시작한다. 공개된 공고를 전제로 한다.
+		scholarship.releaseReviewHold();
+		return scholarship;
+	}
+
+	@Test
+	@DisplayName("스크랩 등록: 검수 대기 중인 새 장학금은 없는 장학금으로 본다")
+	void scrapRejectsHeldScholarship() {
+		Scholarship held = Scholarship.builder()
+				.title("검수 대기")
+				.scholarshipType(ScholarshipType.EXTERNAL)
+				.recruitmentStatus(RecruitmentStatus.OPEN)
+				.build();
+		org.mockito.BDDMockito.given(scholarshipRepository.findById(99L)).willReturn(java.util.Optional.of(held));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> scrapService.scrap(java.util.UUID.randomUUID(), 99L))
+				.isInstanceOf(com.wishconnect.global.exception.CustomException.class)
+				.extracting("errorCode")
+				.isEqualTo(com.wishconnect.global.exception.ErrorCode.SCHOLARSHIP_NOT_FOUND);
 	}
 
 	@Test

@@ -185,6 +185,8 @@
 			EMPTY_TITLE: '제목 없음', MISSING_PROVIDER: '기관 없음', DATE_REVERSED: '기간 역전',
 			OPEN_BUT_ENDED: '마감 지난 모집 중', MISSING_LINK: '링크 없음', MISSING_CONDITION: '조건 없음'
 		},
+		/** 검수 대기(보류) 사유. 데이터 이상 코드는 anomaly 사전으로 읽는다. */
+		holdReason: {DEDUP_NOT_CHECKED: '중복 검사 전', DUPLICATE_PENDING: '중복 후보 판정 대기'},
 		deleteKind: {ADMIN: '관리자가 내림', MERGE: '병합으로 내림', SYSTEM: '수집 배치가 내림'},
 		/** 실패 재처리 원문 만료 처리 사유(서버 RawDismissReason). */
 		dismissReason: {PERIOD_EXPIRED: '모집기간 경과', NOT_SCHOLARSHIP: '장학금 공고 아님', DUPLICATE: '중복', OTHER: '기타'},
@@ -198,6 +200,7 @@
 			ENRICH_TRIGGER: '상세·첨부·포스터 자동 보완 실행', MERGE_DETECT_TRIGGER: '중복 탐지 실행', SCHOLARSHIP_MERGE: '중복 병합',
 			SCHOLARSHIP_MERGE_REJECT: '중복 아님 처리', MERGE_CANDIDATE_REOPEN: '중복 아님 취소', AUDIT_RESTORE: '작업 기록 복구',
 			RAW_SCHOLARSHIP_DISMISS: '원문 만료 처리', RAW_SCHOLARSHIP_RESTORE: '원문 만료 되돌리기',
+			SCHOLARSHIP_PUBLISH: '검수 대기 공개',
 			ADMIN_LOGIN_SUCCESS: '관리자 로그인', ADMIN_LOGIN_FAILURE: '로그인 실패', ADMIN_LOGIN_LOCKED: '로그인 잠금', ADMIN_LOGOUT: '로그아웃',
 			LLM_PARSE_TRIGGER: '공지 LLM 파싱·재처리', KOSAF_CONDITION_TRIGGER: '공공데이터 조건 보강(LLM)',
 			ADMIN_REQUEST_FAILED: '실패한 요청', MERGE_CANDIDATE_FAILED: '일괄 처리 실패 후보',
