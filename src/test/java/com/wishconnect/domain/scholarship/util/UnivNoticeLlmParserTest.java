@@ -612,6 +612,57 @@ class UnivNoticeLlmParserTest {
 		assertNoUnionTypeWithEnum(schema, "$");
 	}
 
+	@Test
+	@DisplayName("유니온 타입 칸은 16개 이하다 — 넘으면 API 가 스키마를 통째로 거부한다")
+	void unionTypedFieldsWithinApiLimit() {
+		// 2026-10-28 운영: "Schemas contains too many parameters with union types (19 ...)
+		// limit: 16 parameters with unions" 로 모든 파싱 요청이 400 이었다.
+		Map<String, Object> schema = parser.buildRequest(null, "본문".repeat(50)).outputSchema();
+		assertThat(countUnionTyped(schema)).isLessThanOrEqualTo(16);
+	}
+
+	@Test
+	@DisplayName("빈 문자열로 온 원문 인용 칸은 null 로 읽는다 — 스키마만 바뀌고 의미는 같다")
+	void blankQuoteFieldsReadAsNull() {
+		String response = """
+				{"title":"장학생 모집","provider":null,"scholarshipType":null,"noticeKind":"RECRUITMENT","combined":false,
+				 "submissionMethod":null,"submissionChannel":null,"submissionEvidence":"","essayRequirement":null,
+				 "essayEvidence":"  ","interviewRequirement":null,"interviewEvidence":"","applicationStart":null,
+				 "applicationEnd":null,"periodEvidence":"","selectionCount":null,"amount":null,"summary":null,
+				 "documents":[],"conditions":[],"contact":null,
+				 "timeline":[{"stageCode":"INTERVIEW","dateType":"TBD","startDate":null,"endDate":null,
+				              "dateText":"","note":"","evidence":"면접 일정은 추후 공지"}]}
+				""";
+
+		var notice = parser.readResponse(response).orElseThrow();
+
+		assertThat(notice.periodEvidence()).isNull();
+		assertThat(notice.submissionEvidence()).isNull();
+		assertThat(notice.essayEvidence()).isNull();
+		assertThat(notice.interviewEvidence()).isNull();
+		assertThat(notice.timeline().get(0).dateText()).isNull();
+		assertThat(notice.timeline().get(0).note()).isNull();
+		// 바꾸지 않은 칸은 그대로다.
+		assertThat(notice.timeline().get(0).evidence()).isEqualTo("면접 일정은 추후 공지");
+	}
+
+	private int countUnionTyped(Object node) {
+		int count = 0;
+		if (node instanceof Map<?, ?> map) {
+			if (map.get("type") instanceof List<?> || map.containsKey("anyOf")) {
+				count++;
+			}
+			for (Object value : map.values()) {
+				count += countUnionTyped(value);
+			}
+		} else if (node instanceof List<?> list) {
+			for (Object item : list) {
+				count += countUnionTyped(item);
+			}
+		}
+		return count;
+	}
+
 	@SuppressWarnings("unchecked")
 	private void assertNoUnionTypeWithEnum(Object node, String path) {
 		if (node instanceof Map<?, ?> map) {
