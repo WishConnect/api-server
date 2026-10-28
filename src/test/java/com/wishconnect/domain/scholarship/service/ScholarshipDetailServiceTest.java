@@ -81,7 +81,20 @@ class ScholarshipDetailServiceTest {
 				.homepageUrl("https://example.com")
 				.build();
 		ReflectionTestUtils.setField(scholarship, "id", id);
+		// 수집으로 만든 장학금은 검수 대기로 시작한다. 공개된 공고를 전제로 한다.
+		scholarship.releaseReviewHold();
 		return scholarship;
+	}
+
+	@Test
+	@DisplayName("상세: 검수 대기 중인 새 장학금은 없는 장학금으로 본다")
+	void heldScholarshipIsNotFound() {
+		Scholarship held = scholarship(77L);
+		ReflectionTestUtils.setField(held, "reviewHeldAt", LocalDateTime.now());
+		org.mockito.BDDMockito.given(scholarshipRepository.findById(77L)).willReturn(java.util.Optional.of(held));
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> scholarshipDetailService.getDetail(null, 77L))
+				.isInstanceOf(com.wishconnect.global.exception.CustomException.class);
 	}
 
 	@Test

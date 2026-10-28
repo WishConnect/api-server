@@ -59,6 +59,9 @@ class ScholarshipAdminOverviewServiceTest {
 	@Mock
 	private com.wishconnect.domain.user.repository.UserRepository userRepository;
 
+	@Mock
+	private ScholarshipReviewHoldService reviewHoldService;
+
 	@InjectMocks
 	private ScholarshipAdminOverviewService service;
 

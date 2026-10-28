@@ -60,6 +60,7 @@ class ScholarshipDedupServiceTest {
 	@Mock private ScholarshipMergeCandidateRepository mergeCandidateRepository;
 	@Mock private ScholarshipMergeExecutor mergeExecutor;
 	@Mock private LlmClient llmClient;
+	@Mock private ScholarshipReviewHoldService reviewHoldService;
 
 	private ScholarshipDedupService service;
 	private long nextId;
@@ -67,7 +68,7 @@ class ScholarshipDedupServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new ScholarshipDedupService(scholarshipRepository, mergeCandidateRepository,
-				mergeExecutor, llmClient, new ObjectMapper());
+				mergeExecutor, llmClient, new ObjectMapper(), reviewHoldService);
 		nextId = 1L;
 		given(mergeCandidateRepository.findScholarshipIdsByStatus(any())).willReturn(List.of());
 		given(mergeCandidateRepository.existsByPrimary_IdAndDuplicate_Id(anyLong(), anyLong()))
@@ -181,6 +182,45 @@ class ScholarshipDedupServiceTest {
 
 		verify(llmClient, never()).chat(any());
 		assertThat(result.groupCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("비교할 짝이 없는 단독·과대 묶음 공고도 검사 완료로 찍는다 — 그래야 검수 대기에서 풀린다")
+	@SuppressWarnings("unchecked")
+	void stampsStandaloneAndOversizedRows() {
+		Scholarship alone = scholarship("교내 성적우수 장학금 선발 공고");
+		List<Scholarship> many = new ArrayList<>();
+		for (int i = 0; i < 7; i++) {
+			many.add(scholarship("국가장학금 " + (i + 1) + "차 신청 안내"));
+		}
+		List<Scholarship> all = new ArrayList<>(many);
+		all.add(alone);
+		givenScholarships(all.toArray(new Scholarship[0]));
+
+		service.detect(40);
+
+		verify(llmClient, never()).chat(any());
+		ArgumentCaptor<java.util.Collection<Long>> ids = ArgumentCaptor.forClass(java.util.Collection.class);
+		verify(scholarshipRepository).markDedupScanned(ids.capture(), any());
+		assertThat(ids.getValue()).contains(alone.getId())
+				.containsAll(many.stream().map(Scholarship::getId).toList());
+	}
+
+	@Test
+	@DisplayName("LLM 판정이 실패한 묶음은 검사 완료로 찍지 않는다 — 중복이 새어 나가지 않게 보류를 유지한다")
+	@SuppressWarnings("unchecked")
+	void doesNotStampFailedGroups() {
+		Scholarship a = scholarship("2026학년도 1학기 국가장학금 1차 신청 안내");
+		Scholarship b = scholarship("2026학년도 2학기 국가장학금 2차 신청기간 안내");
+		Scholarship alone = scholarship("교내 성적우수 장학금 선발 공고");
+		givenScholarships(a, b, alone);
+		given(llmClient.chat(any())).willThrow(new RuntimeException("401 invalid x-api-key"));
+
+		service.detect(40);
+
+		ArgumentCaptor<java.util.Collection<Long>> ids = ArgumentCaptor.forClass(java.util.Collection.class);
+		verify(scholarshipRepository).markDedupScanned(ids.capture(), any());
+		assertThat(ids.getValue()).containsExactly(alone.getId());
 	}
 
 	// --- 탐지: LLM 응답 방어 ---
@@ -367,6 +407,9 @@ class ScholarshipDedupServiceTest {
 		assertThat(result.moved()).containsEntry("scrap.moved", 2);
 		assertThat(candidate.getStatus()).isEqualTo(MergeCandidateStatus.MERGED);
 		assertThat(candidate.getReviewedBy()).isEqualTo(reviewer);
+		// 남는 쪽만 검수 대기 해제를 시도한다. 내린 쪽은 공개하지 않는다.
+		verify(reviewHoldService).releaseIfClear(a.getId());
+		verify(reviewHoldService, never()).releaseIfClear(b.getId());
 	}
 
 	@Test
@@ -447,6 +490,9 @@ class ScholarshipDedupServiceTest {
 		assertThat(candidate.getStatus()).isEqualTo(MergeCandidateStatus.REJECTED);
 		assertThat(candidate.getNote()).isEqualTo("캠퍼스가 다른 별개 모집");
 		assertThat(candidate.getReviewedBy()).isEqualTo(reviewer);
+		// 중복이 아니므로 양쪽 모두 검수 대기 해제를 시도한다.
+		verify(reviewHoldService).releaseIfClear(a.getId());
+		verify(reviewHoldService).releaseIfClear(b.getId());
 	}
 
 	@Test

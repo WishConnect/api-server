@@ -11,6 +11,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipSyncResponse;
 import com.wishconnect.domain.scholarship.service.ConditionExtractionService;
 import com.wishconnect.domain.scholarship.service.ScholarshipEnrichmentService;
 import com.wishconnect.domain.scholarship.service.ScholarshipDedupService;
+import com.wishconnect.domain.scholarship.service.ScholarshipReviewHoldService;
 import com.wishconnect.domain.scholarship.service.UnivNoticeLlmParsingService;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
@@ -50,6 +51,7 @@ public class ScholarshipSyncScheduler {
 	private final ScholarshipEnrichmentService scholarshipEnrichmentService;
 	private final UnivNoticeLlmParsingService univNoticeLlmParsingService;
 	private final ScholarshipDedupService scholarshipDedupService;
+	private final ScholarshipReviewHoldService scholarshipReviewHoldService;
 	private final AdminJobRunService adminJobRunService;
 
 	/**
@@ -102,6 +104,7 @@ public class ScholarshipSyncScheduler {
 	static final String STEP_DEDUP = "중복 후보 탐지";
 	static final String STEP_CONDITION_EXTRACT = "조건 추출";
 	static final String STEP_ENRICH = "상세·첨부·이미지 보완";
+	static final String STEP_REVIEW_RELEASE = "검수 대기 공개";
 
 	@Scheduled(cron = "${scholarship.sync.cron:0 0 11 * * *}", zone = "Asia/Seoul")
 	public void syncDaily() {
@@ -239,6 +242,15 @@ public class ScholarshipSyncScheduler {
 		} catch (Exception e) {
 			log.warn("[SyncBatch] 자동 보완 실패(다른 스텝에 영향 없음): {}", e.getMessage());
 			adminJobRunService.warn(runId, STEP_ENRICH, e);
+		}
+		try {
+			// 맨 마지막에 둔다. 중복 검사·조건 추출·상세 보완이 끝나야 그 결과로 이상 여부를 판정할 수 있다.
+			// 오늘처럼 중복 검사가 실패한 공고는 검사 완료 표시가 없어 공개되지 않고 다음 배치를 기다린다.
+			ScholarshipReviewHoldService.ReleaseResult release = scholarshipReviewHoldService.releaseCleared();
+			log.info("[SyncBatch] 검수 대기 공개 완료 공개={} 남음={}", release.released(), release.stillHeld());
+		} catch (Exception e) {
+			log.warn("[SyncBatch] 검수 대기 공개 실패(보류 건은 그대로 숨겨진다): {}", e.getMessage());
+			adminJobRunService.warn(runId, STEP_REVIEW_RELEASE, e);
 		}
 		adminJobRunService.succeed(runId, "장학금 일일 파이프라인 완료");
 	}

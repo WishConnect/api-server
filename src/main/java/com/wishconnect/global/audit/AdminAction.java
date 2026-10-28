@@ -90,5 +90,8 @@ public enum AdminAction {
 	/** 인사이트 수동 수집(외부 검색 API). */
 	INSIGHT_SYNC_TRIGGER,
 	/** 학교·전공 마스터 수동 동기화(추천 결과에 영향). */
-	UNIVERSITY_SYNC_TRIGGER
+	UNIVERSITY_SYNC_TRIGGER,
+
+	/** 검수 대기(보류) 중인 새 장학금을 관리자가 공개함. 중복·이상 확인을 사람이 대신한 것이다. */
+	SCHOLARSHIP_PUBLISH
 }

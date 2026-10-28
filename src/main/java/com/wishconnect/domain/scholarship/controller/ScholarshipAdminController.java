@@ -68,6 +68,7 @@ import com.wishconnect.domain.scholarship.service.ScholarshipManualService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualAggregateService;
 import com.wishconnect.domain.scholarship.service.ScholarshipManualExcelService;
 import com.wishconnect.domain.scholarship.service.ScholarshipReportService;
+import com.wishconnect.domain.scholarship.service.ScholarshipReviewHoldService;
 import com.wishconnect.domain.scholarship.service.ScholarshipSyncService;
 import com.wishconnect.global.audit.AdminAction;
 import com.wishconnect.global.audit.AdminAuditLogService;
@@ -142,6 +143,7 @@ public class ScholarshipAdminController {
 	private final ScholarshipChangeSummarizer scholarshipChangeSummarizer;
 	private final ScholarshipTakedownService scholarshipTakedownService;
 	private final RawScholarshipDismissService rawScholarshipDismissService;
+	private final ScholarshipReviewHoldService scholarshipReviewHoldService;
 
 	@Operation(summary = "데이터 현황 요약",
 			description = "원본 파싱 상태와 출처별 파싱 품질을 집계한다. 수집기를 고쳤을 때 "
@@ -207,9 +209,31 @@ public class ScholarshipAdminController {
 			@RequestParam(required = false) String source,
 			@RequestParam(required = false) RecruitmentStatus status,
 			@RequestParam(defaultValue = "false") boolean includeDeleted,
+			@RequestParam(required = false) Boolean reviewHeld,
 			Pageable pageable) {
 		return ApiResponse.ok(scholarshipAdminOverviewService.search(
-				keyword, source, status, includeDeleted, pageable));
+				keyword, source, status, includeDeleted, reviewHeld, pageable));
+	}
+
+	@Operation(summary = "검수 대기 장학금 공개",
+			description = """
+					새로 수집돼 검수 대기(보류) 중인 장학금을 사용자에게 공개한다.
+					보류 건은 일일 배치 끝에 문제가 없으면 자동으로 공개되고, 중복 후보는 병합·반려 때 풀린다.
+					이 API 는 남은 사유(중복 검사 전·데이터 이상)가 있어도 사람이 확인한 것으로 보고 푼다.
+					이미 공개된 장학금에 호출해도 아무것도 바뀌지 않는다. (ADMIN 전용)
+					""")
+	@PostMapping("/admin/scholarships/{scholarshipId}/publish")
+	public ApiResponse<Void> publishHeldScholarship(
+			@AuthenticationPrincipal String actorId,
+			@PathVariable Long scholarshipId) {
+		ScholarshipReviewHoldService.PublishResult result = scholarshipReviewHoldService.publish(scholarshipId);
+		if (result.wasHeld()) {
+			adminAuditLogService.record(UUID.fromString(actorId), AdminAction.SCHOLARSHIP_PUBLISH,
+					"SCHOLARSHIP", scholarshipId,
+					"검수 대기 공개: " + result.title()
+							+ (result.reasons().isEmpty() ? "" : " · 남아 있던 사유 " + String.join(", ", result.reasons())));
+		}
+		return ApiResponse.ok();
 	}
 
 	@Operation(summary = "관리자 장학금 통합 상세",

@@ -29,7 +29,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	// 키워드 없을 때
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
-			"AND s.deletedAt IS NULL " +
+			"AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findAllWithoutKeyword(
@@ -41,7 +41,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	// 키워드 있을 때
 	@Query("SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
-			"AND s.deletedAt IS NULL " +
+			"AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 			"AND (:keywordNoSpace IS NULL OR (" +
@@ -64,7 +64,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	// relevance 정렬: 제목 정확 일치와 제목 포함을 가장 우선으로 둔다.
 	@Query(value = "SELECT s FROM Scholarship s " +
 			"WHERE s.active = true " +
-			"AND s.deletedAt IS NULL " +
+			"AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 			"AND (:keywordNoSpace IS NULL OR (" +
@@ -84,7 +84,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			"ELSE 0 END DESC, s.createdAt DESC",
 			countQuery = "SELECT COUNT(s) FROM Scholarship s " +
 					"WHERE s.active = true " +
-					"AND s.deletedAt IS NULL " +
+					"AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 					"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 					"AND (:keywordNoSpace IS NULL OR (" +
@@ -107,7 +107,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	// 스크랩 필터 + 키워드 없을 때
 	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
-			"AND s.active = true AND s.deletedAt IS NULL " +
+			"AND s.active = true AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:category IS NULL OR s.scholarshipType = :category)")
 	Page<Scholarship> findScrappedByUser(
@@ -120,7 +120,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	// 스크랩 필터 + 키워드 있을 때
 	@Query("SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
-			"AND s.active = true AND s.deletedAt IS NULL " +
+			"AND s.active = true AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 			"AND (:keywordNoSpace IS NULL OR (" +
@@ -143,7 +143,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 
 	@Query(value = "SELECT s FROM Scrap sc JOIN sc.scholarship s " +
 			"WHERE sc.user.id = :userId " +
-			"AND s.active = true AND s.deletedAt IS NULL " +
+			"AND s.active = true AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 			"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 			"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 			"AND (:keywordNoSpace IS NULL OR (" +
@@ -163,7 +163,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			"ELSE 0 END DESC, s.createdAt DESC",
 			countQuery = "SELECT COUNT(s) FROM Scrap sc JOIN sc.scholarship s " +
 					"WHERE sc.user.id = :userId " +
-					"AND s.active = true AND s.deletedAt IS NULL " +
+					"AND s.active = true AND s.deletedAt IS NULL AND s.reviewHeldAt IS NULL " +
 					"AND (s.applicationEndAt IS NULL OR s.applicationEndAt >= :now) " +
 					"AND (:keywordType IS NULL OR s.scholarshipType = :keywordType) " +
 					"AND (:keywordNoSpace IS NULL OR (" +
@@ -196,6 +196,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			where s.recruitmentStatus in :status
 			  and s.active = true
 			  and s.deletedAt is null
+			  and s.reviewHeldAt is null
 			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
 			""")
 	List<Scholarship> findAllOpenForRecommendation(@Param("status") Collection<RecruitmentStatus> status,
@@ -207,6 +208,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			where s.recruitmentStatus = com.wishconnect.domain.scholarship.entity.RecruitmentStatus.OPEN
 			  and s.active = true
 			  and s.deletedAt is null
+			  and s.reviewHeldAt is null
 			  and s.applicationEndAt >= :start
 			  and s.applicationEndAt < :end
 			""")
@@ -229,6 +231,12 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			where s.deletedAt is null and s.title is not null
 			""")
 	List<com.wishconnect.domain.scholarship.dto.DedupScanRow> findDedupScanRows();
+
+	/** 검수 대기(보류) 중인 살아 있는 장학금. 보류 건은 새로 들어온 것뿐이라 소수다. */
+	@Query("select s from Scholarship s where s.reviewHeldAt is not null and s.deletedAt is null order by s.id")
+	List<Scholarship> findReviewHeld();
+
+	long countByReviewHeldAtIsNotNullAndDeletedAtIsNull();
 
 	/** 중복 검사를 마친 공고에 시각을 찍는다. 다음 배치가 안 본 것부터 가져가게 하기 위함이다. */
 	@Modifying(flushAutomatically = true)
@@ -276,6 +284,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			select s from Scholarship s
 			where s.active = true
 			  and s.deletedAt is null
+			  and s.reviewHeldAt is null
 			  and ((s.applicationStartAt >= :from and s.applicationStartAt < :to)
 			    or (s.applicationEndAt >= :from and s.applicationEndAt < :to))
 			""")
@@ -342,6 +351,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			select s.id as id, s.updatedAt as updatedAt, s.active as active
 			from Scholarship s
 			where s.deletedAt is null
+			  and s.reviewHeldAt is null
 			  and (s.noticeKind is null
 			       or s.noticeKind <> com.wishconnect.domain.scholarship.entity.NoticeKind.GUIDE)
 			  and (s.active = true or :includeClosed = true)

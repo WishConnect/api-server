@@ -45,7 +45,9 @@ public record AdminOverviewResponse(
 			 */
 			long alwaysOpen,
 			long createdToday,
-			LocalDateTime lastSyncedAt
+			LocalDateTime lastSyncedAt,
+			/** 검수 대기(보류) 중인 새 장학금. 사용자에게 안 보인다. */
+			long reviewHeld
 	) {
 	}
 
