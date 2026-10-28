@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -135,7 +136,7 @@ public class UnivNoticeLlmParser {
 		properties.put("scholarshipType", nullableEnum("INTERNAL", "EXTERNAL", "WORK_STUDY"));
 		properties.put("applicationStart", nullable("string"));
 		properties.put("applicationEnd", nullable("string"));
-		properties.put("periodEvidence", nullable("string"));
+		properties.put("periodEvidence", blankable());
 		properties.put("selectionCount", nullable("integer"));
 		properties.put("amount", nullable("integer"));
 		properties.put("summary", nullable("string"));
@@ -145,11 +146,11 @@ public class UnivNoticeLlmParser {
 		properties.put("submissionMethod", nullable("string"));
 		properties.put("submissionChannel",
 				nullableEnum("ONLINE", "EMAIL", "POST", "VISIT", "FAX", "MIXED", "THIRD_PARTY"));
-		properties.put("submissionEvidence", nullable("string"));
+		properties.put("submissionEvidence", blankable());
 		properties.put("essayRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
-		properties.put("essayEvidence", nullable("string"));
+		properties.put("essayEvidence", blankable());
 		properties.put("interviewRequirement", nullableEnum("REQUIRED", "CONDITIONAL", "NOT_REQUIRED"));
-		properties.put("interviewEvidence", nullable("string"));
+		properties.put("interviewEvidence", blankable());
 		properties.put("contact", nullable("string"));
 		properties.put("documents", Map.of("type", "array", "items", Map.of("type", "string")));
 		properties.put("conditions", Map.of(
@@ -164,7 +165,9 @@ public class UnivNoticeLlmParser {
         timeline.put("stageCode", Map.of("type", "string", "enum",
                 List.of("DOC_REVIEW", "DOC_RESULT", "INTERVIEW", "FINAL_RESULT", "PAYMENT")));
         timeline.put("dateType", Map.of("type", "string", "enum", List.of("SINGLE", "RANGE", "TBD")));
-        for (String name : List.of("startDate", "endDate", "dateText", "note")) timeline.put(name, nullable("string"));
+        for (String name : List.of("startDate", "endDate")) timeline.put(name, nullable("string"));
+        // 원문 인용 칸은 빈 문자열로 "없음"을 표현한다(아래 BLANK_AS_NULL 참고).
+        for (String name : List.of("dateText", "note")) timeline.put(name, blankable());
         timeline.put("evidence", Map.of("type", "string"));
         properties.put("timeline", Map.of("type", "array", "items", Map.of(
                 "type", "object", "additionalProperties", false,
@@ -187,6 +190,46 @@ public class UnivNoticeLlmParser {
 
 	private static Map<String, Object> nullable(String type) {
 		return Map.of("type", List.of(type, "null"));
+	}
+
+	/**
+	 * 값이 없으면 빈 문자열로 답하는 문자열 칸. 읽을 때 {@link #BLANK_AS_NULL} 이 null 로 되돌린다.
+	 *
+	 * <p>구조화 출력은 {@code ["string","null"]} 같은 유니온 타입 칸을 <b>16개까지만</b> 받는다
+	 * ("Schemas contains too many parameters with union types", 400). 2026-10-28 부터 이 한도로 파싱이
+	 * 전부 거절됐다(19개). 빈 문자열과 null 의 의미가 같은 원문 인용 칸을 이렇게 바꿔 한도 안으로 줄인다.
+	 * 칸을 새로 nullable 로 추가할 때는 {@code UnivNoticeLlmParserTest} 의 유니온 개수 검사가 먼저 깨진다.
+	 */
+	private static Map<String, Object> blankable() {
+		return Map.of("type", "string");
+	}
+
+	/** 스키마에서 빈 문자열로 "없음"을 받는 칸. 읽을 때 null 로 바꿔 이전과 같은 의미로 넘긴다. */
+	private static final Set<String> BLANK_AS_NULL = Set.of(
+			"periodEvidence", "submissionEvidence", "essayEvidence", "interviewEvidence");
+	private static final Set<String> TIMELINE_BLANK_AS_NULL = Set.of("dateText", "note");
+
+	/** 빈 문자열 → null. 스키마 한도 때문에 바꾼 칸만 되돌린다. */
+	private static void blankToNull(com.fasterxml.jackson.databind.JsonNode root) {
+		if (!(root instanceof com.fasterxml.jackson.databind.node.ObjectNode object)) {
+			return;
+		}
+		BLANK_AS_NULL.forEach(name -> nullIfBlank(object, name));
+		com.fasterxml.jackson.databind.JsonNode timeline = object.get("timeline");
+		if (timeline != null && timeline.isArray()) {
+			timeline.forEach(item -> {
+				if (item instanceof com.fasterxml.jackson.databind.node.ObjectNode stage) {
+					TIMELINE_BLANK_AS_NULL.forEach(name -> nullIfBlank(stage, name));
+				}
+			});
+		}
+	}
+
+	private static void nullIfBlank(com.fasterxml.jackson.databind.node.ObjectNode object, String name) {
+		com.fasterxml.jackson.databind.JsonNode value = object.get(name);
+		if (value != null && value.isTextual() && value.asText().isBlank()) {
+			object.putNull(name);
+		}
 	}
 
 	/**
@@ -244,7 +287,7 @@ public class UnivNoticeLlmParser {
 			  "scholarshipType": "INTERNAL"|"EXTERNAL"|"WORK_STUDY"|null,
 			  "applicationStart": "yyyy-MM-dd"|null,
 			  "applicationEnd": "yyyy-MM-dd"|null,
-			  "periodEvidence": 문자열|null,
+			  "periodEvidence": 문자열(없으면 ""),
 			  "selectionCount": 정수|null,
 			  "amount": 정수|null,
 			  "summary": 문자열|null,
@@ -252,16 +295,16 @@ public class UnivNoticeLlmParser {
 			  "combined": true|false,
 			  "submissionMethod": 문자열|null,
 			  "submissionChannel": "ONLINE"|"EMAIL"|"POST"|"VISIT"|"FAX"|"MIXED"|"THIRD_PARTY"|null,
-			  "submissionEvidence": 문자열|null,
+			  "submissionEvidence": 문자열(없으면 ""),
 			  "essayRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
-			  "essayEvidence": 문자열|null,
+			  "essayEvidence": 문자열(없으면 ""),
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
-			  "interviewEvidence": 문자열|null,
+			  "interviewEvidence": 문자열(없으면 ""),
 			  "contact": 문자열|null,
               "timeline": [{"stageCode": "DOC_REVIEW"|"DOC_RESULT"|"INTERVIEW"|"FINAL_RESULT"|"PAYMENT",
                             "dateType": "SINGLE"|"RANGE"|"TBD", "startDate": "yyyy-MM-dd"|null,
-                            "endDate": "yyyy-MM-dd"|null, "dateText": 문자열|null,
-                            "note": 문자열|null, "evidence": 문자열}],
+                            "endDate": "yyyy-MM-dd"|null, "dateText": 문자열(없으면 ""),
+                            "note": 문자열(없으면 ""), "evidence": 문자열}],
 			  "documents": [문자열],
 			  "conditions": [{"type": 문자열, "evidence": 문자열, "necessity": "REQUIRED"|"PREFERRED",
 			                  "refLabels": [문자열], "operator": 문자열|null,
@@ -728,7 +771,9 @@ public class UnivNoticeLlmParser {
 			if (start < 0 || end <= start) {
 				return Optional.empty();
 			}
-			return Optional.ofNullable(objectMapper.readValue(json.substring(start, end + 1), ParsedNotice.class));
+			com.fasterxml.jackson.databind.JsonNode tree = objectMapper.readTree(json.substring(start, end + 1));
+			blankToNull(tree);
+			return Optional.ofNullable(objectMapper.treeToValue(tree, ParsedNotice.class));
 		} catch (Exception e) {
 			log.warn("[UnivLlmParser] 응답 파싱 실패: {}", e.getMessage());
 			return Optional.empty();
