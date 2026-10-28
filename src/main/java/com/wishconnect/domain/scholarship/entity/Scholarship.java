@@ -251,6 +251,16 @@ public class Scholarship extends BaseEntity {
 	private LocalDateTime dedupScannedAt;
 
 	/**
+	 * 검수 대기(보류) 시작 시각. null 이면 사용자에게 보인다.
+	 *
+	 * <p>수집·파싱으로 새로 만들어진 장학금은 이 값을 갖고 시작한다. 중복이나 깨진 데이터가 먼저 노출되고
+	 * 나중에 고쳐지는 일을 막기 위해서다(선작업·후노출). 일일 배치 끝에서 문제없는 건은 자동으로 풀리고,
+	 * 중복 후보는 병합·반려 때, 나머지는 관리자가 공개할 때 풀린다. 관리자 수기 등록분은 처음부터 공개다.
+	 */
+	@Column(name = "review_held_at")
+	private LocalDateTime reviewHeldAt;
+
+	/**
 	 * 관리자가 모집기간을 직접 고쳤는지. true 면 공공데이터 동기화({@link #updateFromApi})와 대학 공지
 	 * 재파싱({@link #applyLlmParsed})이 <b>기간만</b> 건너뛰고 나머지는 평소처럼 갱신한다.
 	 *
@@ -320,6 +330,7 @@ public class Scholarship extends BaseEntity {
 		this.dedupKey = dedupKey;
 		this.homepageUrl = homepageUrl;
 		this.lastSyncedAt = LocalDateTime.now();
+		this.reviewHeldAt = this.lastSyncedAt;
 	}
 
 	public void updateFromApi(
@@ -429,6 +440,8 @@ public class Scholarship extends BaseEntity {
 			.homepageUrl(homepageUrl)
 			.build();
 		scholarship.verified = true;
+		// 사람이 직접 넣은 공고라 검수 대기를 거치지 않는다.
+		scholarship.reviewHeldAt = null;
 		return scholarship;
 	}
 
@@ -740,6 +753,21 @@ public class Scholarship extends BaseEntity {
 
 	public boolean isDeleted() {
 		return deletedAt != null;
+	}
+
+	/** 검수 대기(보류) 중이라 사용자에게 보이지 않는 상태인지. */
+	public boolean isReviewHeld() {
+		return reviewHeldAt != null;
+	}
+
+	/** 사용자에게 보여도 되는지: 내리지 않았고 검수 대기도 아니다. 모집 상태·마감과는 별개다. */
+	public boolean isVisibleToUsers() {
+		return deletedAt == null && reviewHeldAt == null;
+	}
+
+	/** 검수 대기를 풀어 공개한다. 이미 공개된 건은 그대로 둔다. */
+	public void releaseReviewHold() {
+		this.reviewHeldAt = null;
 	}
 
 	/**

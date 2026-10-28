@@ -28,7 +28,9 @@ public record AdminScholarshipDetailResponse(
 			String interviewRequirement, String interviewEvidence, LocalDateTime createdAt,
 			LocalDateTime updatedAt, LocalDateTime deletedAt,
             @Schema(description = "모집기간 수기 고정. true 면 동기화·재파싱이 기간을 덮지 않는다") boolean periodLocked,
-            @Schema(description = "선발 일정 수기 보호. 빈 목록으로 저장한 경우도 자동 보완하지 않는다") boolean timelineLocked) {
+            @Schema(description = "선발 일정 수기 보호. 빈 목록으로 저장한 경우도 자동 보완하지 않는다") boolean timelineLocked,
+			@Schema(description = "검수 대기(보류) 중이라 사용자에게 안 보이는지") boolean reviewHeld,
+			@Schema(description = "보류 사유 코드. 공개된 건은 빈 목록") List<String> holdReasons) {
 	}
 	public record RawData(Long id, String source, String sourceId, String sourceUrl,
 			Map<String, Object> rawJson, String rawHtml, String parseStatus, String parseError,
