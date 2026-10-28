@@ -77,8 +77,13 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20261008_01__scholarship_timeline_locked.sql` | 자동 일정 추출 시 수기 일정·수기 삭제 보호(`timeline_locked`), 기존 MANUAL 행 백필 | ✅ 적용돼 있음(2026-10-27 운영 스키마로 확인, 적용일 미기록 — #207 배포 성공) |
 | `V20261026_01__raw_scholarship_dismiss.sql` | 실패 재처리 원본 만료 처리(`raw_scholarship.dismissed_at`·`dismissed_reason`(CHECK)·`dismissed_note`) + 감사 action CHECK 에 `RAW_SCHOLARSHIP_DISMISS`·`RAW_SCHOLARSHIP_RESTORE` | ✅ 2026-10-27 |
 | `V20261027_01__admin_audit_coverage.sql` | 작업 기록 확장: `admin_audit_log.actor_id` NULL 허용(로그인 실패), action CHECK 에 로그인·LLM 재처리·실패 요청·동기화 등 10개, 기간·관리자·대상 인덱스 3개 | ✅ 2026-10-27 |
+| `V20261028_01__scholarship_review_hold.sql` | 새 장학금 검수 대기: `scholarship.review_held_at`(NULL=공개) + 보류 건 부분 인덱스 + 감사 action CHECK 에 `SCHOLARSHIP_PUBLISH` | ✅ 2026-10-28 |
 
 > ⚠️ **`V20261008_01`은 새 백엔드 배포 전에 적용한다.** 운영 SQL은 자동 실행되지 않는다.
+
+> 2026-10-28 운영 적용(`V20261028_01`): 이전 버전 앱이 떠 있는 상태에서 단일 트랜잭션 적용 → `review_held_at` 생성(NULL 허용)·
+> 보류 0건·CHECK 에 `SCHOLARSHIP_PUBLISH` 확인 후 릴리스 #215 배포. 기존 장학금은 모두 NULL 이라 노출 변화 없음.
+> ⚠️ 배포보다 먼저 적용해야 한다(`Scholarship.reviewHeldAt` 컬럼이 없으면 `validate` 실패로 기동 불가).
 
 > 2026-10-27 운영 적용: 적용 전 `dismissed_*` 0개·`actor_id` NOT NULL·감사 action 값 13종(모두 새 CHECK 안) 확인 →
 > `lock_timeout 5s` 로 `V20261026_01`→`V20261027_01` 한 세션 적용 → 컬럼 3개·사유 CHECK·`actor_id` NULL 허용·새 CHECK·인덱스 3개 확인.
