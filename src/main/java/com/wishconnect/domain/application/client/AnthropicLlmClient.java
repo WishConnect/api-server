@@ -10,6 +10,7 @@ import com.anthropic.models.messages.StopReason;
 import com.wishconnect.domain.application.client.dto.LlmChatRequest;
 import com.wishconnect.domain.application.client.dto.LlmMessage;
 import com.wishconnect.domain.application.client.dto.LlmModel;
+import com.wishconnect.domain.application.config.LlmConfig;
 import com.wishconnect.domain.application.config.LlmProperties;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -29,7 +30,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AnthropicLlmClient implements LlmClient {
 
-	private final AnthropicClient anthropicClient;
+	private final LlmConfig.AnthropicClients anthropicClients;
 	private final LlmProperties properties;
 
 	@Override
@@ -59,7 +60,7 @@ public class AnthropicLlmClient implements LlmClient {
 		}
 
 		try {
-			Message response = anthropicClient.messages().create(builder.build());
+			Message response = clientFor(request.model()).messages().create(builder.build());
 			String text = response.content().stream()
 					.flatMap(block -> block.text().stream())
 					.map(textBlock -> textBlock.text())
@@ -100,6 +101,17 @@ public class AnthropicLlmClient implements LlmClient {
 		return OutputConfig.builder()
 				.format(JsonOutputFormat.builder().schema(schemaBuilder.build()).build())
 				.build();
+	}
+
+	/**
+	 * 어느 키로 보낼지 고른다. 자소서·인터뷰는 사용자 요청이라 자소서 키, 나머지는 데이터 처리라 파싱 키.
+	 * 데이터 처리 쪽 호출은 모델이 같더라도 {@code PARSING}/{@code SUMMARY} 를 써야 파싱 키로 과금된다.
+	 */
+	private AnthropicClient clientFor(LlmModel model) {
+		return switch (model) {
+			case INTERVIEW, DRAFT -> anthropicClients.essay();
+			case PARSING, SUMMARY -> anthropicClients.parser();
+		};
 	}
 
 	private String resolveModelId(LlmModel model) {
