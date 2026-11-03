@@ -1,0 +1,103 @@
+name: Deploy pipeline review to staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '검증할 브랜치·태그·커밋 SHA (운영 배포 아님)'
+        required: true
+        default: develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew clean build
+      - id: version
+        name: Package tested artifact
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil, subprocess
+          jar, = [p for p in pathlib.Path('build/libs').glob('*.jar') if not p.name.endswith('-plain.jar')]
+          target = pathlib.Path('staging-release.jar')
+          shutil.copyfile(jar, target)
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          digest = hashlib.sha256(target.read_bytes()).hexdigest()
+          pathlib.Path('staging-version.json').write_text(json.dumps({'commit': sha, 'sha256': digest}))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write('sha=' + sha + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-${{ steps.version.outputs.sha }}
+          path: |
+            staging-release.jar
+            staging-version.json
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-${{ needs.build.outputs.sha }}
+      - name: Check isolated staging configuration
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_HOST_FINGERPRINT: ${{ secrets.STAGING_HOST_FINGERPRINT }}
+          STAGING_ENV_FILE: ${{ secrets.STAGING_ENV_FILE }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          names = ['STAGING_HOST', 'STAGING_USER', 'STAGING_SSH_KEY', 'STAGING_HOST_FINGERPRINT', 'STAGING_ENV_FILE']
+          if any(not os.environ.get(name) for name in names):
+              raise SystemExit('staging 환경의 전용 secrets 5개를 먼저 설정해야 합니다.')
+          target = pathlib.Path('staging.env')
+          target.write_text(os.environ['STAGING_ENV_FILE'])
+          target.chmod(0o600)
+          PY
+      - uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          fingerprint: ${{ secrets.STAGING_HOST_FINGERPRINT }}
+          source: staging-release.jar,staging-version.json,staging.env,deploy/staging/deploy.sh,deploy/staging/wishconnect-staging.service,src/main/resources/db/migration/V20261102_01__scholarship_pipeline_review.sql
+          target: /home/ubuntu/wishconnect-staging/incoming
+      - uses: appleboy/ssh-action@v1.0.3
+        env:
+          EXPECTED_COMMIT: ${{ needs.build.outputs.sha }}
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          fingerprint: ${{ secrets.STAGING_HOST_FINGERPRINT }}
+          envs: EXPECTED_COMMIT
+          script: bash /home/ubuntu/wishconnect-staging/incoming/deploy/staging/deploy.sh "$EXPECTED_COMMIT"
+      - name: Remove runner copy of staging environment
+        if: always()
+        run: rm -f staging.env

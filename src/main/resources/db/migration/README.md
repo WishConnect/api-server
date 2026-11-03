@@ -78,6 +78,12 @@ psql -h <RDS_HOST> -U <USER> -d wishconnect -f V20260729_01__add_role_to_users.s
 | `V20261026_01__raw_scholarship_dismiss.sql` | 실패 재처리 원본 만료 처리(`raw_scholarship.dismissed_at`·`dismissed_reason`(CHECK)·`dismissed_note`) + 감사 action CHECK 에 `RAW_SCHOLARSHIP_DISMISS`·`RAW_SCHOLARSHIP_RESTORE` | ✅ 2026-10-27 |
 | `V20261027_01__admin_audit_coverage.sql` | 작업 기록 확장: `admin_audit_log.actor_id` NULL 허용(로그인 실패), action CHECK 에 로그인·LLM 재처리·실패 요청·동기화 등 10개, 기간·관리자·대상 인덱스 3개 | ✅ 2026-10-27 |
 | `V20261028_01__scholarship_review_hold.sql` | 새 장학금 검수 대기: `scholarship.review_held_at`(NULL=공개) + 보류 건 부분 인덱스 + 감사 action CHECK 에 `SCHOLARSHIP_PUBLISH` | ✅ 2026-10-28 |
+| `V20261102_01__scholarship_pipeline_review.sql` | 파이프라인 비교 이력·원본·모델 응답·기존/신규 검증 결과. 운영 정제 데이터는 변경하지 않음 | 미적용 — 신규 JAR 기동 전 적용 |
+
+> `V20261102_01`은 비교 기능이 꺼져 있어도 새 JAR의 `ddl-auto=validate`에 필요하다.
+> staging 배포는 `*_staging` DB에만 이 SQL을 실행한다. 기존 테이블은 별도 준비해야 한다.
+> 운영 배포는 기존 workflow가 이 SQL을 자동 실행하지 않으므로 먼저 수동 적용해야 한다.
+> 롤백 시 추가 테이블과 비교 이력은 보존한다. 비교 기능은 기본 비활성화이며 정제 데이터 적용 API는 없다.
 
 > ⚠️ **`V20261008_01`은 새 백엔드 배포 전에 적용한다.** 운영 SQL은 자동 실행되지 않는다.
 

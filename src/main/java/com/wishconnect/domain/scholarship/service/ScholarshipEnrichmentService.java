@@ -74,6 +74,7 @@ public class ScholarshipEnrichmentService {
 	private final ImageStorageService imageStorageService;
 	private final NaverSearchClient naverSearchClient;
     private final CrawledScholarshipTimelineService timelineService;
+    private final ScholarshipPipelineReviewService pipelineReviewService;
 
 	/** 남의 사이트를 두들기지 않도록 요청 사이에 쉬는 시간(ms). */
 	@Value("${scholarship.enrich.delay-ms:1500}")
@@ -121,6 +122,11 @@ public class ScholarshipEnrichmentService {
 				if (page == null) {
 					continue;
 				}
+                try {
+                    pipelineReviewService.capturePage(scholarship, page, best.url());
+                } catch (RuntimeException captureFailure) {
+                    log.warn("[PipelineReview] 캡처 실패 scholarshipId={}", scholarship.getId());
+                }
                 if (collectImage && savePosterIfAutomatic(scholarship, page)) {
 					imageSaved++;
 				}
