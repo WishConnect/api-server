@@ -25,7 +25,10 @@ class AdminConsoleScriptTest {
 	@DisplayName("작업 기록 화면 스크립트: 라벨·값 형식·내용 기준 행 대조·모르는 action·등록 내용(node --test)")
 	void auditScript() throws Exception {
 		Assumptions.assumeTrue(nodeAvailable(), "node 가 없어 콘솔 스크립트 테스트를 건너뜀");
-		Process process = new ProcessBuilder("node", "--test", SCRIPT_TESTS.toString())
+		// 리포터를 tap 으로 고정한다. Node 23 부터는 출력이 파이프여도 기본 리포터가 spec 이라
+		// 요약이 "ℹ fail 0" 으로 찍힌다. 러너 이미지가 Node 를 올리자 테스트는 전부 통과하는데
+		// 아래 "# fail 0" 검사만 실패해 운영 배포가 막혔다.
+		Process process = new ProcessBuilder("node", "--test", "--test-reporter=tap", SCRIPT_TESTS.toString())
 				.redirectErrorStream(true).start();
 		boolean finished = process.waitFor(60, TimeUnit.SECONDS);
 		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
