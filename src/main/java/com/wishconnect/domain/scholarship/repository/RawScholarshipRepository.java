@@ -20,6 +20,10 @@ source + sourceId 조합으로 이미 수집한 원본인지 확인해 중복 �
 public interface RawScholarshipRepository extends JpaRepository<RawScholarship, Long>,
 		JpaSpecificationExecutor<RawScholarship> {
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "scholarship")
+    @Query("select r from RawScholarship r where r.id in :ids order by r.id")
+    List<RawScholarship> findPipelineInputs(@Param("ids") Collection<Long> ids);
+
 	Optional<RawScholarship> findBySourceAndSourceId(String source, String sourceId);
 
 	long countByScholarship(Scholarship scholarship);

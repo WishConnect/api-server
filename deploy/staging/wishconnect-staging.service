@@ -1,0 +1,15 @@
+[Unit]
+Description=WishConnect pipeline review (staging)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/wishconnect-staging
+EnvironmentFile=/etc/wishconnect-staging.env
+ExecStart=/usr/bin/java -Xms128m -Xmx512m -jar /home/ubuntu/wishconnect-staging/app.jar --spring.profiles.active=staging --server.address=127.0.0.1 --server.port=18081 --scholarship.sync.scheduled=false --notification.scheduled=false
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

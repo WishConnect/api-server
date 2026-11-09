@@ -162,3 +162,58 @@ free -m
 | 스왑 | 2GB + `vm.swappiness=10` |
 | 재시작 폭주 방지 | `StartLimitBurst=5` / `StartLimitIntervalSec=300` |
 | 로그 | logrotate 일 단위 7일 보관 (그전까지 app.log 가 무한 증가, 10.7MB) |
+
+
+## 장학금 파이프라인 비교용 staging
+
+`Deploy pipeline review to staging`은 수동 실행 전용이다. 빌드·테스트한 JAR와 커밋 SHA·SHA-256
+매니페스트를 함께 배포하며, 기존 운영 배포 워크플로와 별도의 경로·systemd 서비스를 사용한다.
+GitHub 수동 실행은 이 워크플로가 저장소 기본 브랜치에 등록된 뒤 사용할 수 있다.
+첫 버전은 **동일한 모델 응답에 대한 기존/신규 검증 결과 비교**다. 수집기 전체의 A/B 실행이나
+운영 장학금·일정 자동 수정 기능은 포함하지 않는다.
+
+### 최초 준비
+
+- GitHub `staging` Environment에 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`,
+  `STAGING_HOST_FINGERPRINT`, `STAGING_ENV_FILE`을 설정한다. 운영 Secret을 재사용하지 않는다.
+- 대상은 Ubuntu의 `ubuntu` 계정, Java 17, Python 3, PostgreSQL 클라이언트, 비밀번호 없는 sudo,
+  `/home/ubuntu/wishconnect-staging` 쓰기 권한을 전제로 한다. 별도 서버 또는 충분한 자원을 확보한다.
+- `staging/staging.env.example`을 기준으로 독립 DB·Redis·JWT를 준비한다. DB 이름은 `_staging`으로
+  끝나고 Redis DB는 1 이상이어야 한다. Redis의 별도 인스턴스 사용을 권장한다.
+- DB에는 **기존 애플리케이션 스키마**와 익명화한 검증 데이터가 먼저 있어야 한다. 배포 스크립트는
+  비교 이력 테이블 마이그레이션만 적용하며, 운영 데이터 복사·기존 스키마 생성은 수행하지 않는다.
+- `STAGING_ENV_FILE`은 `KEY=value` 형식이다. 공백이 있는 값은 따옴표로 감싼다. 실제 값은 커밋하지 않는다.
+  LLM 키 없이도 `/replay` 검증은 가능하다. `/compare`는 관리자 수동 실행 시 모델 과금이 발생한다.
+
+스테이징 프로필은 수집·알림 자동 배치를 끄고, 운영 S3·메일·OAuth 자격증명을 사용하지 않는다.
+루프백 `127.0.0.1:18081`로만 제공하므로 SSH 터널로 접근한다.
+
+### 비교 API
+
+`scholarship.pipeline.review-enabled`는 기본 false, staging에서 true다. 모든 API는 ADMIN 권한이 필요하다.
+기본 경로는 `/api/v1/admin/scholarship-pipeline`이다.
+
+| 메서드·경로 | 동작 |
+|---|---|
+| `POST /replay` | `{ "rawId": 1, "modelResponse": "{\"timeline\":[]}" }` — 기록한 응답/fixture로 외부 호출 없이 재현 |
+| `POST /compare` | `{ "rawIds": [1, 2] }` — 최대 10개 원문, 각각 LLM 1회 호출 후 검증 결과 비교 |
+| `POST /runs/{id}/compare` | API 보완 수집 중 캡처한 상세 HTML로 LLM 비교 |
+| `GET /runs`, `GET /runs/{id}` | 입력·원본·응답·버전·후보·검증 실패 사유 조회 |
+
+API 상세 HTML은 기존 보완 수집이 성공했을 때 비교 기능이 켜져 있으면 별도 트랜잭션으로 캡처한다.
+캡처 실패는 기존 보완 수집을 막지 않는다. 신규 fetch나 자동 LLM 호출은 추가하지 않는다.
+대학 HTML/API JSON은 저장된 RawScholarship으로 재현한다. 실제 사이트 재수집이나 선택자 전달 수정은
+후속 작업이다. 날짜만 있는 값은 DATE_ONLY, 시각까지 확인되면 DATE_TIME이며 누락 시각을 만들지 않는다.
+이 결과는 아직 모집 상태/D-day 계산에 연결되지 않으므로 기존 화면 오류가 즉시 해결되는 배포는 아니다.
+
+### 마이그레이션·검증·롤백
+
+`V20261102_01__scholarship_pipeline_review.sql`은 새 JAR **기동 전에 필수**다.
+기능 플래그가 false여도 JPA `validate` 대상 엔티티이므로 테이블이 없으면 앱 기동이 실패한다.
+운영 배포 워크플로는 SQL을 자동 적용하지 않으므로, 향후 운영 배포 전 별도로 적용해야 한다.
+추가 테이블·인덱스만 생성하며 기존 장학금·일정 테이블과 데이터는 변경하지 않는다.
+
+배포의 `/actuator/health` 통과는 기동 확인이다. 별도로 `/replay`와 비교 조회를 실행해
+제목에만 있는 기간, 실제 16:00 마감, 날짜만 있는 API 기간, 서류심사 결과 발표, 잘못 연결된 일정,
+관리자 잠금 데이터 보호를 확인한다. 검수된 정답셋으로 누락·오탐을 평가한 뒤 운영 적용을 설계한다.
+배포 실패 시 이전 JAR로 돌아가고 비교 이력 테이블은 유지한다. 이 절차는 정제 데이터의 롤백 기능이 아니다.
