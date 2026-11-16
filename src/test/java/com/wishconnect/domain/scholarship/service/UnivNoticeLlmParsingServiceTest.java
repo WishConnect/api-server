@@ -38,6 +38,8 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipConditionReposit
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -661,5 +663,44 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(batch.skippedCount()).isEqualTo(1);
 		assertThat(reparse.skippedCount()).isEqualTo(1);
 		verify(llmClient, never()).chat(any());
+	}
+
+	@Test
+	void savesTitleOnlyRecruitmentPeriodWhenModelOmitsDates() {
+		String rawHtml = "<div>바로가기 퀵메뉴</div>"
+				+ "<h2 class='view-title'>장학생 모집(11. 18. 10:00 ~ 11. 26. 16:00)</h2>"
+				+ "<article>첨부 공고문 참조</article>";
+		RawScholarship target = raw(1L, rawHtml, null, ParseStatus.PENDING);
+		ReflectionTestUtils.setField(target, "crawledAt", LocalDateTime.of(2026, 11, 16, 11, 0));
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn("{\"title\":\"장학생 모집\"}");
+		given(scholarshipRepository.save(any(Scholarship.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		assertThat(target.getScholarship().getApplicationStartAt()).isEqualTo("2026-11-18T10:00:00");
+		assertThat(target.getScholarship().getApplicationEndAt()).isEqualTo("2026-11-26T16:00:00");
+	}
+
+	@Test
+	void updatesOnlyVerifiedDatesForLinkedNoticeWithTitleAndNoBody() {
+		var existing = existingScholarship();
+		String title = existing.getTitle();
+		String provider = existing.getProvider();
+		var target = raw(1L, "<div>바로가기 퀵메뉴</div>"
+				+ "<h2 class='view-title'>장학생 모집(11. 18. 10:00 ~ 11. 26. 16:00)</h2>"
+				+ "<article>첨부 공고문 참조</article>", existing, ParseStatus.PARSED);
+		ReflectionTestUtils.setField(target, "crawledAt", LocalDateTime.of(2026, 11, 16, 11, 0));
+		givenAllTargets(List.of(target));
+
+		service.parse(20, true, false);
+
+		assertThat(existing.getApplicationEndAt()).isEqualTo("2026-11-26T16:00:00");
+		assertThat(existing.getTitle()).isEqualTo(title);
+		assertThat(existing.getProvider()).isEqualTo(provider);
+		verify(llmClient, never()).chat(any());
+		verify(scholarshipConditionRepository, never()).deleteByScholarship(any());
+		verify(scholarshipDocumentRepository, never()).deleteByScholarship(any());
+		verify(timelineService, never()).mergeFromParsed(any(), any(), any(), any());
 	}
 }

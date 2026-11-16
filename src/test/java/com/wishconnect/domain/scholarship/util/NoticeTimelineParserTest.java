@@ -138,4 +138,22 @@ class NoticeTimelineParserTest {
 
 		assertThat(NoticeTimelineParser.resolve(notice, quote, LocalDate.of(2026, 11, 16))).isEmpty();
 	}
+
+	@Test
+	void recoversSourceRowsMissedByModelOnThreeNoticeFormats() {
+		var body = """
+				서류 합격 및 면접 대상자 발표: 2026년 12월 14일(월) ~ 18일(금)
+				2차면접심사: 2026. 12. 29.(화) 울산 / 12. 30.(수) 서울
+				나. 장학생 선발: 2026. 12 초
+				최종 합격자 발표: 2026년 12월 23일(수) ~ 25일(금)
+				면접 확인서 제출기한: 2026년 12월 10일
+				""";
+		var items = NoticeTimelineParser.withSourceEvidence(notice("[]"), body, LocalDate.of(2026, 11, 16));
+		assertThat(items).hasSize(5);
+		assertThat(items.get(0).endDate()).isEqualTo(LocalDate.of(2026, 12, 18));
+		assertThat(items.subList(1, 3)).extracting(item -> item.note()).containsExactly("울산", "서울");
+		assertThat(items.get(3).dateText()).isEqualTo("2026. 12 초");
+		assertThat(items.get(4).endDate()).isEqualTo(LocalDate.of(2026, 12, 25));
+	}
+
 }

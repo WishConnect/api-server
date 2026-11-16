@@ -518,7 +518,23 @@ public class UnivNoticeLlmParser {
 		if (text.length() <= MAX_BODY_CHARS) {
 			return Optional.of(new ExtractedBody(text, false, text.length()));
 		}
-		return Optional.of(new ExtractedBody(text.substring(0, MAX_BODY_CHARS), true, text.length()));
+		return Optional.of(new ExtractedBody(summarizeLongBody(text), true, text.length()));
+	}
+
+	private static String summarizeLongBody(String text) {
+		String head = text.substring(0, MAX_BODY_CHARS);
+		// 접수·발표 일정은 본문 뒤에 있어도 행 단위로 남긴다.
+		String schedule = text.lines()
+				.filter(line -> line.length() <= 350)
+				.filter(line -> TemporalCandidateParser.hasApplicationLabel(line)
+						|| NoticeTimelineParser.hasScheduleLabel(line))
+				.filter(line -> !head.contains(line))
+				.distinct().limit(12).collect(java.util.stream.Collectors.joining("\n"));
+		if (schedule.isBlank()) return head;
+		int scheduleBudget = Math.min(schedule.length(), MAX_BODY_CHARS / 3);
+		int cut = schedule.lastIndexOf('\n', scheduleBudget);
+		if (schedule.length() > scheduleBudget && cut >= 0) schedule = schedule.substring(0, cut);
+		return text.substring(0, MAX_BODY_CHARS - schedule.length() - 2) + "\n\n" + schedule;
 	}
 
 	/**

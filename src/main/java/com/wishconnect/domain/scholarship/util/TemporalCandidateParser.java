@@ -15,6 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
@@ -22,16 +23,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class TemporalCandidateParser {
 
-    public static final String VERSION = "temporal-v2.0.0-rc.2";
+    public static final String VERSION = "temporal-v2.0.0-rc.3";
     private static final Pattern DATE = Pattern.compile(
             "(?<!\\d)(?:(20\\d{2})\\s*[.\\-/년]\\s*)?(\\d{1,2})\\s*[.\\-/월]\\s*(\\d{1,2})(?!\\d)");
     private static final Pattern TIME = Pattern.compile(
-            "^\\s*[.일]?\\s*(?:\\([^)]{0,8}\\)\\s*)?(?:(오전|오후)\\s*)?"
+            "^\\s*[.일]?\\s*(?:\\([^)]{0,8}\\)\\s*)?[,，]?\\s*(?:(오전|오후)\\s*)?"
                     + "(\\d{1,2})\\s*(?::\\s*(\\d{2})|시(?:\\s*(\\d{1,2})\\s*분)?)");
 
     private static final Pattern SHORT_KOREAN_RANGE = Pattern.compile(
             "(\\d{1,2})\\s*월\\s*\\d{1,2}\\s*일(?:\\s*\\([^)]{0,8}\\))?\\s*[~∼〜–-]\\s*(\\d{1,2})\\s*일");
     private static final Pattern RANGE_SEPARATOR = Pattern.compile("[~∼〜–]|부터|(?<=\\s)-(?=\\s)");
+
+    private static final Pattern QUOTED_YEAR = Pattern.compile(
+            "(?<!\\d)(?:20\\d{2}|['’‘`]\\d{2})\\s*[.\\-/년]\\s*\\d{1,2}");
+    private static final Pattern EXPLICIT_DEADLINE = Pattern.compile(
+            "마감|기한|까지|[~∼〜]\\s*(?:20\\d{2}\\D+)?\\d");
+    private static final Pattern INTRADAY_RANGE = Pattern.compile("[~∼〜]\\s*(?:오전|오후)?\\s*\\d{1,2}\\s*[:시]");
 
     public TemporalParseResult resolve(PipelineNoticeInput input, ParsedNotice notice) {
         List<String> issues = new ArrayList<>();
@@ -79,7 +86,8 @@ public class TemporalCandidateParser {
 
     /** 본문을 이미 추출한 실제 대학 파싱에서도 같은 모집기간 검증을 사용한다. */
     public Period resolveRecruitmentPeriod(String title, String body, LocalDate referenceDate, ParsedNotice notice) {
-        return resolveRecruitmentPeriod(title, body, referenceDate, notice, new ArrayList<>());
+        Period explicit = resolveExplicitRecruitmentPeriod(title, body, referenceDate);
+        return explicit == null ? resolveRecruitmentPeriod(title, body, referenceDate, notice, new ArrayList<>()) : explicit;
     }
 
     private Period resolvePeriod(PipelineNoticeInput input, ParsedNotice notice, List<String> issues) {
@@ -98,47 +106,95 @@ public class TemporalCandidateParser {
             ParsedNotice notice, List<String> issues) {
         String context = (title == null ? "" : title) + "\n" + body;
         String evidence = notice.periodEvidence();
-        if (!grounded(evidence, context)) {
-            // 제목이 명확한 기간을 포함한 경우에만 결정적으로 복구한다.
-            if (title != null && applicationTitle(title)) evidence = title;
-            else {
-                issues.add("PERIOD_EVIDENCE_NOT_FOUND");
-                return null;
-            }
+        if (grounded(evidence, context)) {
+            boolean fromTitle = title != null && applicationTitle(title) && grounded(evidence, title);
+            return periodFromEvidence(evidence, fromTitle, referenceDate, notice.applicationStart(),
+                    notice.applicationEnd(), issues);
         }
-        boolean fromTitle = title != null && applicationTitle(title) && grounded(evidence, title);
-        boolean applicationLabel = evidence.replaceAll("\\s+", "")
-                .matches(".*(신청기간|접수기간|모집기간|지원서제출|원서접수|서류접수|신청기한|접수기한|지원기간|신청마감|접수마감).*" );
+        Period source = resolveExplicitRecruitmentPeriod(title, body, referenceDate);
+        if (source == null) issues.add("PERIOD_EVIDENCE_NOT_FOUND");
+        return source;
+    }
+
+    /** 원문에 명시된 접수 구간 또는 마감만 보완한다. 서로 다른 신청기간이 있으면 자동 선택하지 않는다. */
+    public Period resolveExplicitRecruitmentPeriod(String title, String body, LocalDate referenceDate) {
+        Period found = null;
+        for (String line : body.split("\\R")) {
+            if (line.length() > 350 || !hasApplicationLabel(line)) continue;
+            Period candidate = periodFromEvidence(line, false, referenceDate, null, null, new ArrayList<>());
+            if (candidate == null) continue;
+            found = found == null ? candidate : combinePeriod(found, candidate);
+            if (found == null) return null;
+        }
+        return found != null || title == null || !applicationTitle(title) ? found
+                : periodFromEvidence(title, true, referenceDate, null, null, new ArrayList<>());
+    }
+
+    private static Period combinePeriod(Period first, Period second) {
+        Point end = combinePoint(first.end(), second.end());
+        Point start = combinePoint(first.start(), second.start());
+        if (end == null || (start == null && first.start() != null && second.start() != null)) return null;
+        String evidence = end == second.end() ? second.evidence() : first.evidence();
+        return new Period(start, end, evidence);
+    }
+
+    private static Point combinePoint(Point first, Point second) {
+        if (first == null) return second;
+        if (second == null) return first;
+        if (!first.date().equals(second.date()) || first.time() != null && second.time() != null
+                && !Objects.equals(first.time(), second.time())) return null;
+        return first.time() == null ? second : first;
+    }
+
+    static boolean hasApplicationLabel(String evidence) {
+        return evidence.replaceAll("\\s+", "").matches(
+                ".*(신청기간|접수기간|모집기간|지원서제출|원서접수|서류접수|지원접수|신청기한|접수기한"
+                        + "|제출기한|제출기간|지원기간|신청마감|접수마감|제출마감|지원마감|모집마감).*");
+    }
+
+    private Period periodFromEvidence(String evidence, boolean fromTitle, LocalDate referenceDate,
+            String claimedStart, String claimedEnd, List<String> issues) {
         if (UnivNoticeLlmParser.isNonApplicationPeriod(evidence)
-                || (!fromTitle && !applicationLabel)
+                || (!fromTitle && !hasApplicationLabel(evidence))
                 || evidence.replaceAll("\\s+", "").matches(".*(확인서|서류합격|면접|최종발표|근무기간|지급기간).*")) {
             issues.add("NON_APPLICATION_PERIOD");
             return null;
         }
         List<Point> points = dates(evidence, referenceDate, issues);
         if (points.isEmpty() || points.size() > 2
-                || points.size() == 2 && !hasRangeSeparator(evidence)) {
+                || points.size() == 2 && !hasRangeSeparator(evidence)
+                || points.size() == 1 && INTRADAY_RANGE.matcher(normalizeDates(evidence)).find()) {
             issues.add("PERIOD_DATE_RELATION_AMBIGUOUS");
             return null;
         }
-        if ((notice.applicationEnd() != null && !matches(notice.applicationEnd(), points.get(points.size() - 1)))
-                || (notice.applicationStart() != null && points.size() == 2
-                    && !matches(notice.applicationStart(), points.get(0)))) {
+        boolean sourceHasYear = QUOTED_YEAR.matcher(evidence).find();
+        Point end = points.get(points.size() - 1);
+        Point start = points.size() == 2 ? points.get(0) : null;
+        if ((claimedEnd != null && !matchesPeriodDate(claimedEnd, end, sourceHasYear))
+                || (claimedStart != null && start != null && !matchesPeriodDate(claimedStart, start, sourceHasYear))) {
             issues.add("PERIOD_DATE_MISMATCH");
             return null;
         }
-        if (points.size() == 1 && notice.applicationEnd() == null) {
+        if (start == null && claimedEnd == null && !EXPLICIT_DEADLINE.matcher(evidence).find()) {
             issues.add("PERIOD_END_UNCONFIRMED");
             return null;
         }
-        Point start = points.size() == 2 ? points.get(0) : null;
-        Point end = points.get(points.size() - 1);
         if (start != null && (reversed(start, end)
                 || ChronoUnit.DAYS.between(start.date(), end.date()) > 300)) {
             issues.add("PERIOD_RANGE_INVALID");
             return null;
         }
         return new Period(start, end, evidence);
+    }
+
+    private static boolean matchesPeriodDate(String claimed, Point source, boolean sourceHasYear) {
+        try {
+            LocalDate date = LocalDate.parse(claimed);
+            return sourceHasYear ? date.equals(source.date())
+                    : date.getMonth() == source.date().getMonth() && date.getDayOfMonth() == source.date().getDayOfMonth();
+        } catch (RuntimeException invalid) {
+            return false;
+        }
     }
 
     static boolean hasRangeSeparator(String evidence) {
@@ -156,7 +212,7 @@ public class TemporalCandidateParser {
         });
     }
 
-    private static List<Point> dates(String evidence, LocalDate reference, List<String> issues) {
+    static List<Point> dates(String evidence, LocalDate reference, List<String> issues) {
         List<Point> result = new ArrayList<>();
         if (evidence == null || reference == null) return result;
         String normalized = normalizeDates(evidence).replaceAll("['’‘`](\\d{2})\\s*[.년]", "20$1.");
@@ -198,11 +254,6 @@ public class TemporalCandidateParser {
                 issues.add("SOURCE_DATE_INVALID");
                 return List.of();
             }
-        }
-        // 같은 날의 시간 범위는 끝 시각을 첫 시각으로 오인하지 않는다. 후속 지원 전까지 명시적으로 제외.
-        if (result.size() == 1 && evidence.matches(".*[~∼〜]\\s*(오전|오후)?\\s*\\d{1,2}\\s*[:시].*")) {
-            issues.add("INTRADAY_RANGE_UNSUPPORTED");
-            return List.of();
         }
         return result;
     }

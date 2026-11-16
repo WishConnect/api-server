@@ -349,8 +349,13 @@ public class UnivNoticeLlmParsingService {
 	private Outcome parseOne(RawScholarship raw, boolean dryRun) {
 		String beforePeriod = describePeriod(raw.getScholarship());
 
+		String htmlTitle = parser.extractTitle(raw.getRawHtml()).orElse(null);
+		LocalDate referenceDate = raw.getCrawledAt() == null
+				? SelectionScheduleAssembler.today() : raw.getCrawledAt().toLocalDate();
 		Optional<UnivNoticeLlmParser.ExtractedBody> body = parser.extractBody(raw.getRawHtml());
-		if (body.isEmpty()) {
+		TemporalParseResult.Period titlePeriod = body.isEmpty()
+				? temporalParser.resolveExplicitRecruitmentPeriod(htmlTitle, "", referenceDate) : null;
+		if (body.isEmpty() && titlePeriod == null) {
             // 이미지 전용 공고도 이미 연결된 장학금의 잘못된 자동 포스터는 LLM 없이 바로 교정할 수 있다.
             if (!dryRun && raw.getScholarship() != null && !raw.getScholarship().isDeleted()) {
                 storePoster(raw, raw.getScholarship(), raw.getScholarship().getTitle());
@@ -373,13 +378,18 @@ public class UnivNoticeLlmParsingService {
 					item(raw, status.name(), null, beforePeriod, reason));
 		}
 
-		UnivNoticeLlmParser.ExtractedBody extracted = body.get();
+		if (titlePeriod != null && raw.getScholarship() != null) {
+			Scholarship existing = shareableTarget(raw);
+			if (existing != null) {
+				return applyTitlePeriod(raw, existing, titlePeriod, beforePeriod, dryRun);
+			}
+		}
+
+		UnivNoticeLlmParser.ExtractedBody extracted = body.orElse(EMPTY_BODY);
 		String bodyText = extracted.text();
 		if (extracted.truncated()) {
 			log.info("[UnivLlmParsing] 본문이 잘렸습니다. rawId={} 원본={}자", raw.getId(), extracted.originalLength());
 		}
-
-		String htmlTitle = parser.extractTitle(raw.getRawHtml()).orElse(null);
 
 		String response;
 		try {
@@ -410,14 +420,9 @@ public class UnivNoticeLlmParsingService {
 		}
 
 		ParsedNotice notice = maybeNotice.get();
-		LocalDate referenceDate = raw.getCrawledAt() == null
-				? SelectionScheduleAssembler.today() : raw.getCrawledAt().toLocalDate();
 		var verified = temporalParser.resolveRecruitmentPeriod(htmlTitle, bodyText, referenceDate, notice);
 		Optional<UnivNoticeLlmParser.Period> period = Optional.ofNullable(verified)
-				.map(p -> new UnivNoticeLlmParser.Period(
-						p.start() == null ? null : p.start().date().atTime(
-								p.start().time() == null ? LocalTime.MIDNIGHT : p.start().time()),
-						p.end().date().atTime(p.end().time() == null ? LocalTime.of(23, 59, 59) : p.end().time())));
+				.map(UnivNoticeLlmParsingService::toStoredPeriod);
 		// LLM 이 제목을 못 냈으면 게시판에서 뽑은 제목을 쓴다. 출처·번호로 만든 이름은 마지막 수단이다.
 		String title = firstNonBlank(notice.title(), htmlTitle, fallbackTitle(raw));
 		String afterPeriod = verified == null ? null : formatCandidate(verified.start()) + " ~ " + formatCandidate(verified.end());
@@ -427,7 +432,7 @@ public class UnivNoticeLlmParsingService {
 		// 절반밖에 확인할 수 없다 — 조건 추출이 통째로 망가져도 멀쩡해 보인다.
 		int conditionCount = parser.resolveConditions(notice, bodyText).size();
 		int documentCount = notice.safeDocuments().size();
-		int timelineCount = NoticeTimelineParser.resolve(notice, bodyText, referenceDate).size();
+		int timelineCount = NoticeTimelineParser.withSourceEvidence(notice, bodyText, referenceDate).size();
 		boolean posterFound = NoticeHtmlExtractor.posterUrl(
 				org.jsoup.Jsoup.parse(raw.getRawHtml(),
 						raw.getSourceUrl() == null ? "" : raw.getSourceUrl())) != null;
@@ -447,6 +452,28 @@ public class UnivNoticeLlmParsingService {
 
 		return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", title, beforePeriod,
                 afterPeriod, conditionCount, documentCount, posterFound, note).withTimelineCount(timelineCount));
+	}
+
+	private Outcome applyTitlePeriod(RawScholarship raw, Scholarship existing, TemporalParseResult.Period verified,
+			String beforePeriod, boolean dryRun) {
+		String note = "제목에서 확인한 모집기간만 반영";
+		String afterPeriod = formatCandidate(verified.start()) + " ~ " + formatCandidate(verified.end());
+		if (!dryRun) {
+			var period = toStoredPeriod(verified);
+			existing.applyVerifiedRecruitmentPeriod(period.start(), period.end());
+			raw.markParsed(existing);
+			saveLog(raw, EMPTY_BODY, ParseStatus.PARSED, null, null, note);
+		}
+		return new Outcome(ParseStatus.PARSED, item(raw, "PARSED", existing.getTitle(), beforePeriod,
+				afterPeriod, 0, 0, false, note));
+	}
+
+	private static UnivNoticeLlmParser.Period toStoredPeriod(TemporalParseResult.Period period) {
+		var start = period.start();
+		var end = period.end();
+		return new UnivNoticeLlmParser.Period(
+				start == null ? null : start.date().atTime(start.time() == null ? LocalTime.MIDNIGHT : start.time()),
+				end.date().atTime(end.time() == null ? LocalTime.of(23, 59, 59) : end.time()));
 	}
 
 	/**

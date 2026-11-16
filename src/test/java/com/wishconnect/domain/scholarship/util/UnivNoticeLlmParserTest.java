@@ -806,4 +806,17 @@ class UnivNoticeLlmParserTest {
 		assertThat(parsed).isPresent();
 		assertThat(parsed.get().start().toLocalDate()).isEqualTo(java.time.LocalDate.of(2026, 7, 21));
 	}
+
+	@Test
+	void preservesSeparateScheduleTableRowsBeyondBodyLimit() {
+		String html = "<article><p>" + "장학금 지원 안내 ".repeat(700) + "</p>"
+				+ "<table><tr><th>서류 발표</th><td>2026년 11월 24일</td></tr>"
+				+ "<tr><th>면접</th><td>2026년 11월 28일</td></tr></table></article>";
+		var body = parser.extractBody(html).orElseThrow();
+
+		assertThat(body.truncated()).isTrue();
+		assertThat(body.text()).hasSizeLessThanOrEqualTo(6000)
+				.contains("서류 발표 | 2026년 11월 24일\n면접 | 2026년 11월 28일");
+	}
+
 }
