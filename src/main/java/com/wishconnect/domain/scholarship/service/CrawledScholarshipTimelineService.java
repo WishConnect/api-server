@@ -9,7 +9,9 @@ import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineReposito
 import com.wishconnect.domain.scholarship.util.NoticeTimelineParser;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.nodes.Document;
@@ -27,7 +29,7 @@ public class CrawledScholarshipTimelineService {
     private final LlmClient llmClient;
 
     @Transactional
-    public int replaceFromParsed(Scholarship scholarship, ParsedNotice notice, String body, LocalDate referenceDate) {
+    public int mergeFromParsed(Scholarship scholarship, ParsedNotice notice, String body, LocalDate referenceDate) {
         List<ScholarshipTimeline> existing =
                 repository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarship.getId());
         if (scholarship.isTimelineLocked() || existing.stream().anyMatch(t -> t.getOrigin() != TimelineOrigin.LLM)) {
@@ -35,17 +37,31 @@ public class CrawledScholarshipTimelineService {
         }
         // 불완전한 응답·근거 없는 결과는 이미 검증해 저장한 일정을 지우지 않는다.
         List<ScholarshipTimelineValidator.Item> items = NoticeTimelineParser.resolve(notice, body, referenceDate);
-        if (items.isEmpty()) return 0;
-        repository.deleteByScholarship(scholarship);
-        repository.flush();
-        for (int i = 0; i < items.size(); i++) {
-            var item = items.get(i);
-            repository.save(ScholarshipTimeline.builder().scholarship(scholarship)
+        List<ScholarshipTimeline> retained = new ArrayList<>(existing);
+        int nextOrder = existing.stream().mapToInt(ScholarshipTimeline::getDisplayOrder).max().orElse(-1) + 1;
+        int added = 0;
+        for (var item : items) {
+            if (retained.size() >= ScholarshipTimelineValidator.MAX_ITEMS) break;
+            if (retained.stream().anyMatch(row -> sameSchedule(row, item))) continue;
+            // 결과가 일부만 추출됐거나 같은 단계에 별도 전형이 있을 수 있으므로 기존 행을 지우지 않는다.
+            var row = ScholarshipTimeline.builder().scholarship(scholarship)
                     .stageCode(item.stageCode()).title(item.title()).dateType(item.dateType())
                     .startDate(item.startDate()).endDate(item.endDate()).dateText(item.dateText())
-                    .note(item.note()).evidence(item.evidence()).origin(TimelineOrigin.LLM).displayOrder(i).build());
+                    .note(item.note()).evidence(item.evidence()).origin(TimelineOrigin.LLM)
+                    .displayOrder(nextOrder++).build();
+            repository.save(row);
+            retained.add(row);
+            added++;
         }
-        return items.size();
+        return added;
+    }
+
+    private boolean sameSchedule(ScholarshipTimeline row, ScholarshipTimelineValidator.Item item) {
+        return row.getStageCode() == item.stageCode() && row.getDateType() == item.dateType()
+                && Objects.equals(row.getTitle(), item.title())
+                && Objects.equals(row.getStartDate(), item.startDate())
+                && Objects.equals(row.getEndDate(), item.endDate())
+                && Objects.equals(row.getDateText(), item.dateText());
     }
 
     /** API에 일정이 없더라도 찾은 공고 본문에서 추출한다. 다른 API 필드는 갱신하지 않는다. */
@@ -65,6 +81,6 @@ public class CrawledScholarshipTimelineService {
             log.warn("[TimelineEnrich] LLM 실패 scholarshipId={} : {}", scholarship.getId(), e.getMessage());
             return 0;
         }
-        return notice == null ? 0 : replaceFromParsed(scholarship, notice, body, SelectionScheduleAssembler.today());
+        return notice == null ? 0 : mergeFromParsed(scholarship, notice, body, SelectionScheduleAssembler.today());
     }
 }

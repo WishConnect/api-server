@@ -7,6 +7,7 @@ import com.wishconnect.domain.scholarship.dto.TemporalParseResult.Period;
 import com.wishconnect.domain.scholarship.dto.TemporalParseResult.Point;
 import com.wishconnect.domain.scholarship.dto.TemporalParseResult.Precision;
 import com.wishconnect.domain.scholarship.dto.TemporalParseResult.Stage;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -17,16 +18,20 @@ import java.util.List;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
-/** v2 비교용 검증기. 결과를 운영 엔티티에 적용하는 책임은 갖지 않는다. */
+/** 원문에서 모집기간과 일정 후보를 검증하며 날짜와 시각의 정밀도를 보존한다. */
 @Component
 public class TemporalCandidateParser {
 
-    public static final String VERSION = "temporal-v2.0.0-rc.1";
+    public static final String VERSION = "temporal-v2.0.0-rc.2";
     private static final Pattern DATE = Pattern.compile(
             "(?<!\\d)(?:(20\\d{2})\\s*[.\\-/년]\\s*)?(\\d{1,2})\\s*[.\\-/월]\\s*(\\d{1,2})(?!\\d)");
     private static final Pattern TIME = Pattern.compile(
             "^\\s*[.일]?\\s*(?:\\([^)]{0,8}\\)\\s*)?(?:(오전|오후)\\s*)?"
                     + "(\\d{1,2})\\s*(?::\\s*(\\d{2})|시(?:\\s*(\\d{1,2})\\s*분)?)");
+
+    private static final Pattern SHORT_KOREAN_RANGE = Pattern.compile(
+            "(\\d{1,2})\\s*월\\s*\\d{1,2}\\s*일(?:\\s*\\([^)]{0,8}\\))?\\s*[~∼〜–-]\\s*(\\d{1,2})\\s*일");
+    private static final Pattern RANGE_SEPARATOR = Pattern.compile("[~∼〜–]|부터|(?<=\\s)-(?=\\s)");
 
     public TemporalParseResult resolve(PipelineNoticeInput input, ParsedNotice notice) {
         List<String> issues = new ArrayList<>();
@@ -39,16 +44,15 @@ public class TemporalCandidateParser {
                     issues.add("TIMELINE_EVIDENCE_NOT_FOUND");
                     continue;
                 }
-                String stage = stageOf(row.evidence());
-                if (stage == null || !stage.equals(row.stageCode())) {
+                var stage = NoticeTimelineParser.stageOf(row.evidence());
+                if (stage == null || !stage.name().equals(row.stageCode())) {
                     issues.add("TIMELINE_STAGE_AMBIGUOUS");
                     continue;
                 }
                 if ("TBD".equals(row.dateType())) {
                     if (row.startDate() == null && row.endDate() == null && row.dateText() != null
-                            && row.evidence().contains(row.dateText())
-                            && row.dateText().matches(".*(미정|예정|추후|공지|통보|\\d{1,2}월\\s*(중|초|말)).*")) {
-                        stages.add(new Stage(stage, "TBD", null, null, row.dateText(), row.evidence()));
+                            && NoticeTimelineParser.isVagueDate(row.dateText(), row.evidence())) {
+                        stages.add(new Stage(stage.name(), "TBD", null, null, row.dateText(), row.evidence()));
                     } else issues.add("TIMELINE_TBD_NOT_GROUNDED");
                     continue;
                 }
@@ -66,11 +70,16 @@ public class TemporalCandidateParser {
                     issues.add("TIMELINE_DATE_MISMATCH");
                     continue;
                 }
-                stages.add(new Stage(stage, row.dateType(), start, end, null, row.evidence()));
+                stages.add(new Stage(stage.name(), row.dateType(), start, end, null, row.evidence()));
             }
         }
         if (input.truncated()) issues.add("INPUT_TRUNCATED");
         return new TemporalParseResult(period, List.copyOf(new LinkedHashSet<>(stages)), List.copyOf(issues));
+    }
+
+    /** 본문을 이미 추출한 실제 대학 파싱에서도 같은 모집기간 검증을 사용한다. */
+    public Period resolveRecruitmentPeriod(String title, String body, LocalDate referenceDate, ParsedNotice notice) {
+        return resolveRecruitmentPeriod(title, body, referenceDate, notice, new ArrayList<>());
     }
 
     private Period resolvePeriod(PipelineNoticeInput input, ParsedNotice notice, List<String> issues) {
@@ -82,35 +91,39 @@ public class TemporalCandidateParser {
                 return new Period(start, end, "API: 모집시작일/모집종료일");
             }
         }
+        return resolveRecruitmentPeriod(input.title(), input.body(), input.referenceDate(), notice, issues);
+    }
+
+    private Period resolveRecruitmentPeriod(String title, String body, LocalDate referenceDate,
+            ParsedNotice notice, List<String> issues) {
+        String context = (title == null ? "" : title) + "\n" + body;
         String evidence = notice.periodEvidence();
-        if (!grounded(evidence, input.evidenceText())) {
+        if (!grounded(evidence, context)) {
             // 제목이 명확한 기간을 포함한 경우에만 결정적으로 복구한다.
-            String title = input.title() == null ? "" : input.title();
-            if (applicationTitle(title)) evidence = title;
+            if (title != null && applicationTitle(title)) evidence = title;
             else {
                 issues.add("PERIOD_EVIDENCE_NOT_FOUND");
                 return null;
             }
         }
-        boolean fromTitle = input.title() != null && applicationTitle(input.title())
-                && grounded(evidence, input.title());
+        boolean fromTitle = title != null && applicationTitle(title) && grounded(evidence, title);
         boolean applicationLabel = evidence.replaceAll("\\s+", "")
-                .matches(".*(신청기간|접수기간|모집기간|지원서제출|신청기한|접수기한|지원기간|신청마감|접수마감).*" );
+                .matches(".*(신청기간|접수기간|모집기간|지원서제출|원서접수|서류접수|신청기한|접수기한|지원기간|신청마감|접수마감).*" );
         if (UnivNoticeLlmParser.isNonApplicationPeriod(evidence)
                 || (!fromTitle && !applicationLabel)
-                || evidence.matches(".*(확인서|서류합격|면접|최종발표|근무기간|지급기간).*")) {
+                || evidence.replaceAll("\\s+", "").matches(".*(확인서|서류합격|면접|최종발표|근무기간|지급기간).*")) {
             issues.add("NON_APPLICATION_PERIOD");
             return null;
         }
-        List<Point> points = dates(evidence, input.referenceDate(), issues);
-        if (points.isEmpty() || points.size() > 2) {
+        List<Point> points = dates(evidence, referenceDate, issues);
+        if (points.isEmpty() || points.size() > 2
+                || points.size() == 2 && !hasRangeSeparator(evidence)) {
             issues.add("PERIOD_DATE_RELATION_AMBIGUOUS");
             return null;
         }
-        if ((notice.applicationStart() != null || notice.applicationEnd() != null)
-                && (!matches(notice.applicationEnd(), points.get(points.size() - 1))
+        if ((notice.applicationEnd() != null && !matches(notice.applicationEnd(), points.get(points.size() - 1)))
                 || (notice.applicationStart() != null && points.size() == 2
-                    && !matches(notice.applicationStart(), points.get(0))))) {
+                    && !matches(notice.applicationStart(), points.get(0)))) {
             issues.add("PERIOD_DATE_MISMATCH");
             return null;
         }
@@ -128,10 +141,25 @@ public class TemporalCandidateParser {
         return new Period(start, end, evidence);
     }
 
+    static boolean hasRangeSeparator(String evidence) {
+        return RANGE_SEPARATOR.matcher(normalizeDates(evidence)).find();
+    }
+
+    static String normalizeDates(String evidence) {
+        String normalized = Normalizer.normalize(evidence, Normalizer.Form.NFKC);
+        var range = SHORT_KOREAN_RANGE.matcher(normalized);
+        return range.replaceAll(match -> {
+            String text = match.group();
+            int day = match.start(2) - match.start();
+            return java.util.regex.Matcher.quoteReplacement(text.substring(0, day)
+                    + match.group(1) + "월 " + text.substring(day));
+        });
+    }
+
     private static List<Point> dates(String evidence, LocalDate reference, List<String> issues) {
         List<Point> result = new ArrayList<>();
         if (evidence == null || reference == null) return result;
-        String normalized = evidence.replaceAll("['’‘`](\\d{2})\\s*[.년]", "20$1.");
+        String normalized = normalizeDates(evidence).replaceAll("['’‘`](\\d{2})\\s*[.년]", "20$1.");
         var matcher = DATE.matcher(normalized);
         Integer inheritedYear = null;
         int previousMonth = 0;
@@ -209,17 +237,4 @@ public class TemporalCandidateParser {
         return null;
     }
 
-    private static String stageOf(String evidence) {
-        String text = evidence.replaceAll("\\s+", "");
-        List<String> stages = new ArrayList<>();
-        if (text.matches(".*(접수기간|신청기간|모집기간|확인서|제출기한|제출기간).*")) return null;
-        if (text.matches(".*(서류|1차).*(발표|결과|합격).*")) stages.add("DOC_RESULT");
-        else if (text.matches(".*(서류심사|서류평가).*")) stages.add("DOC_REVIEW");
-        if (text.contains("면접")) stages.add("INTERVIEW");
-        if (text.matches(".*(최종|선발|합격자|장학생).*(발표|결과|통보).*")) {
-            if (!text.matches(".*(서류|1차).*")) stages.add("FINAL_RESULT");
-        }
-        if (text.matches(".*(장학금|지원금).*(지급|입금).*")) stages.add("PAYMENT");
-        return stages.size() == 1 ? stages.get(0) : null;
-    }
 }

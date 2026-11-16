@@ -103,4 +103,39 @@ class NoticeTimelineParserTest {
         assertThat(parser.readResponse("{\"title\":\"기존 공고\"}").orElseThrow().timeline()).isNull();
         assertThat(parser.buildRequest(null, "본문").outputSchema().get("required").toString()).contains("timeline");
     }
+
+	@Test
+	void preservesGroundedStageRangesAndPartialDates() {
+		String doc = "서류 합격 및 면접 대상자 발표 : 2026년 12월 14일(월) ~ 18일(금)";
+		String result = "최종 합격자 발표 : 2026년 12월 23일(수) ~ 25일(금)";
+		String select = "장학생 선발 : 2026. 12 초";
+		String month = "장학생 발표 : 2026년 12월";
+		var notice = notice("""
+				[{"stageCode":"DOC_RESULT","dateType":"RANGE","startDate":"2026-12-14",
+				  "endDate":"2026-12-18","evidence":"%s"},
+				 {"stageCode":"FINAL_RESULT","dateType":"RANGE","startDate":"2026-12-23",
+				  "endDate":"2026-12-25","evidence":"%s"},
+				 {"stageCode":"CUSTOM","dateType":"TBD","dateText":"2026. 12 초","evidence":"%s"},
+				 {"stageCode":"FINAL_RESULT","dateType":"TBD","dateText":"2026년 12월","evidence":"%s"}]
+				""".formatted(doc, result, select, month));
+		var items = NoticeTimelineParser.resolve(notice, String.join("\n", doc, result, select, month),
+				LocalDate.of(2026, 11, 16));
+
+		assertThat(items).hasSize(4);
+		assertThat(items.get(0).endDate()).isEqualTo(LocalDate.of(2026, 12, 18));
+		assertThat(items.get(1).endDate()).isEqualTo(LocalDate.of(2026, 12, 25));
+		assertThat(items.get(2).title()).isEqualTo("장학생 선발");
+		assertThat(items.get(3).dateText()).isEqualTo("2026년 12월");
+	}
+
+	@Test
+	void rejectsInventedRangeForSeparateRegionalInterviews() {
+		String quote = "2차 면접심사: 2026. 12. 29.(화) 울산 / 12. 30.(수) 서울";
+		var notice = notice("""
+				[{"stageCode":"INTERVIEW","dateType":"RANGE","startDate":"2026-12-29",
+				  "endDate":"2026-12-30","evidence":"%s"}]
+				""".formatted(quote));
+
+		assertThat(NoticeTimelineParser.resolve(notice, quote, LocalDate.of(2026, 11, 16))).isEmpty();
+	}
 }

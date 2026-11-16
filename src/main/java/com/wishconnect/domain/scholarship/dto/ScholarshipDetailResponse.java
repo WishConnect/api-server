@@ -89,7 +89,8 @@ public record ScholarshipDetailResponse(
 			@Schema(description = """
 					한국 날짜 기준으로 조회 때 계산한 상태. CLOSED 지남 / CURRENT 진행 중(하루짜리는 당일) / UPCOMING 예정 /
 					TBD 날짜 미정. ⚠ 현재는 TBD 를 UPCOMING 으로 바꿔 보낸다 — 프론트가 TBD 를 지원하면 TBD 를 그대로 보낸다.""",
-					allowableValues = {"CLOSED", "CURRENT", "UPCOMING", "TBD"}, example = "UPCOMING") String status) {
+					allowableValues = {"CLOSED", "CURRENT", "UPCOMING", "TBD"}, example = "UPCOMING") String status,
+			@Schema(description = "공고 원문에서 확인한 지역·전형 등 구분", example = "울산") String note) {
 	}
 
 	public record RequiredDocument(String name, String downloadUrl) {

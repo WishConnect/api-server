@@ -70,7 +70,7 @@ class CrawledScholarshipTimelineServiceTest {
     @Test
     void preservesIntentionallyClearedTimeline() {
         scholarship.lockTimeline();
-        assertThat(service.replaceFromParsed(scholarship, parser.readResponse(RESPONSE).orElseThrow(), BODY,
+        assertThat(service.mergeFromParsed(scholarship, parser.readResponse(RESPONSE).orElseThrow(), BODY,
                 LocalDate.of(2026, 10, 8))).isZero();
         verify(repository, never()).save(any());
     }
@@ -78,7 +78,7 @@ class CrawledScholarshipTimelineServiceTest {
     @Test
     void doesNotEraseExistingTimelineForEmptyOrInvalidResponse() {
         ParsedNotice notice = parser.readResponse("{\"timeline\":[]}").orElseThrow();
-        assertThat(service.replaceFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
         verify(repository, never()).deleteByScholarship(any());
     }
 
@@ -89,6 +89,24 @@ class CrawledScholarshipTimelineServiceTest {
         verifyNoInteractions(client);
         when(client.chat(any())).thenThrow(new IllegalStateException("LLM unavailable"));
         assertThat(service.enrichFromPage(scholarship, Jsoup.parse("<article>" + BODY + "</article>"))).isZero();
+        verify(repository, never()).deleteByScholarship(any());
+    }
+
+    @Test
+    void keepsExistingStageAndAppendsNewStageOnlyOnce() {
+        var existing = ScholarshipTimeline.builder().origin(TimelineOrigin.LLM)
+                .stageCode(com.wishconnect.domain.scholarship.entity.TimelineStageCode.FINAL_RESULT)
+                .displayOrder(1).build();
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(existing));
+        var notice = parser.readResponse(RESPONSE).orElseThrow();
+
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isEqualTo(1);
+
+        ArgumentCaptor<ScholarshipTimeline> captured = ArgumentCaptor.forClass(ScholarshipTimeline.class);
+        verify(repository).save(captured.capture());
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
+                .thenReturn(List.of(existing, captured.getValue()));
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
         verify(repository, never()).deleteByScholarship(any());
     }
 }
