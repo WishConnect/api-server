@@ -9,6 +9,54 @@
 | `wishconnect.logrotate` | `/etc/logrotate.d/wishconnect` | 수동 |
 | `wishconnect.env.example` | `/etc/wishconnect/wishconnect.env` | 실제 값은 배포 워크플로가 GitHub Secrets 로 기록 (root:600) |
 
+## 서버 사양
+
+| 항목 | 값 |
+|---|---|
+| 인스턴스 | t4g.small (ARM64 Graviton, 2 vCPU / 2GB), CPU 크레딧 standard |
+| OS | Ubuntu 24.04 LTS arm64 |
+| 디스크 | gp3 20GB |
+| 구성 | Spring Boot jar(OpenJDK 17) + Redis 7 + Nginx 1.24(Let's Encrypt) 한 대에 동거 |
+
+2026-11-17 에 t3.small(x86_64)에서 옮겼다. 앱 jar 는 네이티브 의존성이 없어 아키텍처와 무관하고,
+배포 워크플로도 러너(x86)에서 빌드한 jar 를 그대로 올린다. 서버에 바이너리를 직접 받을 일이 생기면
+**arm64(aarch64) 용**을 받아야 한다.
+
+### 새 서버를 다시 만들 때
+
+배포 워크플로는 아래가 이미 갖춰져 있다고 가정한다. 하나라도 빠지면 배포가 실패한다.
+
+```bash
+# 1) 패키지 (psql 은 배포 스크립트의 마이그레이션 단계가 요구한다)
+sudo apt-get update
+sudo apt-get install -y openjdk-17-jdk-headless redis-server nginx certbot python3-certbot-nginx postgresql-client-16
+
+# 2) 스왑 — 아래 '스왑' 절
+
+# 3) 앱 디렉터리·유닛·logrotate — 아래 '설치' 절
+mkdir -p /home/ubuntu/app/logs /home/ubuntu/app/nginx
+
+# 4) Nginx: default 사이트 제거, wishconnect 링크, 속도 제한 zone — 아래 'Nginx 전제 조건'
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo cp nginx/wishconnect.conf /etc/nginx/sites-available/wishconnect
+sudo ln -s /etc/nginx/sites-available/wishconnect /etc/nginx/sites-enabled/wishconnect
+```
+
+- 인증서는 기존 서버의 `/etc/letsencrypt` 를 **tar 로 통째로**(심볼릭 링크 유지) 옮긴다.
+  `certbot renew --dry-run` 은 도메인이 새 서버를 가리킨 뒤에만 성공한다. 그 전의 실패는 정상이다.
+- `/etc/wishconnect/wishconnect.env` 는 다음 배포 때 워크플로가 다시 쓴다. 배포 전에 띄우려면 기존 서버에서 복사한다.
+- 기존 서버와 **동시에 앱을 띄울 때는 반드시 한쪽 스케줄러를 끈다**(같은 DB 에 수집·알림 배치가 두 번 돈다).
+  env 파일을 고치지 말고 systemd drop-in 으로 덮는다. 전환이 끝나면 지운다.
+  ```ini
+  # /etc/systemd/system/wishconnect.service.d/10-migration-scheduler-off.conf
+  [Service]
+  Environment=SCHOLARSHIP_SYNC_SCHEDULED=false
+  Environment=NOTIFICATION_SCHEDULED=false
+  ```
+- 로그인 유지가 필요하면 전환 시점에 Redis `dump.rdb` 를 옮긴다(양쪽 앱·새 서버 Redis 를 멈춘 상태에서).
+- 배포 워크플로의 `EC2_HOST` 는 Elastic IP 를 따라간다. EIP 를 새 인스턴스로 옮기면 시크릿은 그대로 둔다.
+  운영 워크플로는 SSH 호스트 키를 고정하지 않는다(스테이징만 `STAGING_HOST_FINGERPRINT` 사용).
+
 ## 설치
 
 ```bash
@@ -22,7 +70,7 @@ sudo logrotate -d /etc/logrotate.d/wishconnect   # -d: 시뮬레이션만
 
 ## 스왑 (파일로 관리되지 않는 설정)
 
-t3.small 은 메모리 1.9GB 라 여유가 크지 않다. 스왑이 없으면 메모리가 몰릴 때
+t4g.small(이전 t3.small 도 동일)은 메모리 약 2GB 라 여유가 크지 않다. 스왑이 없으면 메모리가 몰릴 때
 커널 OOM killer 가 **가장 큰 프로세스인 java 를 즉시 죽인다.**
 실제로 2026-07-28, 2026-08-03 두 번 이렇게 죽었고, 8/3 건은 앱이 아니라
 cron 작업이 메모리를 요구하면서 발생했다. 스왑은 "죽는 대신 느려지는" 안전망이다.
