@@ -14,6 +14,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.LocalTime;
 import java.util.UUID;
 import com.wishconnect.domain.scholarship.dto.ScholarshipAdminSnapshot;
 import lombok.AccessLevel;
@@ -637,6 +639,27 @@ public class Scholarship extends BaseEntity {
 		this.lastSyncedAt = LocalDateTime.now();
 	}
 
+	/** 같은 API 마감일의 원문에서 시각만 확인된 경우 보완한다. */
+	public void refineApiDeadline(LocalDateTime verifiedEnd) {
+		if (periodLocked || isDeletedByAdmin() || applicationEndAt == null || verifiedEnd == null
+				|| !verifiedEnd.toLocalDate().equals(applicationEndAt.toLocalDate())
+				|| !(applicationEndAt.toLocalTime().equals(LocalTime.MIDNIGHT)
+						|| applicationEndAt.toLocalTime().equals(LocalTime.of(23, 59, 59)))) {
+			return;
+		}
+		applyVerifiedRecruitmentPeriod(applicationStartAt, verifiedEnd);
+	}
+
+	/** 본문을 읽지 못해도 근거가 있는 기간은 다른 공고 정보를 건드리지 않고 보완한다. */
+	public void applyVerifiedRecruitmentPeriod(LocalDateTime start, LocalDateTime end) {
+		if (periodLocked || isDeleted() || end == null) return;
+		this.applicationStartAt = start == null && applicationStartAt != null && !applicationStartAt.isAfter(end)
+				? applicationStartAt : start;
+		this.applicationEndAt = end;
+		this.recruitmentStatus = resolveStatus(applicationStartAt, applicationEndAt);
+		this.active = recruitmentStatus != RecruitmentStatus.CLOSED;
+	}
+
 	/** 모집기간 수기 고정을 켜거나 끈다. 끄면 다음 동기화·재파싱부터 수집한 기간으로 다시 덮인다. */
 	public void changePeriodLocked(boolean periodLocked) {
 		this.periodLocked = periodLocked;
@@ -778,7 +801,7 @@ public class Scholarship extends BaseEntity {
 	 * ({@code "충원 시 마감"}) 닫지 않되, 자동 판정을 포기했다는 사실을 상태로 남긴다.
 	 */
 	private static RecruitmentStatus resolveStatus(LocalDateTime startAt, LocalDateTime endAt) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 		if (endAt != null && endAt.isBefore(now)) {
 			return RecruitmentStatus.CLOSED;
 		}

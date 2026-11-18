@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.TextNode;
+import org.jsoup.select.NodeTraversor;
 
 /**
  * 공지 상세 HTML 에서 <b>제목과 본문만</b> 골라낸다.
@@ -143,7 +145,7 @@ public final class NoticeHtmlExtractor {
 		if (body == null) {
 			return Optional.empty();
 		}
-		String text = normalize(body.text());
+		String text = structuredText(body);
 		if (text.length() < MIN_BODY_CHARS || looksLikeChrome(text)) {
 			return Optional.empty();
 		}
@@ -271,7 +273,7 @@ public final class NoticeHtmlExtractor {
 		if (element == null) {
 			return Optional.empty();
 		}
-		String text = normalize(element.text());
+		String text = structuredText(element);
 		if (text.length() < MIN_BODY_CHARS) {
 			text = normalize(text + " " + imageDescriptions(element));
 		}
@@ -314,6 +316,26 @@ public final class NoticeHtmlExtractor {
 			}
 		}
 		return cut > 0 ? title.substring(0, cut).trim() : title;
+	}
+
+	private static String structuredText(Element root) {
+		StringBuilder text = new StringBuilder();
+		NodeTraversor.traverse((node, depth) -> {
+			if (node instanceof TextNode value) {
+				text.append(value.getWholeText().replaceAll("[\\s\\u00a0]+", " "));
+			} else if (node instanceof Element element) {
+				String tag = element.normalName();
+				if ("tr".equals(tag) || (element.closest("tr") == null
+						&& (element.isBlock() || "br".equals(tag)))) {
+					text.append('\n');
+				} else if (("td".equals(tag) || "th".equals(tag))
+						&& element.previousElementSibling() != null) {
+					text.append(" | ");
+				}
+			}
+		}, root);
+		return text.toString().lines().map(NoticeHtmlExtractor::normalize)
+				.filter(line -> !line.isBlank()).collect(java.util.stream.Collectors.joining("\n"));
 	}
 
 	private static String normalize(String text) {

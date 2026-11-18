@@ -87,11 +87,15 @@ public class ScholarshipEnrichmentService {
     @Value("${scholarship.enrich.collect-schedule:true}")
     private boolean collectSchedule;
 
+	@Value("${scholarship.pipeline.review-enabled:false}")
+	private boolean captureForReview;
+
 	@Transactional
 	public EnrichmentResult enrich(int limit) {
 		LocalDateTime now = LocalDateTime.now();
 		List<Scholarship> targets = scholarshipRepository.findEnrichmentTargets(
-				KOSAF_SOURCE, now, now.minusDays(RETRY_AFTER_DAYS), PageRequest.of(0, Math.max(1, limit)));
+				KOSAF_SOURCE, collectSchedule, now, now.minusDays(RETRY_AFTER_DAYS),
+				PageRequest.of(0, Math.max(1, limit)));
 		if (targets.isEmpty()) {
 			return EnrichmentResult.empty();
 		}
@@ -106,32 +110,36 @@ public class ScholarshipEnrichmentService {
 
 		for (Scholarship scholarship : targets) {
 			try {
-				Candidate best = findBestCandidate(scholarship);
-				// 시도 시각은 성공·실패와 무관하게 남긴다. 안 그러면 매 배치가 같은 건만 붙잡는다.
-				scholarship.applyEnrichment(best == null ? null : best.url());
+				boolean knownDetail = StringUtils.hasText(scholarship.getDetailUrl());
+				Candidate best = knownDetail ? null : findBestCandidate(scholarship);
+				String url = knownDetail ? scholarship.getDetailUrl() : best == null ? null : best.url();
+				// 기존 링크의 일정만 확인할 때도 같은 재시도 주기를 적용한다.
+				scholarship.applyEnrichment(url);
 
-				if (best == null) {
+				if (url == null) {
 					skipped++;
 					skippedRows.add(new EnrichmentResult.Skipped(
 							scholarship.getId(), scholarship.getTitle(), "신뢰할 만한 상세페이지를 찾지 못함"));
 					continue;
 				}
-				detailFound++;
+				if (!knownDetail) detailFound++;
 
-				Document page = fetch(best.url());
+				Document page = fetch(url);
 				if (page == null) {
 					continue;
 				}
-                try {
-                    pipelineReviewService.capturePage(scholarship, page, best.url());
-                } catch (RuntimeException captureFailure) {
-                    log.warn("[PipelineReview] 캡처 실패 scholarshipId={}", scholarship.getId());
-                }
-                if (collectImage && savePosterIfAutomatic(scholarship, page)) {
-					imageSaved++;
+				if (captureForReview) {
+					try {
+						pipelineReviewService.capturePage(scholarship, page, url);
+					} catch (RuntimeException captureFailure) {
+						log.warn("[PipelineReview] 캡처 실패 scholarshipId={}", scholarship.getId());
+					}
 				}
-				documentLinked += linkAttachments(scholarship, page);
-                if (collectSchedule) timelineSaved += timelineService.enrichFromPage(scholarship, page);
+				if (!knownDetail) {
+					if (collectImage && savePosterIfAutomatic(scholarship, page)) imageSaved++;
+					documentLinked += linkAttachments(scholarship, page);
+				}
+				if (collectSchedule) timelineSaved += timelineService.enrichFromPage(scholarship, page);
 			} catch (SearchUnavailableException e) {
 				// 검색이 죽어 있으면 남은 건도 전부 실패한다. 쿼터·시간을 태우지 말고 즉시 중단한다.
 				log.error("[Enrich] 검색 API 를 쓸 수 없어 중단합니다. 키·쿼터를 확인하세요.");

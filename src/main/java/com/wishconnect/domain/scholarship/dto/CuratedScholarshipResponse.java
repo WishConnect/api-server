@@ -4,6 +4,7 @@ import com.wishconnect.domain.scholarship.entity.Scholarship;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -109,6 +110,6 @@ public record CuratedScholarshipResponse(
 		if (applicationEndAt == null) {
 			return null;
 		}
-		return ChronoUnit.DAYS.between(LocalDate.now(), applicationEndAt.toLocalDate());
+		return ChronoUnit.DAYS.between(LocalDate.now(ZoneId.of("Asia/Seoul")), applicationEndAt.toLocalDate());
 	}
 }

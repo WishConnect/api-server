@@ -17,6 +17,7 @@ import com.wishconnect.domain.common.service.ImageStorageService;
 import com.wishconnect.domain.application.config.LlmProperties;
 import com.wishconnect.domain.scholarship.entity.NoticeParseLog;
 import com.wishconnect.domain.scholarship.entity.ParseStatus;
+import com.wishconnect.domain.scholarship.util.TemporalCandidateParser;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import com.wishconnect.global.exception.CustomException;
 import com.wishconnect.global.exception.ErrorCode;
@@ -36,8 +37,9 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
-import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,7 +104,8 @@ class UnivNoticeLlmParsingServiceTest {
 				new LlmProperties("claude-haiku-4-5", "claude-sonnet-5",
 						"claude-haiku-4-5", "claude-haiku-4-5", 4096),
 				new ObjectMapper(),
-                new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository), timelineService);
+                new ConditionRefResolver(regionResolver, familyTypeRepository, interestRepository), timelineService,
+				new TemporalCandidateParser());
 	}
 
 	// --- Fixture ---
@@ -174,7 +177,26 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(target.getParseStatus()).isEqualTo(ParseStatus.PARSED);
 		assertThat(result.items().get(0).afterPeriod()).isEqualTo("2026-08-01 ~ 2026-08-14");
 		verify(scholarshipDocumentRepository).saveAll(anyList());
-        verify(timelineService).replaceFromParsed(any(Scholarship.class), any(), anyString(), any());
+        verify(timelineService).mergeFromParsed(any(Scholarship.class), any(), anyString(), any());
+	}
+
+	@Test
+	void persistsKoreanDatedRecruitmentPeriodWithExactTime() {
+		String period = "모집기간: 2026년 11월 23일（월） ~ 12월 13일（일） 22:00까지";
+		RawScholarship target = raw(1L, html(period + " 장학금 신청은 공고의 제출서류 안내를 참고하세요."
+				+ " 장학생은 정해진 기한에 신청서를 제출해야 합니다."), null, ParseStatus.PENDING);
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn("""
+				{"title":"강남장학회 장학생 모집","applicationEnd":"2026-12-13",
+				"periodEvidence":"%s"}
+				""".formatted(period));
+		given(scholarshipRepository.save(any(Scholarship.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+		var result = service.parse(20, false, false);
+
+		assertThat(result.items().get(0).afterPeriod()).isEqualTo("2026-11-23 ~ 2026-12-13 22:00");
+		assertThat(target.getScholarship().getApplicationStartAt()).isEqualTo("2026-11-23T00:00:00");
+		assertThat(target.getScholarship().getApplicationEndAt()).isEqualTo("2026-12-13T22:00:00");
 	}
 
 	@Test
@@ -641,5 +663,44 @@ class UnivNoticeLlmParsingServiceTest {
 		assertThat(batch.skippedCount()).isEqualTo(1);
 		assertThat(reparse.skippedCount()).isEqualTo(1);
 		verify(llmClient, never()).chat(any());
+	}
+
+	@Test
+	void savesTitleOnlyRecruitmentPeriodWhenModelOmitsDates() {
+		String rawHtml = "<div>바로가기 퀵메뉴</div>"
+				+ "<h2 class='view-title'>장학생 모집(11. 18. 10:00 ~ 11. 26. 16:00)</h2>"
+				+ "<article>첨부 공고문 참조</article>";
+		RawScholarship target = raw(1L, rawHtml, null, ParseStatus.PENDING);
+		ReflectionTestUtils.setField(target, "crawledAt", LocalDateTime.of(2026, 11, 16, 11, 0));
+		givenPendingTargets(List.of(target));
+		given(llmClient.chat(any())).willReturn("{\"title\":\"장학생 모집\"}");
+		given(scholarshipRepository.save(any(Scholarship.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+		service.parse(20, false, false);
+
+		assertThat(target.getScholarship().getApplicationStartAt()).isEqualTo("2026-11-18T10:00:00");
+		assertThat(target.getScholarship().getApplicationEndAt()).isEqualTo("2026-11-26T16:00:00");
+	}
+
+	@Test
+	void updatesOnlyVerifiedDatesForLinkedNoticeWithTitleAndNoBody() {
+		var existing = existingScholarship();
+		String title = existing.getTitle();
+		String provider = existing.getProvider();
+		var target = raw(1L, "<div>바로가기 퀵메뉴</div>"
+				+ "<h2 class='view-title'>장학생 모집(11. 18. 10:00 ~ 11. 26. 16:00)</h2>"
+				+ "<article>첨부 공고문 참조</article>", existing, ParseStatus.PARSED);
+		ReflectionTestUtils.setField(target, "crawledAt", LocalDateTime.of(2026, 11, 16, 11, 0));
+		givenAllTargets(List.of(target));
+
+		service.parse(20, true, false);
+
+		assertThat(existing.getApplicationEndAt()).isEqualTo("2026-11-26T16:00:00");
+		assertThat(existing.getTitle()).isEqualTo(title);
+		assertThat(existing.getProvider()).isEqualTo(provider);
+		verify(llmClient, never()).chat(any());
+		verify(scholarshipConditionRepository, never()).deleteByScholarship(any());
+		verify(scholarshipDocumentRepository, never()).deleteByScholarship(any());
+		verify(timelineService, never()).mergeFromParsed(any(), any(), any(), any());
 	}
 }

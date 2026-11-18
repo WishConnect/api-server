@@ -15,6 +15,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -49,8 +51,16 @@ public class ScholarshipMapper {
 		String provider = readText(item, "운영기관명");
 		String summary = readText(item, "지원내역 상세내용");
 		String description = buildDescription(item);
-		LocalDateTime startAt = readDate(item, "모집시작일");
-		LocalDateTime endAt = readDate(item, "모집종료일");
+		LocalDate start = readDate(item, "모집시작일");
+		LocalDateTime startAt = start == null ? null : start.atStartOfDay();
+		LocalDate end = readDate(item, "모집종료일");
+		LocalDateTime endAt = end == null ? null : end.atTime(23, 59, 59);
+		LocalDateTime previousEnd = existingScholarship == null ? null : existingScholarship.getApplicationEndAt();
+		if (previousEnd != null && previousEnd.toLocalDate().equals(end)
+				&& !previousEnd.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+			// 같은 날짜의 보완 수집 시각은 날짜만 가진 API가 되돌리지 않는다.
+			endAt = previousEnd;
+		}
 		Integer selectionCount = parseFirstInteger(readText(item, "선발인원 상세내용"));
 		Long amount = parseAmount(readText(item, "지원내역 상세내용"));
 		String homepageUrl = readText(item, "홈페이지 주소");
@@ -163,8 +173,7 @@ public class ScholarshipMapper {
 	}
 
 	public boolean isClosed(JsonNode item) {
-		LocalDateTime endAt = readDate(item, "모집종료일");
-		return endAt != null && LocalDateTime.now().isAfter(endAt);
+		return isClosed(item, LocalDate.now(ZoneId.of("Asia/Seoul")));
 	}
 
 	private void addCondition(
@@ -333,8 +342,13 @@ public class ScholarshipMapper {
 		}
 	}
 
+	boolean isClosed(JsonNode item, LocalDate today) {
+		LocalDate end = readDate(item, "모집종료일");
+		return end != null && end.isBefore(today);
+	}
+
 	private RecruitmentStatus resolveRecruitmentStatus(LocalDateTime startAt, LocalDateTime endAt) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 		if (startAt != null && now.isBefore(startAt)) {
 			return RecruitmentStatus.UPCOMING;
 		}
@@ -344,7 +358,7 @@ public class ScholarshipMapper {
 		return RecruitmentStatus.OPEN;
 	}
 
-	private LocalDateTime readDate(JsonNode item, String fieldName) {
+	private LocalDate readDate(JsonNode item, String fieldName) {
 		String value = readText(item, fieldName);
 		if (!StringUtils.hasText(value)) {
 			return null;
@@ -352,7 +366,7 @@ public class ScholarshipMapper {
 
 		for (DateTimeFormatter formatter : List.of(DateTimeFormatter.ISO_LOCAL_DATE, DateTimeFormatter.BASIC_ISO_DATE)) {
 			try {
-				return LocalDate.parse(value, formatter).atStartOfDay();
+				return LocalDate.parse(value, formatter);
 			} catch (DateTimeParseException ignored) {
 			}
 		}

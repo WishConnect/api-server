@@ -124,8 +124,9 @@ public class ScholarshipSyncService {
 			return;
 		}
 		rawScholarship.updateRawData(sourceUrl, rawJson);
-		if (scholarshipMapper.isClosed(item.payload())) {
-			deactivateParsedData(rawScholarship.getScholarship());
+		Scholarship linked = rawScholarship.getScholarship();
+		if ((linked == null || !linked.isPeriodLocked()) && scholarshipMapper.isClosed(item.payload())) {
+			deactivateParsedData(linked);
 			rawScholarship.markSkipped("모집종료일이 지난 장학금입니다.");
 			rawScholarshipRepository.save(rawScholarship);
 			return;

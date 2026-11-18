@@ -82,4 +82,8 @@ public class ScholarshipTimeline extends BaseEntity {
 
 	@Column(nullable = false)
 	private int displayOrder;
+
+	public void changeDisplayOrder(int displayOrder) {
+		this.displayOrder = displayOrder;
+	}
 }

@@ -13,7 +13,10 @@ import com.wishconnect.domain.scholarship.dto.ParsedNotice;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
 import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
+import com.wishconnect.domain.scholarship.entity.TimelineDateType;
+import com.wishconnect.domain.scholarship.entity.TimelineStageCode;
 import com.wishconnect.domain.scholarship.repository.ScholarshipTimelineRepository;
+import com.wishconnect.domain.scholarship.util.TemporalCandidateParser;
 import com.wishconnect.domain.scholarship.util.UnivNoticeLlmParser;
 import java.time.LocalDate;
 import java.util.List;
@@ -29,7 +32,8 @@ class CrawledScholarshipTimelineServiceTest {
     private final LlmClient client = mock(LlmClient.class);
     private final UnivNoticeLlmParser parser = new UnivNoticeLlmParser(new ObjectMapper());
     private final CrawledScholarshipTimelineService service =
-            new CrawledScholarshipTimelineService(repository, parser, client);
+            new CrawledScholarshipTimelineService(repository, parser, client,
+                    new TemporalCandidateParser());
     private Scholarship scholarship;
     private static final String BODY = "서류 합격 발표: 2026.11.10. 면접: 2026.11.20. 최종 합격 발표: 2026.11.30. 장학금 지급: 12월 중 예정.";
     private static final String RESPONSE = """
@@ -70,7 +74,7 @@ class CrawledScholarshipTimelineServiceTest {
     @Test
     void preservesIntentionallyClearedTimeline() {
         scholarship.lockTimeline();
-        assertThat(service.replaceFromParsed(scholarship, parser.readResponse(RESPONSE).orElseThrow(), BODY,
+        assertThat(service.mergeFromParsed(scholarship, parser.readResponse(RESPONSE).orElseThrow(), BODY,
                 LocalDate.of(2026, 10, 8))).isZero();
         verify(repository, never()).save(any());
     }
@@ -78,7 +82,7 @@ class CrawledScholarshipTimelineServiceTest {
     @Test
     void doesNotEraseExistingTimelineForEmptyOrInvalidResponse() {
         ParsedNotice notice = parser.readResponse("{\"timeline\":[]}").orElseThrow();
-        assertThat(service.replaceFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
         verify(repository, never()).deleteByScholarship(any());
     }
 
@@ -91,4 +95,40 @@ class CrawledScholarshipTimelineServiceTest {
         assertThat(service.enrichFromPage(scholarship, Jsoup.parse("<article>" + BODY + "</article>"))).isZero();
         verify(repository, never()).deleteByScholarship(any());
     }
+
+    @Test
+    void keepsExistingStageAndAppendsNewStageOnlyOnce() {
+        var existing = ScholarshipTimeline.builder().origin(TimelineOrigin.LLM)
+                .stageCode(TimelineStageCode.FINAL_RESULT)
+                .displayOrder(1).build();
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(existing));
+        var notice = parser.readResponse(RESPONSE).orElseThrow();
+
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isEqualTo(1);
+
+        ArgumentCaptor<ScholarshipTimeline> captured = ArgumentCaptor.forClass(ScholarshipTimeline.class);
+        verify(repository).save(captured.capture());
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
+                .thenReturn(List.of(existing, captured.getValue()));
+        assertThat(service.mergeFromParsed(scholarship, notice, BODY, LocalDate.of(2026, 10, 8))).isZero();
+        verify(repository, never()).deleteByScholarship(any());
+    }
+
+    @Test
+    void replacesOnlyTheOldRangeWhoseEvidenceSplitsIntoTwoRegionalInterviews() {
+        String body = "2차면접심사: 2026. 12. 29.(화) 울산 / 12. 30.(수) 서울";
+        var old = ScholarshipTimeline.builder().origin(TimelineOrigin.LLM)
+                .stageCode(TimelineStageCode.INTERVIEW).dateType(TimelineDateType.RANGE)
+                .startDate(LocalDate.of(2026, 12, 29)).endDate(LocalDate.of(2026, 12, 30))
+                .evidence(body).build();
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old));
+
+        assertThat(service.mergeFromParsed(scholarship, null, body, LocalDate.of(2026, 11, 16))).isEqualTo(2);
+
+        verify(repository).delete(old);
+        ArgumentCaptor<ScholarshipTimeline> saved = ArgumentCaptor.forClass(ScholarshipTimeline.class);
+        verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(ScholarshipTimeline::getNote).containsExactly("울산", "서울");
+    }
+
 }

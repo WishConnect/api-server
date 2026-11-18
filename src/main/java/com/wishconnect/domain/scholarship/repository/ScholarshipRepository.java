@@ -320,11 +320,14 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			  and s.primarySource = :source
 			  and s.recruitmentStatus <> com.wishconnect.domain.scholarship.entity.RecruitmentStatus.CLOSED
 			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
-			  and (s.detailUrl is null or s.detailUrl = '')
+			  and (s.detailUrl is null or s.detailUrl = ''
+			       or (:collectSchedule = true and s.timelineLocked = false and not exists (
+			           select 1 from ScholarshipTimeline t where t.scholarship = s)))
 			  and (s.enrichedAt is null or s.enrichedAt < :retryBefore)
 			order by s.applicationEndAt asc nulls last
 			""")
 	List<Scholarship> findEnrichmentTargets(@Param("source") String source,
+			@Param("collectSchedule") boolean collectSchedule,
 											@Param("now") LocalDateTime now,
 											@Param("retryBefore") LocalDateTime retryBefore,
 											Pageable pageable);
