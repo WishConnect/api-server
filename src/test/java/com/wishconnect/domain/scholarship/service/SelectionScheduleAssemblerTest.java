@@ -52,7 +52,7 @@ class SelectionScheduleAssemblerTest {
 		void fallbackOnly() {
 			List<ScheduleStep> steps = SelectionScheduleAssembler.assemble(List.of(), APPLY_START, APPLY_END, TODAY);
 
-			assertThat(steps).containsExactly(new ScheduleStep("서류접수", "2026.10.01 ~ 2026.10.15", "CURRENT"));
+			assertThat(steps).containsExactly(new ScheduleStep("서류접수", "2026.10.01 ~ 2026.10.15", "CURRENT", null));
 		}
 
 		@Test
@@ -215,7 +215,16 @@ class SelectionScheduleAssemblerTest {
 					SelectionScheduleAssemblerTest.tbd(TimelineStageCode.FINAL_RESULT, "최종 발표", "12월 중 예정")),
 					null, null, TODAY);
 
-			assertThat(steps).containsExactly(new ScheduleStep("최종 발표", "12월 중 예정", "UPCOMING"));
+			assertThat(steps).containsExactly(new ScheduleStep("최종 발표", "12월 중 예정", "UPCOMING", null));
 		}
+	}
+
+	@Test
+	void fallbackApplicationStepClosesImmediatelyAfterExplicitDeadline() {
+		LocalDateTime deadline = LocalDateTime.of(2026, 11, 16, 13, 0);
+		assertThat(SelectionScheduleAssembler.assemble(List.of(), null, deadline, deadline.minusMinutes(1)).get(0).status())
+				.isEqualTo("CURRENT");
+		assertThat(SelectionScheduleAssembler.assemble(List.of(), null, deadline, deadline.plusMinutes(1)).get(0).status())
+				.isEqualTo("CLOSED");
 	}
 }

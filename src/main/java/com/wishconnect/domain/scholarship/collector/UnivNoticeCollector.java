@@ -13,7 +13,6 @@ import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.common.service.ImageStorageService;
-import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -74,7 +73,7 @@ public class UnivNoticeCollector {
 	private static final int TIMEOUT_MS = 10_000;
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 
-	private final RawScholarshipRepository rawScholarshipRepository;
+	private final NoticeCollectionStore noticeCollectionStore;
 	private final UnivNoticeProperties univNoticeProperties;
 
 	/** 설정된 모든 대학을 수집한다(배치용). 사이트 간 실패는 서로 격리된다. */
@@ -113,7 +112,7 @@ public class UnivNoticeCollector {
 					break;
 				}
 				fetched++;
-				if (rawScholarshipRepository.existsBySourceAndSourceId(site.source(), site.sourceIdOf(articleId))) {
+				if (noticeCollectionStore.existsBySourceAndSourceId(site.source(), site.sourceIdOf(articleId))) {
 					continue;
 				}
 				try {
@@ -131,6 +130,8 @@ public class UnivNoticeCollector {
 				break;
 			}
 		}
+		saved += noticeCollectionStore.refreshDue(site.source(),
+				raw -> collectArticleAt(site, raw.getSourceId(), raw.getSourceUrl()));
 		log.info("[UnivCollector] {} 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}",
 				site.code(), fetched, saved, skipped);
 		return new CollectResultResponse(site.source(), fetched, saved, skipped);
@@ -157,7 +158,10 @@ public class UnivNoticeCollector {
 
 	/** @return true = 정제 저장됨, false = 마감 등으로 SKIPPED */
 	private boolean collectArticle(Site site, String baseUrl, String articleId) throws Exception {
-		String detailUrl = site.detailUrl(baseUrl, articleId);
+		return collectArticleAt(site, site.sourceIdOf(articleId), site.detailUrl(baseUrl, articleId));
+	}
+
+	private boolean collectArticleAt(Site site, String sourceId, String detailUrl) throws Exception {
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
 		String title = extractTitle(doc, site.titleSelector());
 		String bodyText = extractBody(doc, site.bodySelector());
@@ -165,9 +169,9 @@ public class UnivNoticeCollector {
 		// 장학 아닌 공지는 여기서 걸러 낸다. 원본은 SKIPPED 로 남겨야 다음 배치가 또 받아오지 않는다.
 		String category = extractCategory(doc);
 		if (!site.acceptsCategory(category)) {
-			rawScholarshipRepository.save(RawScholarship.builder()
+			noticeCollectionStore.save(RawScholarship.builder()
 					.source(site.source())
-					.sourceId(site.sourceIdOf(articleId))
+					.sourceId(sourceId)
 					.sourceUrl(detailUrl)
 					.rawHtml(doc.outerHtml())
 					.parseStatus(ParseStatus.SKIPPED)
@@ -182,7 +186,7 @@ public class UnivNoticeCollector {
 
 		RawScholarship raw = RawScholarship.builder()
 				.source(site.source())
-				.sourceId(site.sourceIdOf(articleId))
+				.sourceId(sourceId)
 				.sourceUrl(detailUrl)
 				.rawHtml(doc.outerHtml())
 				.parseStatus(ParseStatus.PENDING)
@@ -190,7 +194,7 @@ public class UnivNoticeCollector {
 
 		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
 		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
-		rawScholarshipRepository.save(raw);
+		noticeCollectionStore.save(raw);
 		return true;
 	}
 

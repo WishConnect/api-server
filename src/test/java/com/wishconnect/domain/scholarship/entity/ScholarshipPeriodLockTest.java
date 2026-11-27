@@ -116,7 +116,7 @@ class ScholarshipPeriodLockTest {
 	}
 
 	@Test
-	@DisplayName("동기화 매퍼는 잠기지 않은 장학금에는 응답 날짜·상태를 그대로 쓴다")
+	@DisplayName("동기화 매퍼는 잠기지 않은 장학금에는 API 마감 날짜의 하루 끝과 상태를 쓴다")
 	void mapperOverwritesUnlocked() {
 		Scholarship scholarship = scholarship(false);
 		ObjectNode item = new ObjectMapper().createObjectNode()
@@ -128,7 +128,7 @@ class ScholarshipPeriodLockTest {
 				new ScholarshipApiProperties(null, null, null, null, null, null, null, null, null));
 
 		assertThat(scholarship.getApplicationEndAt()).isEqualTo(LocalDate.parse(FEED_END.toLocalDate().toString())
-				.atStartOfDay());
+				.atTime(23, 59, 59));
 		assertThat(scholarship.getRecruitmentStatus()).isEqualTo(RecruitmentStatus.CLOSED);
 		assertThat(scholarship.isActive()).isFalse();
 	}

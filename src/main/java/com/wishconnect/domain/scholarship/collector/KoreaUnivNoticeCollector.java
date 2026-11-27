@@ -11,7 +11,6 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
-import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -95,7 +94,7 @@ public class KoreaUnivNoticeCollector {
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 	private static final int MAX_DOCUMENTS = 12;
 
-	private final RawScholarshipRepository rawScholarshipRepository;
+	private final NoticeCollectionStore noticeCollectionStore;
 
 	/**
 	 * 고려대 장학금공지를 수집한다.
@@ -110,7 +109,7 @@ public class KoreaUnivNoticeCollector {
 
 		for (Article article : fetchArticles(Math.max(pages, 1))) {
 			fetched++;
-			if (rawScholarshipRepository.existsBySourceAndSourceId(SOURCE, article.articleId())) {
+			if (noticeCollectionStore.existsBySourceAndSourceId(SOURCE, article.articleId())) {
 				continue;
 			}
 			try {
@@ -125,6 +124,8 @@ public class KoreaUnivNoticeCollector {
 			}
 		}
 
+		saved += noticeCollectionStore.refreshDue(SOURCE,
+				raw -> collectArticleAt(raw.getSourceId(), raw.getSourceUrl()));
 		log.info("[KoreaUnivCollector] 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}", fetched, saved, skipped);
 		return new CollectResultResponse(SOURCE, fetched, saved, skipped);
 	}
@@ -181,7 +182,10 @@ public class KoreaUnivNoticeCollector {
 
 	/** @return true = 정제 저장됨, false = 마감 등으로 SKIPPED */
 	private boolean collectArticle(Article article) throws Exception {
-		String detailUrl = detailUrl(article);
+		return collectArticleAt(article.articleId(), detailUrl(article));
+	}
+
+	private boolean collectArticleAt(String articleId, String detailUrl) throws Exception {
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
 		String title = extractTitle(doc);
 		String bodyText = extractBody(doc);
@@ -192,7 +196,7 @@ public class KoreaUnivNoticeCollector {
 
 		RawScholarship raw = RawScholarship.builder()
 				.source(SOURCE)
-				.sourceId(article.articleId())
+				.sourceId(articleId)
 				.sourceUrl(detailUrl)
 				.rawHtml(doc.outerHtml())
 				.parseStatus(ParseStatus.PENDING)
@@ -200,7 +204,7 @@ public class KoreaUnivNoticeCollector {
 
 		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
 		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
-		rawScholarshipRepository.save(raw);
+		noticeCollectionStore.save(raw);
 		return true;
 	}
 

@@ -171,4 +171,20 @@ public class RawScholarship extends BaseEntity {
 		this.parseStatus = ParseStatus.PENDING;
 		this.parseError = null;
 	}
+
+	/** 대학 공지는 원본 ID와 정제 연결을 유지하며 변경된 내용만 다시 파싱한다. */
+	public void refreshNotice(String sourceUrl, String rawHtml, boolean changed) {
+		this.sourceUrl = sourceUrl;
+		this.rawHtml = rawHtml;
+		this.crawledAt = LocalDateTime.now();
+		if (changed && !isDismissed()) {
+			this.parseStatus = ParseStatus.PENDING;
+			this.parseError = null;
+		}
+	}
+
+	/** API 원본의 JSON과 파싱 상태는 유지하고, 일정 보완에 성공한 상세 HTML만 기억한다. */
+	public void rememberEnrichmentHtml(String html) {
+		this.rawHtml = html;
+	}
 }

@@ -7,6 +7,7 @@ import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.Required
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.ScheduleStep;
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.Summary;
 import com.wishconnect.domain.scholarship.entity.ConditionType;
+import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
@@ -58,15 +59,28 @@ public class ScholarshipDetailService {
 				scholarshipDocumentRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId).stream()
 						.map(document -> new RequiredDocument(document.getName(), document.getDownloadUrl()))
 						.toList();
+		LocalDateTime now = LocalDateTime.now(SelectionScheduleAssembler.SERVICE_ZONE);
+		var status = scholarship.getRecruitmentStatus();
+		LocalDateTime start = scholarship.getApplicationStartAt();
+		LocalDateTime end = scholarship.getApplicationEndAt();
+		if (end != null && now.isAfter(end)) {
+			status = RecruitmentStatus.CLOSED;
+		} else if (start != null && status != RecruitmentStatus.CLOSED) {
+			if (now.isBefore(start)) {
+				status = RecruitmentStatus.UPCOMING;
+			} else if (status == RecruitmentStatus.UPCOMING) {
+				status = end == null ? RecruitmentStatus.ALWAYS_OPEN : RecruitmentStatus.OPEN;
+			}
+		}
 		List<ScheduleStep> schedule = SelectionScheduleAssembler.assemble(
 				scholarshipTimelineRepository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarshipId),
-				scholarship.getApplicationStartAt(), scholarship.getApplicationEndAt(), SelectionScheduleAssembler.today());
+				start, end, now);
 
 		return new ScholarshipDetailResponse(
 				scholarship.getId(),
 				scholarship.getTitle(),
 				scholarship.getProvider(),
-				scholarship.getRecruitmentStatus() == null ? null : scholarship.getRecruitmentStatus().name(),
+				status == null ? null : status.name(),
 				scholarship.getApplicationEndAt(),
 				CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt()),
 				userId != null && scrapRepository.existsByUserIdAndScholarshipId(userId, scholarshipId),

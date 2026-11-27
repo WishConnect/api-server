@@ -1,7 +1,9 @@
 package com.wishconnect.domain.scholarship.service;
 
+import com.wishconnect.domain.scholarship.dto.CuratedScholarshipResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSearchResponse;
 import com.wishconnect.domain.scholarship.dto.ScholarshipSummaryResponse;
+import com.wishconnect.domain.scholarship.entity.RecruitmentStatus;
 import com.wishconnect.domain.scholarship.entity.Scholarship;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -18,9 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -86,7 +87,7 @@ public class ScholarshipService {
         // category 는 ScholarshipType enum 이다. 문자열로 넘기면 JPQL 이 enum 과 비교하지 못해
         // 500 이 나므로, 여기서 변환하고 잘못된 값은 400 으로 돌려준다.
         ScholarshipType categoryType = parseCategory(category);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
 
         // 2. 페이지네이션
         Pageable pageable = createPageable(page-1, size, sort);
@@ -268,16 +269,14 @@ public class ScholarshipService {
 
     private ScholarshipSummaryResponse toSummaryResponse(Scholarship scholarship, Set<Long> scrappedInPage) {
 
-        int dDay = 0;
-        if(scholarship.getApplicationEndAt() != null ){
-            dDay = (int) ChronoUnit.DAYS.between(LocalDate.now(),  scholarship.getApplicationEndAt().toLocalDate());
-        }
-        // 모집상태
+        Long dDay = CuratedScholarshipResponse.calculateDday(scholarship.getApplicationEndAt());
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
         String recruitStatus;
-        if (scholarship.getApplicationEndAt() == null) {
-            recruitStatus = "OPEN";
-        } else if (scholarship.getApplicationEndAt().isBefore(LocalDateTime.now())) {
+        if (scholarship.getRecruitmentStatus() == RecruitmentStatus.CLOSED
+                || scholarship.getApplicationEndAt() != null && now.isAfter(scholarship.getApplicationEndAt())) {
             recruitStatus = "CLOSED";
+        } else if (scholarship.getApplicationStartAt() != null && now.isBefore(scholarship.getApplicationStartAt())) {
+            recruitStatus = "UPCOMING";
         } else {
             recruitStatus = "OPEN";
         }

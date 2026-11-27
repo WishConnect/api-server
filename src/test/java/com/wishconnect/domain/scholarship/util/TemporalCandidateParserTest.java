@@ -132,9 +132,58 @@ class TemporalCandidateParserTest {
         assertThat(result.issues()).contains("SOURCE_DATE_INVALID", "INPUT_TRUNCATED");
     }
 
+    @Test
+    void keepsGroundedModelPeriodWhenAnotherSubmissionDeadlineConflicts() throws Exception {
+        String application = "신청 일정: 2026.11.01 ~ 2026.11.30";
+        String body = application + "\n추천서 제출기한: 2026.11.20. 18:00까지";
+        var n = notice(Map.of("applicationStart", "2026-11-01", "applicationEnd", "2026-11-30",
+                "periodEvidence", application));
+        var result = candidate.resolveRecruitmentPeriod("장학생 모집", body, REFERENCE, n);
+        assertThat(result.start().date()).isEqualTo(LocalDate.of(2026, 11, 1));
+        assertThat(result.end().date()).isEqualTo(LocalDate.of(2026, 11, 30));
+        assertThat(result.evidence()).isEqualTo(application);
+    }
+
+    @Test
+    void stillRecoversExplicitDeadlineWhenModelOmittedPeriod() throws Exception {
+        var result = candidate.resolveRecruitmentPeriod("장학생 모집", "접수 일정: 2026.11.30. 18:00까지",
+                REFERENCE, notice(Map.of()));
+        assertThat(result.end().time()).isEqualTo(LocalTime.of(18, 0));
+    }
+
+    @Test
+    void doesNotReplaceInvalidModelEvidenceWithUnrelatedSubmissionDate() throws Exception {
+        String application = "신청 일정: 2026.11.01 ~ 2026.11.30";
+        var n = notice(Map.of("applicationEnd", "2026-11-20", "periodEvidence", application));
+        assertThat(candidate.resolveRecruitmentPeriod("장학생 모집",
+                application + "\n추천서 제출기한: 2026.11.20. 18:00까지", REFERENCE, n)).isNull();
+    }
+
     private com.wishconnect.domain.scholarship.dto.TemporalParseResult stage(
             String stage, String date, String quote) throws Exception {
         return candidate.resolve(input("공지", quote), notice(Map.of("timeline", List.of(Map.of(
                 "stageCode", stage, "dateType", "SINGLE", "startDate", date, "evidence", quote)))));
     }
+
+	@Test
+	void usesSourceCalendarYearAndPreviouslyRejectedDeadlineLabels() throws Exception {
+		String quote = "제출기한: 11월 26일 16:00";
+		var observed = notice(Map.of("applicationEnd", "2025-11-26", "periodEvidence", quote));
+		var period = candidate.resolveRecruitmentPeriod("모집 안내", quote, REFERENCE, observed);
+		assertThat(period.end().date()).isEqualTo(LocalDate.of(2026, 11, 26));
+		assertThat(period.end().time()).isEqualTo(LocalTime.of(16, 0));
+		assertThat(candidate.resolveExplicitRecruitmentPeriod(null,
+				"지원 마감: 2026년 11월 26일 16:00", REFERENCE).end().time()).isEqualTo(LocalTime.of(16, 0));
+	}
+
+	@Test
+	void combinesDateRangeAndExplicitClockFromSeparateAttachmentRows() {
+		String body = "지원 접수: 2026년 10월 6일(화) ~ 10월 26일(월)\n"
+				+ "접수 기한(10월 26일, 23시 59분) 이후 제출서류는 무효 처리함";
+		var period = candidate.resolveExplicitRecruitmentPeriod(null, body, REFERENCE);
+		assertThat(period.start().date()).isEqualTo(LocalDate.of(2026, 10, 6));
+		assertThat(period.end().date()).isEqualTo(LocalDate.of(2026, 10, 26));
+		assertThat(period.end().time()).isEqualTo(LocalTime.of(23, 59));
+	}
+
 }

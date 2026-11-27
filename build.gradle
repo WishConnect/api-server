@@ -40,6 +40,7 @@ ext {
 dependencies {
 	// Spring Boot starters
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.apache.pdfbox:pdfbox:3.0.8' // 공고 PDF의 텍스트 추출
 	implementation 'org.jsoup:jsoup:1.17.2' // 교내 장학공지 크롤링(HTML 파싱)
 	// 관리자 콘솔의 장학금 일괄 편집(엑셀 내보내기·업로드).
 	// CSV 를 쓰면 윈도우 엑셀이 CP949 로 저장해 한글이 깨지고, 쉼표가 든 제목에서 열이 밀린다.

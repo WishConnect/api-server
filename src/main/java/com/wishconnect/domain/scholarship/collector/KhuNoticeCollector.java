@@ -11,7 +11,6 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
-import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -154,7 +153,7 @@ public class KhuNoticeCollector {
 	private static final int TIMEOUT_MS = 10_000;
 	private static final String USER_AGENT = "Mozilla/5.0 (WishConnect scholarship collector)";
 
-	private final RawScholarshipRepository rawScholarshipRepository;
+	private final NoticeCollectionStore noticeCollectionStore;
 
 	/**
 	 * 경희대 장학·근로 게시판을 수집한다.
@@ -170,7 +169,7 @@ public class KhuNoticeCollector {
 		for (String menuNo : MENU_NOS) {
 			for (String boardId : fetchBoardIds(menuNo, Math.max(pages, 1))) {
 				fetched++;
-				if (rawScholarshipRepository.existsBySourceAndSourceId(SOURCE, boardId)) {
+				if (noticeCollectionStore.existsBySourceAndSourceId(SOURCE, boardId)) {
 					continue;
 				}
 				try {
@@ -186,6 +185,8 @@ public class KhuNoticeCollector {
 			}
 		}
 
+		saved += noticeCollectionStore.refreshDue(SOURCE,
+				raw -> collectArticleAt(raw.getSourceId(), raw.getSourceUrl()));
 		log.info("[KhuCollector] 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}", fetched, saved, skipped);
 		return new CollectResultResponse(SOURCE, fetched, saved, skipped);
 	}
@@ -238,7 +239,10 @@ public class KhuNoticeCollector {
 
 	/** @return true = 정제 저장됨, false = 마감 등으로 SKIPPED */
 	private boolean collectArticle(String menuNo, String boardId) throws Exception {
-		String detailUrl = detailUrl(menuNo, boardId);
+		return collectArticleAt(boardId, detailUrl(menuNo, boardId));
+	}
+
+	private boolean collectArticleAt(String boardId, String detailUrl) throws Exception {
 		Document doc = Jsoup.connect(detailUrl).userAgent(USER_AGENT).timeout(TIMEOUT_MS).get();
 		String title = extractTitle(doc);
 		String bodyText = extractBody(doc);
@@ -257,7 +261,7 @@ public class KhuNoticeCollector {
 
 		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
 		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
-		rawScholarshipRepository.save(raw);
+		noticeCollectionStore.save(raw);
 		return true;
 	}
 

@@ -98,7 +98,7 @@ public class UnivNoticeLlmParser {
 	 * 제목 판별 기준과 제목 동봉 · 자소서/면접 판단 · 공지 종류(RECRUITMENT/RESULT/GUIDE) ·
 	 * 통합 공고 · 제출 방식과 경로 · FINANCIAL_AID_TYPE 정의 축소.
 	 */
-    public static final String PROMPT_VERSION = "v7";
+    public static final String PROMPT_VERSION = "v8";
 
 
 	/** 프롬프트에 나열한 조건 유형과 스키마 enum 이 어긋나지 않도록 한 곳에서 만든다. */
@@ -163,7 +163,7 @@ public class UnivNoticeLlmParser {
 						"properties", conditionProperties())));
         Map<String, Object> timeline = new LinkedHashMap<>();
         timeline.put("stageCode", Map.of("type", "string", "enum",
-                List.of("DOC_REVIEW", "DOC_RESULT", "INTERVIEW", "FINAL_RESULT", "PAYMENT")));
+                List.of("DOC_REVIEW", "DOC_RESULT", "INTERVIEW", "FINAL_RESULT", "PAYMENT", "CUSTOM")));
         timeline.put("dateType", Map.of("type", "string", "enum", List.of("SINGLE", "RANGE", "TBD")));
         for (String name : List.of("startDate", "endDate")) timeline.put(name, nullable("string"));
         // 원문 인용 칸은 빈 문자열로 "없음"을 표현한다(아래 BLANK_AS_NULL 참고).
@@ -301,7 +301,7 @@ public class UnivNoticeLlmParser {
 			  "interviewRequirement": "REQUIRED"|"CONDITIONAL"|"NOT_REQUIRED"|null,
 			  "interviewEvidence": 문자열(없으면 ""),
 			  "contact": 문자열|null,
-              "timeline": [{"stageCode": "DOC_REVIEW"|"DOC_RESULT"|"INTERVIEW"|"FINAL_RESULT"|"PAYMENT",
+              "timeline": [{"stageCode": "DOC_REVIEW"|"DOC_RESULT"|"INTERVIEW"|"FINAL_RESULT"|"PAYMENT"|"CUSTOM",
                             "dateType": "SINGLE"|"RANGE"|"TBD", "startDate": "yyyy-MM-dd"|null,
                             "endDate": "yyyy-MM-dd"|null, "dateText": 문자열(없으면 ""),
                             "note": 문자열(없으면 ""), "evidence": 문자열}],
@@ -315,13 +315,15 @@ public class UnivNoticeLlmParser {
             - timeline: 본문에 실제로 명시된 선발 일정만 최대 10개, 원문 순서로 추출한다.
               서류심사 DOC_REVIEW / 서류 합격 발표 DOC_RESULT / 면접 INTERVIEW /
               최종 합격·선발 발표 FINAL_RESULT / 장학금 지급 PAYMENT.
+              결과 발표일과 구분되는 장학생 선발 또는 장학증서 수여식은 CUSTOM으로 추출한다.
               접수는 applicationStart/applicationEnd로 처리하며 timeline에 넣지 않는다.
+              지역마다 면접일이 따로 있으면 각각 SINGLE로 추출하고 비고에 원문 지역명을 넣는다.
               evidence는 단계와 날짜를 포함한 원문 문장을 그대로 인용한다. 근거가 없으면 []다.
               하루는 SINGLE, 기간은 RANGE. 날짜가 명시적으로 미정이면 TBD이며 날짜는 null,
-              dateText에는 '12월 중 예정' 같은 원문 문구만 넣는다. note도 원문 인용만 허용한다.
+              dateText에는 '12월', '12월 초', '개별 안내 예정' 등 날짜를 확정할 수 없는 원문 문구만 넣는다. note도 원문 인용만 허용한다.
               조건·근무기간·게시일을 일정으로 넣거나 신청 마감일로 발표일을 계산하지 마라.
 			- 본문에 근거가 없는 값은 반드시 null 로 둔다. 추측·유추·계산으로 값을 만들지 마라.
-			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 그 근거가 된 본문 문장을
+			- applicationStart/applicationEnd 를 채웠다면 periodEvidence 에 해당 시작일과 마감일 및 명시 시각을 포함한 모집기간 문장을
 			  한 글자도 바꾸지 않고 그대로 인용한다. 인용할 문장이 없으면 기간을 null 로 둔다.
 			  본문에 기간이 없으면 <반드시 [제목] 을 확인한다>. 제목 끝 괄호에 마감만 적는 일이
 			  아주 흔하다 — "…모집 안내 (~9/30)", "…선발(8/1~8/14)", "…신청(~9.18.금 18시)". 본문을 첨부파일에만 싣고 제목에
@@ -516,7 +518,23 @@ public class UnivNoticeLlmParser {
 		if (text.length() <= MAX_BODY_CHARS) {
 			return Optional.of(new ExtractedBody(text, false, text.length()));
 		}
-		return Optional.of(new ExtractedBody(text.substring(0, MAX_BODY_CHARS), true, text.length()));
+		return Optional.of(new ExtractedBody(summarizeLongBody(text), true, text.length()));
+	}
+
+	private static String summarizeLongBody(String text) {
+		String head = text.substring(0, MAX_BODY_CHARS);
+		// 접수·발표 일정은 본문 뒤에 있어도 행 단위로 남긴다.
+		String schedule = text.lines()
+				.filter(line -> line.length() <= 350)
+				.filter(line -> TemporalCandidateParser.hasApplicationLabel(line)
+						|| NoticeTimelineParser.hasScheduleLabel(line))
+				.filter(line -> !head.contains(line))
+				.distinct().limit(12).collect(java.util.stream.Collectors.joining("\n"));
+		if (schedule.isBlank()) return head;
+		int scheduleBudget = Math.min(schedule.length(), MAX_BODY_CHARS / 3);
+		int cut = schedule.lastIndexOf('\n', scheduleBudget);
+		if (schedule.length() > scheduleBudget && cut >= 0) schedule = schedule.substring(0, cut);
+		return text.substring(0, MAX_BODY_CHARS - schedule.length() - 2) + "\n\n" + schedule;
 	}
 
 	/**
@@ -1033,7 +1051,7 @@ public class UnivNoticeLlmParser {
 	private static final java.util.regex.Pattern SHORT_YEAR = java.util.regex.Pattern.compile(
 			"['`‘’]\\d{2}\\s*[.년]");
 
-	static boolean isEvidenceGrounded(String evidence, String bodyText) {
+	public static boolean isEvidenceGrounded(String evidence, String bodyText) {
 		if (evidence == null || evidence.isBlank() || bodyText == null) {
 			return false;
 		}

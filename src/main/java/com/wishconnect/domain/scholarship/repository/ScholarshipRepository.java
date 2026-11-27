@@ -292,7 +292,7 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 										   @Param("to") LocalDateTime to);
 
 	/**
-	 * 자동 보완 대상: 상세 URL 이 아직 없는 <b>살아있는</b> 공고.
+	 * 자동 보완 대상: 상세 URL을 찾거나 자동 일정을 갱신할 살아있는 API 공고.
 	 *
 	 * <p>"살아있는"의 정의를 세 겹으로 잡는다. 이미 끝난 공고를 보완해봐야 아무도 안 보는데
 	 * 외부 검색·크롤링 비용만 나간다.
@@ -310,8 +310,8 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 	 * 상세 응답은 {@code detailUrl} 이 없으면 {@code homepageUrl} 로 폴백하므로 사용자에게는 문제가 없다.
 	 * (값을 복제하지 않는 이유: 수집기가 homepageUrl 을 갱신하면 복제본만 낡는다)
 	 *
-	 * <p>이미 시도한 건은 재시도 주기가 지나야 다시 본다. 안 그러면 매 배치가 "못 찾은 건" 만
-	 * 계속 붙잡아 검색 API 쿼터를 태운다. 마감 임박순으로 훑어 사용자가 볼 확률이 높은 것부터 채운다.
+	 * <p>상세 URL 검색 실패는 14일, 이미 아는 상세 URL은 하루 뒤 다시 확인한다.
+	 * API 날짜가 변경돼 enrichedAt이 비워진 공고는 우선 처리하며, 오래 확인하지 않은 순으로 순환한다.
 	 */
 	@Query("""
 			select s from Scholarship s
@@ -320,13 +320,20 @@ public interface ScholarshipRepository extends JpaRepository<Scholarship, Long>,
 			  and s.primarySource = :source
 			  and s.recruitmentStatus <> com.wishconnect.domain.scholarship.entity.RecruitmentStatus.CLOSED
 			  and (s.applicationEndAt is null or s.applicationEndAt >= :now)
-			  and (s.detailUrl is null or s.detailUrl = '')
-			  and (s.enrichedAt is null or s.enrichedAt < :retryBefore)
-			order by s.applicationEndAt asc nulls last
+			  and (s.enrichedAt is null or s.detailUrl is null or s.detailUrl = ''
+			       or (:collectSchedule = true and s.timelineLocked = false and not exists (
+			           select 1 from ScholarshipTimeline t where t.scholarship = s
+			             and t.origin <> com.wishconnect.domain.scholarship.entity.TimelineOrigin.LLM)))
+			  and (s.enrichedAt is null
+			       or (s.detailUrl is not null and s.detailUrl <> '' and s.enrichedAt < :knownDetailRetryBefore)
+			       or ((s.detailUrl is null or s.detailUrl = '') and s.enrichedAt < :retryBefore))
+			order by s.enrichedAt asc nulls first, s.applicationEndAt asc nulls last, s.id asc
 			""")
 	List<Scholarship> findEnrichmentTargets(@Param("source") String source,
+			@Param("collectSchedule") boolean collectSchedule,
 											@Param("now") LocalDateTime now,
 											@Param("retryBefore") LocalDateTime retryBefore,
+										@Param("knownDetailRetryBefore") LocalDateTime knownDetailRetryBefore,
 											Pageable pageable);
 
 	/**

@@ -212,4 +212,19 @@ class ScholarshipServiceTest {
 		ReflectionTestUtils.setField(scholarship, "id", 1L);
 		return scholarship;
 	}
+
+	@Test
+	void searchDoesNotConvertMissingDeadlineToDdayZero() {
+		var unknown = Scholarship.builder().title("마감일 미확인 장학금").build();
+		ReflectionTestUtils.setField(unknown, "id", 1L);
+		given(scholarshipRepository.searchByKeyword(any(), any(), isNull(), isNull(), any(), any()))
+				.willReturn(new PageImpl<>(List.of(unknown)));
+
+		var results = scholarshipService.search(null, "장학금", null, "deadline", false, 1, 10).results();
+
+		assertThat(results).singleElement().satisfies(row -> {
+			assertThat(row.deadline()).isEqualTo("미정");
+			assertThat(row.dDay()).isNull();
+		});
+	}
 }

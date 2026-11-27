@@ -2,6 +2,7 @@ package com.wishconnect.domain.scholarship.service;
 
 import com.wishconnect.domain.scholarship.dto.ScholarshipDetailResponse.ScheduleStep;
 import com.wishconnect.domain.scholarship.entity.ScholarshipTimeline;
+import com.wishconnect.domain.scholarship.entity.TimelineOrigin;
 import com.wishconnect.domain.scholarship.entity.TimelineStageCode;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -46,6 +47,25 @@ public final class SelectionScheduleAssembler {
 
 	public static List<ScheduleStep> assemble(List<ScholarshipTimeline> timelines, LocalDateTime applicationStartAt,
 			LocalDateTime applicationEndAt, LocalDate today) {
+		return assemble(timelines, applicationStartAt, applicationEndAt, today,
+				periodStatus(applicationStartAt == null ? null : applicationStartAt.toLocalDate(),
+						applicationEndAt == null ? null : applicationEndAt.toLocalDate(), today));
+	}
+
+	/** 접수 단계만 실제 모집 시각으로 상태를 판단하고, 날짜로 저장한 선발 단계는 한국 날짜로 판단한다. */
+	public static List<ScheduleStep> assemble(List<ScholarshipTimeline> timelines, LocalDateTime applicationStartAt,
+			LocalDateTime applicationEndAt, LocalDateTime now) {
+		Status status = Status.CURRENT;
+		if (applicationEndAt != null && now.isAfter(applicationEndAt)) {
+			status = Status.CLOSED;
+		} else if (applicationStartAt != null && now.isBefore(applicationStartAt)) {
+			status = Status.UPCOMING;
+		}
+		return assemble(timelines, applicationStartAt, applicationEndAt, now.toLocalDate(), status);
+	}
+
+	private static List<ScheduleStep> assemble(List<ScholarshipTimeline> timelines, LocalDateTime applicationStartAt,
+			LocalDateTime applicationEndAt, LocalDate today, Status applicationStatus) {
 		List<ScheduleStep> steps = new ArrayList<>();
 		boolean hasApplicationRow = timelines.stream()
 				.anyMatch(timeline -> timeline.getStageCode() == TimelineStageCode.APPLICATION);
@@ -53,11 +73,12 @@ public final class SelectionScheduleAssembler {
 			LocalDate start = applicationStartAt == null ? null : applicationStartAt.toLocalDate();
 			LocalDate end = applicationEndAt == null ? null : applicationEndAt.toLocalDate();
 			steps.add(new ScheduleStep(APPLICATION_FALLBACK_TITLE, formatPeriod(start, end),
-					toResponseStatus(periodStatus(start, end, today))));
+					toResponseStatus(applicationStatus), null));
 		}
 		for (ScholarshipTimeline timeline : timelines) {
 			steps.add(new ScheduleStep(timeline.getTitle(), formatDate(timeline),
-					toResponseStatus(status(timeline, today))));
+					toResponseStatus(status(timeline, today)),
+					timeline.getOrigin() == TimelineOrigin.LLM ? timeline.getNote() : null));
 		}
 		return steps;
 	}
