@@ -15,7 +15,7 @@ public record ScholarshipSummaryResponse(
         String applicationPeriod,
         String maxAmount,
         String deadline,
-        int dDay,
+        Long dDay,
         String recruitStatus,
         List<String> tags,
         boolean isScrapped
