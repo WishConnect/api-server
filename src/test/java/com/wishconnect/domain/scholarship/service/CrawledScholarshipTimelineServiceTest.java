@@ -131,4 +131,83 @@ class CrawledScholarshipTimelineServiceTest {
         assertThat(saved.getAllValues()).extracting(ScholarshipTimeline::getNote).containsExactly("울산", "서울");
     }
 
+    @Test
+    void replacesOldTbdWithConfirmedDateAndKeepsOtherStages() {
+        var old = row(TimelineStageCode.FINAL_RESULT, TimelineDateType.TBD, null, "12월 중 예정", null,
+                "최종 합격 발표: 12월 중 예정");
+        var interview = row(TimelineStageCode.INTERVIEW, TimelineDateType.SINGLE, LocalDate.of(2026, 12, 1),
+                null, null, "면접: 2026.12.01.");
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old, interview));
+        assertThat(service.mergeFromParsed(scholarship, null, "최종 합격 발표: 2026.12.15.",
+                LocalDate.of(2026, 11, 1))).isEqualTo(1);
+        verify(repository).delete(old);
+        verify(repository, never()).delete(interview);
+        var saved = ArgumentCaptor.forClass(ScholarshipTimeline.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getStartDate()).isEqualTo(LocalDate.of(2026, 12, 15));
+        assertThat(saved.getValue().getDateType()).isEqualTo(TimelineDateType.SINGLE);
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L))
+                .thenReturn(List.of(interview, saved.getValue()));
+        assertThat(service.mergeFromParsed(scholarship, null, "최종 합격 발표: 2026.12.15.",
+                LocalDate.of(2026, 11, 1))).isZero();
+    }
+
+    @Test
+    void replacesChangedDateInSameRegionalTrackOnly() {
+        var old = row(TimelineStageCode.INTERVIEW, TimelineDateType.SINGLE, LocalDate.of(2026, 12, 29),
+                null, "울산", "면접: 2026.12.29. 울산");
+        var seoul = row(TimelineStageCode.INTERVIEW, TimelineDateType.SINGLE, LocalDate.of(2026, 12, 30),
+                null, "서울", "면접: 2026.12.30. 서울");
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old, seoul));
+        service.mergeFromParsed(scholarship, null,
+                "면접: 2026.12.28.(월) 울산 / 12.30.(수) 서울", LocalDate.of(2026, 11, 1));
+        verify(repository).delete(old);
+        verify(repository, never()).delete(seoul);
+    }
+
+    @Test
+    void shortModelTrackNoteUpdatesOnlyMatchingTrackWithoutDuplicateSourceRow() {
+        var old = row(TimelineStageCode.INTERVIEW, TimelineDateType.SINGLE, LocalDate.of(2026, 12, 29),
+                null, "울산", "면접: 2026.12.29. 울산");
+        var seoul = row(TimelineStageCode.INTERVIEW, TimelineDateType.SINGLE, LocalDate.of(2026, 12, 30),
+                null, "서울", "면접: 2026.12.30. 서울");
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old, seoul));
+        var n = parser.readResponse("""
+                {"timeline":[{"stageCode":"INTERVIEW","dateType":"SINGLE","startDate":"2026-12-28",
+                "note":"울산","evidence":"면접: 2026.12.28. 울산"}]}
+                """).orElseThrow();
+        assertThat(service.mergeFromParsed(scholarship, n, "면접: 2026.12.28. 울산",
+                LocalDate.of(2026, 11, 1))).isEqualTo(1);
+        verify(repository).delete(old);
+        verify(repository, never()).delete(seoul);
+        var saved = ArgumentCaptor.forClass(ScholarshipTimeline.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getNote()).isEqualTo("울산");
+    }
+
+    @Test
+    void preservesOldRowWhenItIsStillPresentOrReplacementIsAmbiguous() {
+        var old = row(TimelineStageCode.FINAL_RESULT, TimelineDateType.TBD, null, "12월 중 예정", null,
+                "최종 합격 발표: 12월 중 예정");
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old));
+        service.mergeFromParsed(scholarship, null,
+                "최종 합격 발표: 12월 중 예정\n최종 합격 발표: 2026.12.15.", LocalDate.of(2026, 11, 1));
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void emptyRefreshDoesNotDeletePreviouslyVerifiedSchedule() {
+        var old = row(TimelineStageCode.FINAL_RESULT, TimelineDateType.TBD, null, "12월 중 예정", null,
+                "최종 합격 발표: 12월 중 예정");
+        when(repository.findAllByScholarshipIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(old));
+        assertThat(service.mergeFromParsed(scholarship, null, "", LocalDate.of(2026, 11, 1))).isZero();
+        verify(repository, never()).delete(any());
+    }
+
+    private ScholarshipTimeline row(TimelineStageCode stage, TimelineDateType type, LocalDate date,
+            String text, String note, String evidence) {
+        return ScholarshipTimeline.builder().scholarship(scholarship).origin(TimelineOrigin.LLM)
+                .stageCode(stage).title(stage.defaultTitle()).dateType(type).startDate(date).endDate(date)
+                .dateText(text).note(note).evidence(evidence).build();
+    }
 }

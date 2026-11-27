@@ -56,7 +56,9 @@ public final class NoticeTimelineParser {
                 if (type == TimelineDateType.TBD && (row.dateText() == null || row.dateText().isBlank()
                         || !isVagueDate(row.dateText(), row.evidence()))) continue;
                 // 표시명·비고는 모델이 다시 쓴 문구 대신 표준명·실제 인용만 보낸다.
-                String note = UnivNoticeLlmParser.isEvidenceGrounded(row.note(), row.evidence()) ? row.note() : null;
+                // 서울·울산처럼 짧은 전형 구분도 근거 안에 실제로 있으면 보존한다.
+                String note = row.note() != null && stripWhitespace(row.note()).length() >= 2
+                        && stripWhitespace(row.evidence()).contains(stripWhitespace(row.note())) ? row.note() : null;
                 Item item = ScholarshipTimelineValidator.normalize(List.of(new TimelineItemRequest(
                         stage.name(), stage == TimelineStageCode.CUSTOM ? customTitle(row.evidence()) : null,
                         type.name(), start, end, row.dateText(), note, row.evidence()))).get(0);
@@ -74,6 +76,9 @@ public final class NoticeTimelineParser {
         List<Item> items = new ArrayList<>(sourceItems(body, referenceDate));
         if (notice != null) {
             for (Item candidate : resolve(notice, body, referenceDate)) {
+                if (candidate.note() != null) {
+                    items.removeIf(item -> item.note() == null && sameStageAndDates(item, candidate));
+                }
                 if (items.size() >= ScholarshipTimelineValidator.MAX_ITEMS) break;
                 if (items.stream().noneMatch(item -> sameStageAndDates(item, candidate)
                         && (candidate.note() == null || Objects.equals(item.note(), candidate.note())))) {

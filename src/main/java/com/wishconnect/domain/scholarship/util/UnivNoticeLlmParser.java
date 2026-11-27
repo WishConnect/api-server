@@ -1051,7 +1051,7 @@ public class UnivNoticeLlmParser {
 	private static final java.util.regex.Pattern SHORT_YEAR = java.util.regex.Pattern.compile(
 			"['`‘’]\\d{2}\\s*[.년]");
 
-	static boolean isEvidenceGrounded(String evidence, String bodyText) {
+	public static boolean isEvidenceGrounded(String evidence, String bodyText) {
 		if (evidence == null || evidence.isBlank() || bodyText == null) {
 			return false;
 		}

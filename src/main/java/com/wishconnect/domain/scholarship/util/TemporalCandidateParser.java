@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class TemporalCandidateParser {
 
-    public static final String VERSION = "temporal-v2.0.0-rc.3";
+    public static final String VERSION = "temporal-v2.0.0-rc.4";
     private static final Pattern DATE = Pattern.compile(
             "(?<!\\d)(?:(20\\d{2})\\s*[.\\-/년]\\s*)?(\\d{1,2})\\s*[.\\-/월]\\s*(\\d{1,2})(?!\\d)");
     private static final Pattern TIME = Pattern.compile(
@@ -86,8 +86,7 @@ public class TemporalCandidateParser {
 
     /** 본문을 이미 추출한 실제 대학 파싱에서도 같은 모집기간 검증을 사용한다. */
     public Period resolveRecruitmentPeriod(String title, String body, LocalDate referenceDate, ParsedNotice notice) {
-        Period explicit = resolveExplicitRecruitmentPeriod(title, body, referenceDate);
-        return explicit == null ? resolveRecruitmentPeriod(title, body, referenceDate, notice, new ArrayList<>()) : explicit;
+        return resolveRecruitmentPeriod(title, body, referenceDate, notice, new ArrayList<>());
     }
 
     private Period resolvePeriod(PipelineNoticeInput input, ParsedNotice notice, List<String> issues) {
@@ -105,7 +104,7 @@ public class TemporalCandidateParser {
     private Period resolveRecruitmentPeriod(String title, String body, LocalDate referenceDate,
             ParsedNotice notice, List<String> issues) {
         String context = (title == null ? "" : title) + "\n" + body;
-        String evidence = notice.periodEvidence();
+        String evidence = notice == null ? null : notice.periodEvidence();
         if (grounded(evidence, context)) {
             boolean fromTitle = title != null && applicationTitle(title) && grounded(evidence, title);
             return periodFromEvidence(evidence, fromTitle, referenceDate, notice.applicationStart(),
@@ -148,7 +147,7 @@ public class TemporalCandidateParser {
 
     static boolean hasApplicationLabel(String evidence) {
         return evidence.replaceAll("\\s+", "").matches(
-                ".*(신청기간|접수기간|모집기간|지원서제출|원서접수|서류접수|지원접수|신청기한|접수기한"
+                ".*(신청기간|신청일정|접수일정|지원일정|접수기간|모집기간|지원서제출|원서접수|서류접수|지원접수|신청기한|접수기한"
                         + "|제출기한|제출기간|지원기간|신청마감|접수마감|제출마감|지원마감|모집마감).*");
     }
 

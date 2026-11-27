@@ -15,7 +15,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -56,8 +55,7 @@ public class ScholarshipMapper {
 		LocalDate end = readDate(item, "모집종료일");
 		LocalDateTime endAt = end == null ? null : end.atTime(23, 59, 59);
 		LocalDateTime previousEnd = existingScholarship == null ? null : existingScholarship.getApplicationEndAt();
-		if (previousEnd != null && previousEnd.toLocalDate().equals(end)
-				&& !previousEnd.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+		if (previousEnd != null && previousEnd.toLocalDate().equals(end)) {
 			// 같은 날짜의 보완 수집 시각은 날짜만 가진 API가 되돌리지 않는다.
 			endAt = previousEnd;
 		}
@@ -111,6 +109,10 @@ public class ScholarshipMapper {
 			homepageUrl
 		);
 		existingScholarship.updateActive(active);
+		if (!existingScholarship.isPeriodLocked()
+				&& !java.util.Objects.equals(previousEnd == null ? null : previousEnd.toLocalDate(), end)) {
+			existingScholarship.requestEnrichment();
+		}
 		return existingScholarship;
 	}
 

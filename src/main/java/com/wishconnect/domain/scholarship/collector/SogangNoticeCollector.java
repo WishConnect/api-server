@@ -12,7 +12,6 @@ import com.wishconnect.domain.scholarship.entity.ScholarshipCondition;
 import com.wishconnect.domain.scholarship.util.ScholarshipDedupKey;
 import com.wishconnect.domain.scholarship.entity.ScholarshipDocument;
 import com.wishconnect.domain.scholarship.entity.ScholarshipType;
-import com.wishconnect.domain.scholarship.repository.RawScholarshipRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipConditionRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipDocumentRepository;
 import com.wishconnect.domain.scholarship.repository.ScholarshipRepository;
@@ -86,19 +85,19 @@ public class SogangNoticeCollector {
 	private static final int MAX_DOCUMENTS = 12;
 
 	private final RestClient restClient;
-	private final RawScholarshipRepository rawScholarshipRepository;
+	private final NoticeCollectionStore noticeCollectionStore;
 	private final ScholarshipRepository scholarshipRepository;
 	private final ScholarshipConditionRepository scholarshipConditionRepository;
 	private final ScholarshipDocumentRepository scholarshipDocumentRepository;
 	private final ImageStorageService imageStorageService;
 
-	public SogangNoticeCollector(RawScholarshipRepository rawScholarshipRepository,
+	public SogangNoticeCollector(NoticeCollectionStore noticeCollectionStore,
 			ScholarshipRepository scholarshipRepository,
 			ScholarshipConditionRepository scholarshipConditionRepository,
 			ScholarshipDocumentRepository scholarshipDocumentRepository,
 			ImageStorageService imageStorageService) {
 		this.restClient = RestClient.builder().baseUrl(BASE_URL).build();
-		this.rawScholarshipRepository = rawScholarshipRepository;
+		this.noticeCollectionStore = noticeCollectionStore;
 		this.scholarshipRepository = scholarshipRepository;
 		this.scholarshipConditionRepository = scholarshipConditionRepository;
 		this.scholarshipDocumentRepository = scholarshipDocumentRepository;
@@ -118,7 +117,7 @@ public class SogangNoticeCollector {
 
 		for (String pkId : fetchArticleIds(Math.max(pages, 1))) {
 			fetched++;
-			if (rawScholarshipRepository.existsBySourceAndSourceId(SOURCE, pkId)) {
+			if (noticeCollectionStore.existsBySourceAndSourceId(SOURCE, pkId)) {
 				continue;
 			}
 			try {
@@ -132,6 +131,7 @@ public class SogangNoticeCollector {
 			}
 		}
 
+		saved += noticeCollectionStore.refreshDue(SOURCE, raw -> collectArticle(raw.getSourceId()));
 		log.info("[SogangCollector] 수집 완료 목록={} 신규정제={} 스킵(마감/중복)={}", fetched, saved, skipped);
 		return new CollectResultResponse(SOURCE, fetched, saved, skipped);
 	}
@@ -209,7 +209,7 @@ public class SogangNoticeCollector {
 
 		// 여기서 scholarship 을 만들지 않는다. 원본만 PENDING 으로 남기고 정제는 LLM 파싱이 맡는다.
 		// 정규식으로 제목·기간·조건을 뽑던 코드가 LLM 과 같은 일을 두 번 하고 있었고, 품질도 나빴다.
-		rawScholarshipRepository.save(raw);
+		noticeCollectionStore.save(raw);
 		return true;
 	}
 

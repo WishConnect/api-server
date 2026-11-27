@@ -55,12 +55,23 @@ public class CrawledScholarshipTimelineService {
             retained.remove(row);
             replacements.addAll(missing);
         }
+        // 같은 전형·단계의 새 근거가 하나로 확정되면 이전 날짜를 교체한다.
+        // 원문에 여전히 남은 일정과, 어느 전형인지 구분할 수 없는 여러 일정은 보존한다.
+        for (var row : List.copyOf(retained)) {
+            var updates = items.stream().filter(item -> sameProcess(row, item)).toList();
+            long previousCount = retained.stream().filter(previous -> sameProcess(previous, row)).count();
+            if (updates.size() != 1 || previousCount != 1 || sameSchedule(row, updates.get(0))
+                    || row.getEvidence() == null
+                    || UnivNoticeLlmParser.isEvidenceGrounded(row.getEvidence(), body)) continue;
+            repository.delete(row);
+            retained.remove(row);
+        }
         int nextOrder = existing.stream().mapToInt(ScholarshipTimeline::getDisplayOrder).max().orElse(-1) + 1;
         int added = 0;
         for (var item : Stream.concat(replacements.stream(), items.stream()).toList()) {
             if (retained.size() >= ScholarshipTimelineValidator.MAX_ITEMS) break;
             if (retained.stream().anyMatch(row -> sameSchedule(row, item))) continue;
-            // 결과가 일부만 추출됐거나 같은 단계에 별도 전형이 있을 수 있으므로 기존 행을 지우지 않는다.
+            // 새 결과에 없는 다른 단계는 유지한다.
             var row = ScholarshipTimeline.builder().scholarship(scholarship)
                     .stageCode(item.stageCode()).title(item.title()).dateType(item.dateType())
                     .startDate(item.startDate()).endDate(item.endDate()).dateText(item.dateText())
@@ -94,6 +105,18 @@ public class CrawledScholarshipTimelineService {
                 && (item.note() == null || Objects.equals(row.getNote(), item.note()));
     }
 
+    private boolean sameProcess(ScholarshipTimeline row, ScholarshipTimelineValidator.Item item) {
+        return row.getStageCode() == item.stageCode()
+                && Objects.equals(row.getTitle(), item.title())
+                && Objects.equals(compactDateText(row.getNote()), compactDateText(item.note()));
+    }
+
+    private boolean sameProcess(ScholarshipTimeline first, ScholarshipTimeline second) {
+        return first.getStageCode() == second.getStageCode()
+                && Objects.equals(first.getTitle(), second.getTitle())
+                && Objects.equals(compactDateText(first.getNote()), compactDateText(second.getNote()));
+    }
+
     private static String compactDateText(String text) {
         return text == null ? null : text.replaceAll("[\\s ]+", "");
     }
@@ -117,9 +140,16 @@ public class CrawledScholarshipTimelineService {
     /** 공고의 명시 일정과 API 날짜와 일치하는 마감 시각을 보완한다. */
     @Transactional
     public int enrichFromPage(Scholarship scholarship, Document page) {
+        return enrichPage(scholarship, page).saved();
+    }
+
+    public record EnrichmentOutcome(int saved, boolean complete) { }
+
+    @Transactional
+    public EnrichmentOutcome enrichPage(Scholarship scholarship, Document page) {
         if (scholarship.isTimelineLocked()
                 || repository.findAllByScholarshipIdOrderByDisplayOrderAsc(scholarship.getId())
-                .stream().anyMatch(t -> t.getOrigin() != TimelineOrigin.LLM)) return 0;
+                .stream().anyMatch(t -> t.getOrigin() != TimelineOrigin.LLM)) return new EnrichmentOutcome(0, false);
         LocalDate referenceDate = scholarship.getApplicationEndAt() == null ? SelectionScheduleAssembler.today()
                 : scholarship.getApplicationEndAt().toLocalDate();
         String html = page.outerHtml();
@@ -129,7 +159,7 @@ public class CrawledScholarshipTimelineService {
             String attachment = NoticeAttachmentText.scheduleEvidence(page, referenceDate);
             if (!attachment.isEmpty()) body += "\n" + attachment;
         }
-        if (body.isBlank()) return 0;
+        if (body.isBlank()) return new EnrichmentOutcome(0, false);
         var period = temporalParser.resolveExplicitRecruitmentPeriod(null, body, referenceDate);
         if (period != null && period.end().time() != null) {
             scholarship.refineApiDeadline(period.end().date().atTime(period.end().time()));
@@ -144,6 +174,7 @@ public class CrawledScholarshipTimelineService {
                 log.warn("[TimelineEnrich] LLM 실패 scholarshipId={}: {}", scholarship.getId(), e.getClass().getSimpleName());
             }
         }
-        return mergeFromParsed(scholarship, notice, body, referenceDate);
+        return new EnrichmentOutcome(mergeFromParsed(scholarship, notice, body, referenceDate),
+                notice != null || htmlBody.isBlank());
     }
 }

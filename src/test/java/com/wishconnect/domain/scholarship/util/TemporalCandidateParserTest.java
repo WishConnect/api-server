@@ -132,6 +132,33 @@ class TemporalCandidateParserTest {
         assertThat(result.issues()).contains("SOURCE_DATE_INVALID", "INPUT_TRUNCATED");
     }
 
+    @Test
+    void keepsGroundedModelPeriodWhenAnotherSubmissionDeadlineConflicts() throws Exception {
+        String application = "신청 일정: 2026.11.01 ~ 2026.11.30";
+        String body = application + "\n추천서 제출기한: 2026.11.20. 18:00까지";
+        var n = notice(Map.of("applicationStart", "2026-11-01", "applicationEnd", "2026-11-30",
+                "periodEvidence", application));
+        var result = candidate.resolveRecruitmentPeriod("장학생 모집", body, REFERENCE, n);
+        assertThat(result.start().date()).isEqualTo(LocalDate.of(2026, 11, 1));
+        assertThat(result.end().date()).isEqualTo(LocalDate.of(2026, 11, 30));
+        assertThat(result.evidence()).isEqualTo(application);
+    }
+
+    @Test
+    void stillRecoversExplicitDeadlineWhenModelOmittedPeriod() throws Exception {
+        var result = candidate.resolveRecruitmentPeriod("장학생 모집", "접수 일정: 2026.11.30. 18:00까지",
+                REFERENCE, notice(Map.of()));
+        assertThat(result.end().time()).isEqualTo(LocalTime.of(18, 0));
+    }
+
+    @Test
+    void doesNotReplaceInvalidModelEvidenceWithUnrelatedSubmissionDate() throws Exception {
+        String application = "신청 일정: 2026.11.01 ~ 2026.11.30";
+        var n = notice(Map.of("applicationEnd", "2026-11-20", "periodEvidence", application));
+        assertThat(candidate.resolveRecruitmentPeriod("장학생 모집",
+                application + "\n추천서 제출기한: 2026.11.20. 18:00까지", REFERENCE, n)).isNull();
+    }
+
     private com.wishconnect.domain.scholarship.dto.TemporalParseResult stage(
             String stage, String date, String quote) throws Exception {
         return candidate.resolve(input("공지", quote), notice(Map.of("timeline", List.of(Map.of(

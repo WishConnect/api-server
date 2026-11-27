@@ -396,6 +396,11 @@ public class Scholarship extends BaseEntity {
 		this.enrichedAt = LocalDateTime.now();
 	}
 
+	/** API 모집일이 바뀌면 기존 상세 URL과 일정을 보존한 채 보완 수집을 다시 예약한다. */
+	public void requestEnrichment() {
+		if (!isDeletedByAdmin()) this.enrichedAt = null;
+	}
+
 	public void updateActive(boolean active) {
 		if (isDeletedByAdmin()) {
 			return;
@@ -642,9 +647,7 @@ public class Scholarship extends BaseEntity {
 	/** 같은 API 마감일의 원문에서 시각만 확인된 경우 보완한다. */
 	public void refineApiDeadline(LocalDateTime verifiedEnd) {
 		if (periodLocked || isDeletedByAdmin() || applicationEndAt == null || verifiedEnd == null
-				|| !verifiedEnd.toLocalDate().equals(applicationEndAt.toLocalDate())
-				|| !(applicationEndAt.toLocalTime().equals(LocalTime.MIDNIGHT)
-						|| applicationEndAt.toLocalTime().equals(LocalTime.of(23, 59, 59)))) {
+				|| !verifiedEnd.toLocalDate().equals(applicationEndAt.toLocalDate())) {
 			return;
 		}
 		applyVerifiedRecruitmentPeriod(applicationStartAt, verifiedEnd);

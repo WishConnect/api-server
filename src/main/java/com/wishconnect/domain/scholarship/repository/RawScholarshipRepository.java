@@ -34,6 +34,18 @@ public interface RawScholarshipRepository extends JpaRepository<RawScholarship, 
 	/** 수집기 멱등 처리용: 같은 출처의 공지를 이미 수집했는지. */
 	boolean existsBySourceAndSourceId(String source, String sourceId);
 
+	/** 목록 첫 페이지에서 밀려난 공지도 최근 마감 후 60일까지 원문 변경을 확인한다. */
+	@Query("""
+			select r from RawScholarship r join fetch r.scholarship s
+			where r.source = :source and r.dismissedAt is null and s.deletedAt is null
+			  and (s.active = true or s.applicationEndAt >= :recentDeadline)
+			  and (r.crawledAt is null or r.crawledAt < :before)
+			order by r.crawledAt asc nulls first, r.id asc
+			""")
+	List<RawScholarship> findNoticeRefreshTargets(@Param("source") String source,
+			@Param("before") java.time.LocalDateTime before,
+			@Param("recentDeadline") java.time.LocalDateTime recentDeadline, Pageable pageable);
+
 	/** 관리자 화면: 원본 수집 데이터의 파싱 상태 분포. */
 	long countByParseStatus(ParseStatus parseStatus);
 
